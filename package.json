@@ -7,6 +7,10 @@
     "start": "node app.js",
     "dev": "nodemon app.js"
   },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/carlosAndress101/Rest-Server"
+  },
   "keywords": [
     "express",
     "nodejs"
