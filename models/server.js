@@ -1,7 +1,8 @@
 const cors = require('cors');
 const path = require('path');
 const express = require('express');
-const router  = require('../routes/usuarios');
+const userRouter  = require('../routes/usuarios');
+const authRouter  = require('../routes/auth');
 
 const connection = require('../database/config');
 
@@ -11,6 +12,7 @@ class Server {
         this.app = express();
         this.port = process.env.PORT;
         this.userPath = '/api/user';
+        this.authPath = '/api/auth';
         this.origin = 'http://localhost:';
 
         // Conectar a base de datos
@@ -43,7 +45,8 @@ class Server {
 
     //routes
     routes(){
-        this.app.use(this.userPath, router)
+        this.app.use(this.userPath, userRouter)
+        this.app.use(this.authPath, authRouter)
     }
 
     listen(){
