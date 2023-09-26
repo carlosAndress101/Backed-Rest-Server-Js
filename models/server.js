@@ -10,7 +10,7 @@ class Server {
 
     constructor() {
         this.app = express();
-        this.port = process.env.PORT;
+        this.port = process.env.PORT || 1500;
         this.userPath = '/api/user';
         this.authPath = '/api/auth';
         this.origin = 'http://localhost:';
@@ -45,13 +45,17 @@ class Server {
 
     //routes
     routes(){
+        this.app.get('/hello', (req, res) => {
+            res.status(200).json({
+                name: 'caan'
+            })
+        })
         this.app.use(this.userPath, userRouter)
         this.app.use(this.authPath, authRouter)
     }
 
     listen(){
-        this.app.listen(this.port, ()=>{
-            console.log(`${this.origin}${this.port}`)
+        return this.app.listen(this.port, ()=>{
         })
     }
 

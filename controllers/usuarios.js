@@ -57,18 +57,22 @@ const putUser = async (req = request, res = response) => {
   }
 };
 
-const usuariosPatch = (req, res = response) => {
+const usuariosPatch = (req = request, res = response) => {
   res.json({
     msg: "patch API - usuariosPatch",
   });
 };
 
 const deleteUser = async (req = request, res = response) => {
+
   const { id } = req.params;
   //physically eliminated
   try {
+
     const userDelete = await User.findByIdAndUpdate(id, {state: false});
-    res.json(userDelete);
+    const userAuthenticated = req.user
+    res.status(201).json({userDelete, userAuthenticated});
+
   } catch (error) {
     res.status(400).json(error.message);
   }
