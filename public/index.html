@@ -1,174 +1,64 @@
 <!DOCTYPE html>
 <html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <link
-      rel="shortcut icon"
-      href="https://raw.githubusercontent.com/carlosAndress101/Rest-Api-Class-Based/master/public/assets/logo.svg"
-      type="image/x-icon"
-    />
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link
-      href="https://fonts.googleapis.com/css2?family=Ubuntu:wght@400;700&display=swap"
-      rel="stylesheet"
-    />
-    <title>RestServer + WebServer</title>
-    <style>
-      body {
-        background-color: #030303;
-        color: white;
-        font-family: "Ubuntu", sans-serif;
-      }
-      body > div {
-        padding: 30px;
-        margin-top: 50px;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-      }
-      .div {
-        background-color: black;
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        justify-content: center;
-        border-radius: 15px;
-        -webkit-box-shadow: 0px 0px 18px 7px rgba(15, 15, 15, 1);
-        -moz-box-shadow: 0px 0px 18px 7px rgba(15, 15, 15, 1);
-        box-shadow: 0px 0px 18px 7px rgba(15, 15, 15, 1);
-      }
-      .header {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        padding: 10px;
-      }
-      .header div {
-        display: flex;
-        align-items: center;
-        gap: 8px;
-      }
-      .header div img {
-        width: 30px;
-        height: 30px;
-      }
-      nav {
-        display: flex;
-        align-items: center;
-        gap: 8px;
-      }
-      nav img {
-        width: 30px;
-      }
-      nav a {
-        text-decoration: none;
-      }
-      h1 {
-        margin: 0;
-      }
-      .routes {
-        display: grid;
-        place-items: center;
-        grid-template-columns: 1fr;
-        gap: 30px;
-        padding: 30px;
-      }
-      .get,
-      .post,
-      .patch,
-      .delete {
-        padding: 8px;
-        color: black;
-      }
-      .get {
-        background-color: #593d7f;
-      }
-      .post {
-        background-color: #73b32b;
-      }
-      .patch {
-        background-color: #d3c137;
-      }
-      .delete {
-        background-color: #93312c;
-      }
-      @media (min-width: 992px) {
-        body > div {
-          margin-top: 100px;
-        }
-        .routes {
-          grid-template-columns: 1fr 1fr;
-          gap: 30px;
-          padding: 30px;
-        }
-        .header {
-          width: 700px;
-        }
-      }
-    </style>
-  </head>
-  <body>
-    <div>
-      <div class="div">
-        <div class="header">
-          <div>
-            <img
-              src="https://raw.githubusercontent.com/carlosAndress101/Rest-Api-Class-Based/master/public/assets/logo.svg"
-              alt="logo"
-            />
-            <p>Welcome to my Express App</p>
-          </div>
 
-          <nav>
-            <a target="_blank" href="https://www.carloshinestroza.dev/">
-              <img
-                src="https://raw.githubusercontent.com/carlosAndress101/Rest-Api-Class-Based/master/public/assets/web.svg"
-                alt="website"
-              />
-            </a>
-            <a target="_blank" href="https://github.com/carlosAndress101">
-              <img
-                src="https://raw.githubusercontent.com/carlosAndress101/Rest-Api-Class-Based/master/public/assets/github.svg"
-                alt="github"
-              />
-            </a>
-            <a target="_blank" href="https://www.linkedin.com/in/carlos-andr%C3%A9s-hinestroza-p%C3%A9rez-175057211/">
-              <img
-                src="https://raw.githubusercontent.com/carlosAndress101/Rest-Api-Class-Based/master/public/assets/linkedin.svg"
-                alt="linkedin"
-              />
-            </a>
-            <a target="_blank" href="https://twitter.com/CarlosAH1101">
-              <img
-                src="https://raw.githubusercontent.com/carlosAndress101/Rest-Api-Class-Based/master/public/assets/twitter.svg"
-                alt="twitter"
-              />
-            </a>
-          </nav>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Login Google</title>
+</head>
+
+<body>
+    <h1>Google Sign-in</h1>
+
+    <section>
+        <div id="g_id_onload" data-client_id="598316677675-hsos8s2ali1n6429ns5krmil2telookn.apps.googleusercontent.com"
+            data-callback="handleCredentialResponse" data-auto_prompt="false">
         </div>
-
-        <h1>Routes</h1>
-        <div class="routes">
-          <div>
-            <p><span class="get"> [ GET ]</span> /api/user</p>
-          </div>
-
-          <div>
-            <p><span class="post"> [ POST ]</span> /api/user</p>
-          </div>
-
-          <div>
-            <p><span class="patch"> [ PUT ]</span> /api/user/id</p>
-          </div>
-
-          <div>
-            <p><span class="delete"> [ DELETE ]</span> /api/user/id</p>
-          </div>
+        <div class="g_id_signin" data-type="standard" data-size="large" data-theme="outline" data-text="sign_in_with"
+            data-shape="rectangular" data-logo_alignment="left">
         </div>
-      </div>
-    </div>
-  </body>
+    </section>
+
+    <section>
+        <button id="g-signout">Sign Out</button>
+    </section>
+
+    <script>
+        function handleCredentialResponse(response) {
+
+
+            const body = { id_token: response.credential }
+
+            fetch("http://localhost:4321/api/auth/google", {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(body)
+
+            })
+                .then(resp => resp.json())
+                .then(resp => { 
+                    console.log(resp)
+                    localStorage.setItem('email', resp.user.email)
+                })
+                .catch(console.warn)
+        }
+
+        const button = document.getElementById('g-signout');
+        button.onclick = async () => {
+
+            console.log(google.accounts.id)
+            google.accounts.id.disableAutoSelect()
+            google.accounts.id.revoke( localStorage.getItem('email'), done => {
+                localStorage.clear();
+                location.reload();
+            })
+        }
+
+    </script>
+
+    <script src="https://accounts.google.com/gsi/client" async></script>
+</body>
+
 </html>
