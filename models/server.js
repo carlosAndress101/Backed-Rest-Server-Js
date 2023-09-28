@@ -3,6 +3,7 @@ const path = require('path');
 const express = require('express');
 const userRouter  = require('../routes/usuarios');
 const authRouter  = require('../routes/auth');
+const categoryRouter  = require('../routes/category');
 
 const connection = require('../database/config');
 
@@ -11,17 +12,20 @@ class Server {
     constructor() {
         this.app = express();
         this.port = process.env.PORT || 1500;
-        this.userPath = '/api/user';
-        this.authPath = '/api/auth';
-        this.origin = 'http://localhost:';
 
-        // Conectar a base de datos
+        this.paths = {
+            auth: '/api/auth',
+            user: '/api/user',
+            categoty: '/api/category'
+        }
+
+        // connect to the DB
         this.conectarDB();
 
         // Middlewares
         this.middlewares();
 
-        // Rutas de mi aplicación
+        // router of the app
         this.routes();
     }
 
@@ -36,9 +40,10 @@ class Server {
         this.app.use( cors() );
 
         // Lectura y parseo del body
+        // read and parse from body
         this.app.use( express.json() );
 
-        //directorio publico
+        //public path
         this.app.use(express.static(path.join(__dirname, '../public')))
 
     }
@@ -50,15 +55,15 @@ class Server {
                 name: 'caan'
             })
         })
-        this.app.use(this.userPath, userRouter)
-        this.app.use(this.authPath, authRouter)
+        this.app.use(this.paths.user, userRouter)
+        this.app.use(this.paths.auth, authRouter)
+        this.app.use(this.paths.categoty, categoryRouter)
     }
 
     listen(){
         return this.app.listen(this.port, ()=>{
         })
     }
-
 }
 
 
