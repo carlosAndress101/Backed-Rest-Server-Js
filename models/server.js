@@ -4,6 +4,8 @@ const express = require('express');
 const userRouter  = require('../routes/usuarios');
 const authRouter  = require('../routes/auth');
 const categoryRouter  = require('../routes/category');
+const productRouter  = require('../routes/products');
+const searchRouter  = require('../routes/search');
 
 const connection = require('../database/config');
 
@@ -15,8 +17,10 @@ class Server {
 
         this.paths = {
             auth: '/api/auth',
+            search: '/api/search',
             user: '/api/user',
-            categoty: '/api/category'
+            categoty: '/api/category',
+            product: '/api/product'
         }
 
         // connect to the DB
@@ -58,6 +62,8 @@ class Server {
         this.app.use(this.paths.user, userRouter)
         this.app.use(this.paths.auth, authRouter)
         this.app.use(this.paths.categoty, categoryRouter)
+        this.app.use(this.paths.product, productRouter)
+        this.app.use(this.paths.search, searchRouter)
     }
 
     listen(){
