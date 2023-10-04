@@ -1,11 +1,13 @@
 const cors = require('cors');
 const path = require('path');
 const express = require('express');
+const fileUpload = require('express-fileupload');
 const userRouter  = require('../routes/usuarios');
 const authRouter  = require('../routes/auth');
 const categoryRouter  = require('../routes/category');
 const productRouter  = require('../routes/products');
 const searchRouter  = require('../routes/search');
+const uploadRouter  = require('../routes/uploads');
 
 const connection = require('../database/config');
 
@@ -20,7 +22,8 @@ class Server {
             search: '/api/search',
             user: '/api/user',
             categoty: '/api/category',
-            product: '/api/product'
+            product: '/api/product',
+            uploads: '/api/uploads'
         }
 
         // connect to the DB
@@ -50,6 +53,12 @@ class Server {
         //public path
         this.app.use(express.static(path.join(__dirname, '../public')))
 
+        //Upload files
+        this.app.use(fileUpload({
+            useTempFiles : true,
+            tempFileDir : '/tmp/',
+            createParentPath : true,
+        }));
     }
 
     //routes
@@ -64,6 +73,7 @@ class Server {
         this.app.use(this.paths.categoty, categoryRouter)
         this.app.use(this.paths.product, productRouter)
         this.app.use(this.paths.search, searchRouter)
+        this.app.use(this.paths.uploads, uploadRouter)
     }
 
     listen(){

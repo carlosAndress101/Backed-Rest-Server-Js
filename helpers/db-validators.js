@@ -17,6 +17,9 @@ const emailExiste = async( email = '' ) => {
     }
 }
 
+/**
+ * Users
+ */
 const existUserById = async( id ) => {
 
     // Verificar si el correo existe
@@ -26,6 +29,9 @@ const existUserById = async( id ) => {
     }
 }
 
+/**
+ * Categories
+ */
 const existCategoryById = async( id ) => {
 
     // Verify if Id exist
@@ -35,6 +41,10 @@ const existCategoryById = async( id ) => {
     }
 }
 
+
+/**
+ * Products
+ */
 const existProductById = async( id ) => {
 
     // Verify if Id exist
@@ -44,6 +54,19 @@ const existProductById = async( id ) => {
     }
 }
 
+/**
+ * Permitted Collection valid
+ */
+const permittedCollections = ( collection = '', collections = [] ) => {
+
+    const include = collections.includes(collection);
+    if( !include ) {
+        throw new Error(`collection ${collection} is not permitted - ${collections}`);
+    }
+
+    return true;
+} 
+
 
 
 module.exports = {
@@ -51,6 +74,7 @@ module.exports = {
     emailExiste,
     existUserById,
     existCategoryById,
-    existProductById
+    existProductById,
+    permittedCollections,
 }
 
