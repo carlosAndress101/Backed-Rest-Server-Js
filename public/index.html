@@ -4,61 +4,36 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@200;400;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="./css/index.css">
     <title>Login Google</title>
 </head>
 
 <body>
-    <h1>Google Sign-in</h1>
 
-    <section>
-        <div id="g_id_onload" data-client_id="598316677675-hsos8s2ali1n6429ns5krmil2telookn.apps.googleusercontent.com"
-            data-callback="handleCredentialResponse" data-auto_prompt="false">
-        </div>
-        <div class="g_id_signin" data-type="standard" data-size="large" data-theme="outline" data-text="sign_in_with"
-            data-shape="rectangular" data-logo_alignment="left">
-        </div>
-    </section>
+    <div class="container">
+        <h1 class="title-primary">Google Sign in</h1>
 
-    <section>
-        <button id="g-signout">Sign Out</button>
-    </section>
+        <section class="box-primary">
+            <div id="g_id_onload"
+                data-client_id="598316677675-hsos8s2ali1n6429ns5krmil2telookn.apps.googleusercontent.com"
+                data-callback="handleCredentialResponse" data-auto_prompt="false">
+            </div>
+            <div class="g_id_signin" data-type="standard" data-size="large" data-theme="outline"
+                data-text="sign_in_with" data-shape="rectangular" data-logo_alignment="left">
+            </div>
+        </section>
+        <button id="g-signout" class="button-primary"><svg xmlns="http://www.w3.org/2000/svg" class="icon icon-tabler icon-tabler-logout" width="24" height="24" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round">
+            <path stroke="none" d="M0 0h24v24H0z" fill="none"></path>
+            <path d="M14 8v-2a2 2 0 0 0 -2 -2h-7a2 2 0 0 0 -2 2v12a2 2 0 0 0 2 2h7a2 2 0 0 0 2 -2v-2"></path>
+            <path d="M9 12h12l-3 -3"></path>
+            <path d="M18 15l3 -3"></path>
+         </svg> Sign Out</button>
 
-    <script>
-        function handleCredentialResponse(response) {
-
-
-            const body = { id_token: response.credential }
-
-            fetch("http://localhost:4321/api/auth/google", {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify(body)
-
-            })
-                .then(resp => resp.json())
-                .then(resp => { 
-                    console.log(resp)
-                    localStorage.setItem('email', resp.user.email)
-                })
-                .catch(console.warn)
-        }
-
-        const button = document.getElementById('g-signout');
-        button.onclick = async () => {
-
-            console.log(google.accounts.id)
-            google.accounts.id.disableAutoSelect()
-            google.accounts.id.revoke( localStorage.getItem('email'), done => {
-                localStorage.clear();
-                location.reload();
-            })
-        }
-
-    </script>
-
+    </div>
     <script src="https://accounts.google.com/gsi/client" async></script>
+    <script src="./js/auth.js"></script>
 </body>
-
 </html>
