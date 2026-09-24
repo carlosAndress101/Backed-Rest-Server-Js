@@ -47,5 +47,9 @@ Every change clients can observe is listed here before it ships, and in CHANGELO
 | M1 | Non-admin callers can no longer change `role`, `state`, `email`, `image` through `PUT /api/user/:id` | #6 |
 | M1 | Insufficient role returns **403** (was 400 / 401). Credential failures return **401** with one generic message (was three 400 messages). Too many login attempts return **429** | #2, #3, #7, #12, #13, #17, #18 |
 | M1 | Unknown routes return a JSON 404; unhandled errors return a JSON 500 with no internals; duplicate keys return 409 | all |
+| M1 | A bad Google token and a blocked Google user both return **401** `Invalid credentials` (was 400 / a distinct 401). Login and Google share one limiter budget of 10 requests / 15 min / IP, with `RateLimit` / `RateLimit-Policy` headers | #2, #3 |
+| M1 | Search: the `role` collection is removed (400); at most 20 results; terms match literally. List endpoints cap `limit` at 50 and coerce `limit`/`offset` to integers | #9, #14, #19 |
+| M1 | Uploads larger than 5 MB return 413 | #20, #21 |
+| M1 (T1.7) | Multipart bodies are parsed **only** on the upload write routes, and only after auth; elsewhere they are ignored (send JSON). At most one file per upload request | all except #20, #21 |
 | M3 | Response envelope, correct status codes (GET 200, DELETE 204, validation 422), consistent `id` field, stub/debug routes removed | all |
 | M5 | `Authorization: Bearer <token>`; `x-token` deprecated (still accepted, `Deprecation` header) | all authenticated |

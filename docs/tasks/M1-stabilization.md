@@ -34,14 +34,15 @@ master ──► m1/stabilization (integration, includes M0 docs)
               │                                     ├─► T1.3 BACKEND ENGINEER    (worktrees/m1-t1.3-crash-safety)     ├ parallel, disjoint files
               │                                     └─► T1.4 DATABASE AGENT      (worktrees/m1-t1.4-regression-tests) ┘
               │        merge order: T1.3 → T1.2 → T1.4, then full suite
-              └─► T1.5 ARCHITECT (read-only on m1/stabilization) → ACCEPT or RETURN per task
+              ├─► T1.7 SECURITY & QA AGENT (worktrees/m1-t1.7-deploy-hardening)  [follow-up from the T1.2 review]
+              └─► T1.5 ARCHITECT (read-only on m1/stabilization, after T1.7) → ACCEPT or RETURN per task
                         Orchestrator: docs update → milestone gate → owner approves push/PR
 ```
 
 | Task | Assigned node | Agent CLI / model |
 |---|---|---|
 | T1.1, T1.3 | BACKEND ENGINEER | Claude Code · Opus 5.5 |
-| T1.2 | SECURITY & QA AGENT | Claude Code · Opus 5.5 |
+| T1.2, T1.7 | SECURITY & QA AGENT | Claude Code · Opus 5.5 |
 | T1.4 | DATABASE AGENT | OpenCode · DeepSeek V4 Flash |
 | T1.5 | ARCHITECT | Claude Code · Opus 5.5 |
 
@@ -57,6 +58,9 @@ master ──► m1/stabilization (integration, includes M0 docs)
 | C6 | **User write policy.** `POST /api/user` ignores `role` and always stores `USER_ROLE`. `PUT /api/user/:id`: the owner may change `name`, `password`; an admin may additionally change `role` (must exist in `Role`) and `state`. `email`, `google`, `image`, `_id` are never writable here. Disallowed fields are **silently dropped**. `GET /api/user` is admin-only. | T1.2 | T1.4 |
 | C7 | **Media write policy.** `POST /api/uploads` is admin-only. `PUT /api/uploads/user/:id` is owner or admin. `PUT /api/uploads/product/:id` is admin-only. `GET` stays public. | T1.2 | T1.4 |
 | C8 | **Search policy.** `category` and `product` are public; `user` requires a token (401) and admin (403); `role` is no longer an allowed collection (400). Terms match **literally** (regex metacharacters escaped). At most **20** results. An id that doesn't exist → `200 {results: []}`. | T1.3 | T1.4 |
+| C9 | **Proxy trust (added with T1.7).** The `TRUST_PROXY` env var is either unset/empty, which keeps Express's default (`req.ip` = socket address, `X-Forwarded-For` ignored), or a non-negative integer N, which runs `app.set('trust proxy', N)`. Any other value makes `new Server()` throw a clear error, so `app.js` exits 1. The C5 limiter keys on `req.ip`. | T1.7 | T1.7 tests |
+| C10 | **Multipart scope (added with T1.7).** Multipart bodies are parsed **only** on `POST /api/uploads` and `PUT /api/uploads/:collection/:id`, and only after authentication, authorization and param validation pass. An unauthenticated, unauthorized or invalid request never writes a temp file. Every other route ignores multipart bodies. At most **1 file** per request. Every temp file a request writes is removed on **every** exit path (success, 400, 413, error), by one implementation. | T1.7 | T1.7 tests |
+| C11 | **Image replacement order (added with T1.7).** `PUT /api/uploads/:collection/:id` uploads the new image, saves the record, and only then destroys the previous Cloudinary asset. That destroy is best-effort (logged, non-fatal). If the upload or the save fails, the record keeps its previous `image`, the previous asset is **not** destroyed, and the client gets a C1 JSON error. A new asset orphaned by a failed save is accepted and logged. | T1.7 | T1.7 tests |
 
 ---
 
@@ -141,8 +145,27 @@ master ──► m1/stabilization (integration, includes M0 docs)
   - [ ] No application file changed. If a test exposes a bug, report it; don't patch the app.
 - **Deliverables:** branch `m1/t1.4-regression-tests`, report in the mandatory format including the proof-of-detection output.
 
+## T1.7: Deploy Hardening Follow-up
+- **Agent:** SECURITY & QA AGENT · **Worktree:** `worktrees/m1-t1.7-deploy-hardening` · **Branch:** `m1/t1.7-deploy-hardening` (from integration **after T1.2/T1.3/T1.4 merged**) · **Debt:** SEC-15 (new), SEC-08 (residual: pre-controller temp files), REL-04 (new), CQ-02 (`updateImage` only)
+- **Origin:** the T1.2 report's Risks 1–4 and Q1–Q3. Without C9, the C5 limiter behind the production proxy puts every client in one bucket, which lets anyone lock all users out of login. That blocks the deploy.
+- **Objective:** Implements contracts C9–C11 and removes the unrouted `updateImage`.
+- **Files allowed:** `models/server.js` (only the `fileUpload` mount and the `trust proxy` setting), `routes/uploads.js`, `controllers/uploads.js`, `middlewares/file-valid.js`, `middlewares/index.js`, `helpers/upload-file.js`, `e2e/**` (new test files, plus edits to `e2e/uploads.e2e.js` and `e2e/helpers/db.js` where the contracts require them).
+- **Files forbidden:** everything else, including `app.js`, `database/**`, the other routes and controllers, `package.json`, `pnpm-lock.yaml`, `jest-e2e.json`, all `*.md`.
+- **Required changes:**
+  1. **C9:** Parse `TRUST_PROXY` in `models/server.js` exactly as C9 says. No new config module (that is M2).
+  2. **C10:** Remove the global `fileUpload` from `models/server.js`. Mount it on the two upload write routes, **after** `validarJWT`, the authz middleware, the param validators and `validarCampos`, and **before** `fileValid`. Keep the current options (5 MB, `abortOnLimit`, `os.tmpdir()`) and add `limits.files: 1`. Define the options once, not per route. Every exit path after parsing removes the request's temp files, including a `fileValid` rejection. Use one shared removal function: the controllers must not keep a second copy.
+  3. **C11:** Reorder `updateImageCloudinary` as specified.
+  4. **CQ-02 (partial):** Delete `updateImage` and the commented-out `//], updateImage);` route line.
+- **Acceptance criteria:**
+  - [ ] C9: with `TRUST_PROXY=1`, two clients with different `X-Forwarded-For` values have independent limiter budgets. With it unset, rotating `X-Forwarded-For` still gets 429. `TRUST_PROXY` set to `abc`, `-1` or `true` makes `new Server()` throw.
+  - [ ] C10: a multipart request to `POST /api/uploads` with no token, with a USER token, and a `PUT` with an invalid id each write **zero** temp files. So do multipart requests to `POST /api/auth/login` and `POST /api/user`. A `fileValid` rejection, an extension rejection, a 413 and a two-file request each leave zero temp files.
+  - [ ] C11: when the upload fails, `destroy` is never called and `image` is unchanged. When the save fails, the old asset isn't destroyed. On success, `destroy` runs after `upload`, with the old public id.
+  - [ ] The full `pnpm e2e` suite is green 3 times in a row, under 60 s. Existing tests are changed only where C10 changed the behaviour, and each such change is listed in the report.
+  - [ ] No files outside Files Allowed changed. No new dependencies. No leftover debug logging.
+- **Deliverables:** branch `m1/t1.7-deploy-hardening`, report in the mandatory format, plus the list of breaking changes (multipart on non-upload routes).
+
 ## T1.5: Independent Review (quality gate)
-- **Agent:** ARCHITECT (**read-only**) · **Target:** `m1/stabilization` after all merges.
+- **Agent:** ARCHITECT (**read-only**) · **Target:** `m1/stabilization` after all merges (T1.1–T1.4 and T1.7).
 - **Objective:** Adversarially verify M1 before the Orchestrator accepts it.
 - **Files allowed:** none (read-only; scratchpad for experiments).
 - **Acceptance criteria / checks:**
