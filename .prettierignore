@@ -1,0 +1,16 @@
+dist/
+coverage/
+public/
+uploads/
+assets/
+pnpm-lock.yaml
+*.md
+routes/
+controllers/
+middlewares/
+helpers/
+models/
+e2e/
+jest-e2e.json
+app.js
+database/
