@@ -1,21 +1,11 @@
-// P18 (M4 design §5.2): the in-repo migration runner and its CLI, against the run's in-memory mongod. Each test
-// gets its own database, reached through its own driver client, so nothing leaks between tests.
+// P18 (M4 design §5.2): the in-repo migration runner, against the run's in-memory mongod. Each test gets its own
+// database, reached through its own driver client, so nothing leaks between tests. The CLI: tests/unit/cli.test.ts.
 import { randomUUID } from 'node:crypto';
 
 import mongoose, { type mongo } from 'mongoose';
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, inject, test, vi } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, inject, test } from 'vitest';
 
 import { createLogger } from '../../../src/core/logger';
-import {
-  MIGRATIONS,
-  USAGE,
-  UsageError,
-  main,
-  parseArgs,
-  runCommand,
-  seedNotAvailable,
-  type Command,
-} from '../../../src/database/cli';
 import { LEDGER, migrationStatus, runMigrations, type Migration } from '../../../src/database/migrate';
 
 const MONGO_URI = inject('mongoUri');
@@ -76,7 +66,6 @@ beforeEach(() => {
 
 afterEach(async () => {
   await db.dropDatabase();
-  vi.unstubAllEnvs(); // restoreMocks does not undo vi.stubEnv
 });
 
 describe('runMigrations (P18)', () => {
@@ -235,163 +224,5 @@ describe('migrationStatus', () => {
       { id: 'M001-first', appliedAt: null },
     ]);
     expect(await collections()).toEqual([]);
-  });
-});
-
-describe('parseArgs', () => {
-  test.each<[string[], Command]>([
-    [['migrate', 'up'], { name: 'migrate', direction: 'up', dryRun: false }],
-    [['migrate', 'up', '--dry-run'], { name: 'migrate', direction: 'up', dryRun: true }],
-    [['migrate', 'down'], { name: 'migrate', direction: 'down', dryRun: false }],
-    [['migrate', 'down', '--dry-run'], { name: 'migrate', direction: 'down', dryRun: true }],
-    [['migrate', 'status'], { name: 'status' }],
-    [['seed'], { name: 'seed' }],
-  ])('%j → %o', (args, command) => {
-    expect(parseArgs(args)).toEqual(command);
-  });
-
-  test.each([
-    [[]],
-    [['migrate']],
-    [['migrate', 'sideways']],
-    [['migrate', 'status', '--dry-run']],
-    [['migrate', 'up', '--force']],
-    [['migrate', 'up', '--dry-run', '--dry-run']],
-    [['seed', '--dry-run']],
-    [['up']],
-  ])('%j is a UsageError', (args) => {
-    expect(() => parseArgs(args)).toThrow(UsageError);
-  });
-});
-
-describe('runCommand', () => {
-  const deps = (migrations: readonly Migration[]) => ({ db, log, migrations, seed: seedNotAvailable });
-
-  test('migrate up runs the pending migrations and logs what it ran', async () => {
-    const migrations = [recording('M001-first', calls)];
-
-    const code = await runCommand({ name: 'migrate', direction: 'up', dryRun: false }, deps(migrations));
-
-    expect(code).toBe(0);
-    expect(calls).toEqual(['M001-first up']);
-    expect(records().at(-1)).toMatchObject({ msg: 'migrate up: done', migrations: ['M001-first'] });
-  });
-
-  test('migrate up --dry-run logs the plan and that nothing was written', async () => {
-    const code = await runCommand(
-      { name: 'migrate', direction: 'up', dryRun: true },
-      deps([recording('M001-first', calls)]),
-    );
-
-    expect(code).toBe(0);
-    expect(calls).toEqual([]);
-    expect(records().at(-1)).toMatchObject({
-      msg: 'migrate up: dry run: nothing written',
-      dryRun: true,
-      migrations: ['M001-first'],
-    });
-  });
-
-  test('migrate down with nothing applied logs that there is nothing to migrate', async () => {
-    const code = await runCommand(
-      { name: 'migrate', direction: 'down', dryRun: false },
-      deps([recording('M001-first', calls)]),
-    );
-
-    expect(code).toBe(0);
-    expect(records().at(-1)).toMatchObject({ msg: 'migrate down: nothing to migrate', migrations: [] });
-  });
-
-  test('status logs one line per migration, then the counts', async () => {
-    const migrations = [recording('M001-first', calls), recording('M002-second', calls)];
-    await up(migrations.slice(0, 1));
-    ({ log, records } = capture());
-
-    const code = await runCommand({ name: 'status' }, deps(migrations));
-
-    expect(code).toBe(0);
-    expect(records()).toEqual([
-      expect.objectContaining({ msg: 'applied', migration: 'M001-first', appliedAt: expect.any(String) }),
-      expect.objectContaining({ msg: 'pending', migration: 'M002-second', appliedAt: null }),
-      expect.objectContaining({ msg: 'migrate status', applied: 1, pending: 1 }),
-    ]);
-  });
-
-  test('a migration that throws rejects the command', async () => {
-    const failure = new Error('data check failed');
-    const failing: Migration = { ...recording('M001-first', calls), up: () => Promise.reject(failure) };
-
-    await expect(
-      runCommand({ name: 'migrate', direction: 'up', dryRun: false }, deps([failing])),
-    ).rejects.toBe(failure);
-  });
-
-  test('seed runs the injected seed and exits with its code', async () => {
-    const seed = vi.fn(() => Promise.resolve(0));
-
-    expect(await runCommand({ name: 'seed' }, { ...deps([]), seed })).toBe(0);
-    expect(seed).toHaveBeenCalledWith(db, log);
-  });
-
-  test('the seed stub (until T4.4) refuses: exit code 1 and an error line', async () => {
-    expect(await runCommand({ name: 'seed' }, deps([]))).toBe(1);
-    expect(records()).toEqual([
-      expect.objectContaining({ level: 50, msg: 'seed: the first-admin seed is not available yet' }),
-    ]);
-  });
-});
-
-describe('main (the CLI process)', () => {
-  const useDatabase = () => vi.stubEnv('MONGO_CLOUD', `${MONGO_URI}cli-${randomUUID()}`);
-
-  test('the migration list is empty until T4.4 adds M001–M004', () => {
-    expect(MIGRATIONS).toEqual([]);
-  });
-
-  test('a usage error prints the usage and exits 2, before it reads the config or connects', async () => {
-    const stderr = vi.spyOn(process.stderr, 'write').mockReturnValue(true);
-    const connect = vi.spyOn(mongoose, 'connect');
-
-    expect(await main(['migrate', 'sideways'])).toBe(2); // MONGO_CLOUD is unset: loading the config would throw
-
-    expect(stderr).toHaveBeenCalledWith(`Unknown command: migrate sideways\n${USAGE}\n`);
-    expect(connect).not.toHaveBeenCalled();
-  });
-
-  test('migrate status connects with autoIndex off, exits 0 and disconnects', async () => {
-    useDatabase();
-    const connect = vi.spyOn(mongoose, 'connect');
-
-    expect(await main(['migrate', 'status'])).toBe(0);
-
-    expect(connect).toHaveBeenCalledWith(
-      process.env.MONGO_CLOUD,
-      expect.objectContaining({ autoIndex: false }),
-    );
-    expect(mongoose.connection.readyState).toBe(mongoose.ConnectionStates.disconnected);
-  });
-
-  test('a command that fails exits 1 and still disconnects', async () => {
-    useDatabase();
-    vi.spyOn(mongoose.mongo.Collection.prototype, 'find').mockImplementation(() => {
-      throw new Error('simulated database failure');
-    });
-
-    expect(await main(['migrate', 'status'])).toBe(1);
-
-    expect(mongoose.connection.readyState).toBe(mongoose.ConnectionStates.disconnected);
-  });
-
-  test('seed exits 1 until T4.4 wires the first-admin seed', async () => {
-    useDatabase();
-
-    expect(await main(['seed'])).toBe(1);
-  });
-
-  test('an invalid environment rejects with the ConfigError, before connecting', async () => {
-    const connect = vi.spyOn(mongoose, 'connect');
-
-    await expect(main(['migrate', 'status'])).rejects.toThrow(/→ at MONGO_CLOUD/);
-    expect(connect).not.toHaveBeenCalled();
   });
 });

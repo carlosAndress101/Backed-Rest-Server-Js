@@ -716,8 +716,17 @@ Expected results: checks 1–3 must be empty before the run (otherwise fix the d
 ### 7.3 Run, then verify
 
 ```bash
-pnpm migrate up          # M001 -> M002 -> M003 -> M004, in order
+pnpm build                  # migrate and seed run the compiled CLI: node dist/cli.js (P19)
+pnpm migrate status         # the ledger: which of M001-M004 are applied, which are pending
+pnpm migrate up --dry-run   # the plan; writes nothing
+pnpm migrate up             # M001 -> M002 -> M003 -> M004, in order
+pnpm migrate status         # all four applied
+pnpm seed                   # with SEED_ADMIN_EMAIL / SEED_ADMIN_PASSWORD set; unset them afterwards
 ```
+
+Exit codes (T4.4):
+- `migrate`: 0 on success, 1 when a data check aborts or a step fails, 2 for a usage error. An aborted migration is not recorded: fix the data it names (by id), then run `pnpm migrate up` again. The migrations already applied are skipped.
+- `seed`: 0 once the instance has an active admin (created now, or already there); 1 when none could be created (not configured, a password under 8 characters, or the email belongs to an existing user, who is left untouched).
 
 Verify (all must pass before declaring success):
 - `db.users.getIndexes()` shows `email_1` unique (plain, non-collated); `db.categories.getIndexes()` / `db.products.getIndexes()` show `name_active_unique` partial collated plus the supporting indexes.
