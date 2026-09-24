@@ -1,6 +1,6 @@
 const { response } = require("express");
 const { User, Category, Product } = require("../models/index");
-const { isValidObjectId } = require("mongoose");
+const { isObjectIdOrHexString } = require("mongoose");
 
 
 const permittedCollections = [
@@ -16,7 +16,7 @@ const escapeRegex = ( term = '' ) => term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 
 //searching users
 const SearchUser = async ( term = '', res = response ) => {
-    const isMongoID = isValidObjectId( term ); //true
+    const isMongoID = isObjectIdOrHexString( term ); //true
 
     if( isMongoID ){
         const user = await User.findById( term );
@@ -38,7 +38,7 @@ const SearchUser = async ( term = '', res = response ) => {
 
 //searching categories
 const SearchCategory = async ( term = '', res = response ) => {
-    const isMongoID = isValidObjectId( term ); //true
+    const isMongoID = isObjectIdOrHexString( term ); //true
 
     if( isMongoID ){
         const category = await Category.findById( term );
@@ -60,7 +60,7 @@ const SearchCategory = async ( term = '', res = response ) => {
 
 //searching products
 const SearchProduct = async ( term = '', res = response ) => {
-    const isMongoID = isValidObjectId( term ); //true
+    const isMongoID = isObjectIdOrHexString( term ); //true
 
     if( isMongoID ){
         const product = await Product.findById( term ).populate('category','name');
