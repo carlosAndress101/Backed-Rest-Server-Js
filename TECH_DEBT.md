@@ -16,10 +16,10 @@
 | Severity | Count | Target milestone(s) |
 |---|---|---|
 | Critical | 5 | M1 |
-| High | 17 | M1 (12), M2–M3 (5) |
+| High | 18 | M1 (12), M2–M3 (6) |
 | Medium | 17 | M1 (partial) → M8 |
 | Low | 5 | M1, M3, M5, M8 |
-| **Total** | **44** | |
+| **Total** | **45** | |
 
 ---
 
@@ -41,14 +41,15 @@
 | SEC-06 | Security | No brute-force protection on `/api/auth/login` or `/api/auth/google`, and no rate limiting anywhere. | `routes/auth.js` | M1 → M5 | open |
 | SEC-07 | Security | User enumeration: login returns distinct messages for unknown email, disabled account, and wrong password, and returns early (timing). | `controllers/auth.js:13-32` | M1 | open |
 | SEC-08 | Security | Upload hardening: no size limits; multipart parsed on **every** route to `/tmp`; temp files never removed after the Cloudinary upload; extension check is filename-based and case-sensitive; no MIME sniffing. | `models/server.js:57-61`, `helpers/upload-file.js:9-14`, `controllers/uploads.js:143-145` | M1 (limits, cleanup) → M3 (MIME) | open |
-| SEC-09 | Security / Supply chain | Vulnerable dependencies: `cloudinary` <2.7.0 (high, argument injection), `tar` ≤7.5.20 via `bcrypt` → `@mapbox/node-pre-gyp` (critical, install-time), `uuid` <11.1.1 (moderate). | `package.json` | M1 | open |
+| SEC-09 | Security / Supply chain | Vulnerable dependencies. The **committed lockfile** carried **48 advisories (2 critical, 25 high, 13 moderate, 8 low)**, measured with pnpm 8 by T1.1. They include `mongoose` <7.8.4 search injection (critical, GHSA-vg7j-7cwx-8wgw), `mongoose` `$nor` sanitizeFilter bypass (high), `tar` via `bcrypt` → `@mapbox/node-pre-gyp` (critical, install-time), `cloudinary` <2.7.0 argument injection (high), `jws`, `body-parser`, `path-to-regexp`, `validator`, `lodash` (high), and `uuid` (moderate). | `package.json`, `pnpm-lock.yaml` | M1 | fixed (M1/T1.1: 48 → 0 advisories) |
 | SEC-10 | Security | No HTTP hardening: no `helmet`, CORS open to all origins, `x-powered-by` exposed. | `models/server.js:47` | M1 (helmet) → M2 (CORS allowlist) | open |
 | REL-02 | Reliability | No centralised error handling. There is no error middleware and no 404 handler. Five different error shapes. Raw Mongoose error objects are returned to clients. A failed `POST /api/user` returns **200 with an empty body** (`res.json(error.output)` where `output` is undefined). | all controllers; `controllers/usuarios.js:35-37` | M1 (middleware) → M2 (AppError) | open |
 | REL-03 | Reliability | Boot sequence: the DB connection is fired from the constructor and never awaited, so the server accepts traffic before the DB is ready. A connection failure is an unhandled rejection with no diagnostics. No startup log, no graceful shutdown. | `models/server.js:30,39-41,79-82`, `database/config.js` | M1 (await + fail fast) → M9 (shutdown) | open |
-| OPS-01 | Build | `pnpm-lock.yaml` is lockfile v6 and the installed pnpm 12 refuses to read it (`ERR_PNPM_BROKEN_LOCKFILE`). The package manager version isn't pinned, so installs aren't reproducible. | `pnpm-lock.yaml`, `package.json` | M1 | open |
-| OPS-02 | Build | `google-auth-library` is a **devDependency** but is required at runtime. A production install (dev deps omitted) crashes on boot. | `package.json:35`, `helpers/google-verify.js:1` | M1 | open |
+| OPS-01 | Build | `pnpm-lock.yaml` is lockfile v6 and the installed pnpm 12 refuses to read it (`ERR_PNPM_BROKEN_LOCKFILE`). The package manager version isn't pinned, so installs aren't reproducible. | `pnpm-lock.yaml`, `package.json` | M1 | fixed (M1/T1.1, e09da3f) |
+| OPS-02 | Build | `google-auth-library` is a **devDependency** but is required at runtime. A production install (dev deps omitted) crashes on boot. | `package.json:35`, `helpers/google-verify.js:1` | M1 | fixed (M1/T1.1, 54e2515) |
 | TEST-01 | Testing | The test suite is non-functional: a `tobe` typo; it passes the `Server` instance instead of the Express app to supertest; the constructor connects to the real DB; a fixed port is bound in `beforeEach`; it queries an invalid ObjectId; it tests a route that doesn't exist (`GET /api/user/:id`); the other file is a placeholder. Effective coverage ≈ 0%. | `e2e/*.js` | M1 (regression suite) → M7 | open |
 | ARC-01 | Architecture | No service layer. Fat controllers mix HTTP, business rules, persistence, and third-party calls (Cloudinary). | `controllers/*` | M3 | open |
+| ARC-03 | Architecture | **Circular require** `models/index` → `models/server` → `routes/*` → `controllers/uploads` / `helpers/index` → `helpers/db-validators` → `models/index`. It only works when entered via `models/server`. Entering via `models` first leaves the validators holding `undefined` models (`TypeError` in `esRoleValido`), and entering via `controllers/uploads` crashes on load. Found by T1.1. | `models/index.js:7`, `helpers/db-validators.js:1` | M2 (composition root; `Server` leaves `models/`) | open |
 | ARC-02 | Architecture | Layer-by-type layout. `Server` lives in `models/` and is exported as a model. App construction is coupled to DB connection and `listen`, which blocks integration testing. | `models/server.js`, `models/index.js` | M2 | open |
 | FUNC-01 | Functional | `GET /api/uploads/:collection/:id` always returns the placeholder for Cloudinary-hosted images, because it path-joins a URL. Two storage strategies conflict. | `controllers/uploads.js:97-107` | M3 (ADR-008) | open |
 | DB-01 | Database / Onboarding | Creating a user requires a matching `Role` document, but no seed exists. On a fresh DB, sign-up always fails. | `helpers/db-validators.js:3-9` | M1 (sign-up no longer takes role) → M4 (ADR-007) | open |
@@ -81,7 +82,7 @@
 
 | ID | Category | Issue | Location | Fix in | Status |
 |---|---|---|---|---|---|
-| CQ-03 | Hygiene | Package metadata: name `07-restserver`, `main: index.js` (file doesn't exist), `repository` points to a different repo, no LICENSE file although MIT is declared. | `package.json` | M1 | open |
+| CQ-03 | Hygiene | Package metadata: name `07-restserver`, `main: index.js` (file doesn't exist), `repository` points to a different repo, no LICENSE file although MIT is declared. | `package.json` | M1 | fixed (M1/T1.1, cddadd0) |
 | CQ-04 | Hygiene | `cloudinary.config(process.env.CLOUDINARY_URL)` is a no-op getter call. `uploader.destroy` isn't awaited, so failures are silent. | `controllers/uploads.js:4,140` | M1 | open |
 | CQ-05 | Hygiene | `deleteUser` returns the pre-update document and echoes the authenticated user object. | `controllers/usuarios.js:66-79` | M3 | open |
 | CQ-06 | Hygiene | `googleSignin` error message typos; `Google` errors swallowed without a log. | `controllers/auth.js:68,82` | M5 | open |

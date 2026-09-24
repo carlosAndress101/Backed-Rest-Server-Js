@@ -8,7 +8,7 @@ Complexity scale: **S** (≤1 agent-day) · **M** (2–3) · **L** (4–6) · **
 | # | Milestone | Complexity | Depends on | Status |
 |---|---|---|---|---|
 | M0 | Audit & Baseline | S | — | ✅ Accepted 2026-09-23 |
-| M1 | Stabilization & Security Hotfix | M | M0 | 🔄 In progress: T1.1 dispatched ([briefs](docs/tasks/M1-stabilization.md)) |
+| M1 | Stabilization & Security Hotfix | M | M0 | 🔄 In progress: T1.1 ✅ accepted; T1.2–T1.4 running ([briefs](docs/tasks/M1-stabilization.md)) |
 | M2 | Foundation: tooling, TypeScript, config, logging, errors, Express 5 | L | M1, ADR-002 | Planned |
 | M3 | Feature-First Refactor + Validation/DTOs | L | M2 | Planned |
 | M4 | Database Improvements | M | M3 | Planned |
