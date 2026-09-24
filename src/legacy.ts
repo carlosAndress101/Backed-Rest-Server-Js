@@ -7,7 +7,6 @@ const LEGACY_ROUTES: ReadonlyArray<readonly [string, string]> = [
   ['/api/auth', '../routes/auth'],
   ['/api/product', '../routes/products'],
   ['/api/search', '../routes/search'],
-  ['/api/uploads', '../routes/uploads'],
 ];
 
 // Express 5 leaves req.body undefined when no parser ran; legacy handlers were written against Express 4's `{}`.

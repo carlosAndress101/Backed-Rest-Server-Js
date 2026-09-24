@@ -5,15 +5,15 @@ import type { Server } from 'node:http';
 import os from 'node:os';
 import path from 'node:path';
 
-import { v2 as cloudinary } from 'cloudinary';
 import mongoose from 'mongoose';
 import request from 'supertest';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test, vi } from 'vitest';
 
 import { clearLogs, loggedText, startTestApp, stopTestApp } from '../../helpers/app';
+import { stubMediaClient } from '../../helpers/uploads';
 import { PASSWORD, createUser, logRecords, signIn, type SignedIn } from './support';
 
-const PNG = Buffer.from('not really a png: the upload routes check only the extension');
+const PNG = Buffer.from('89504e470d0a1a0a0000000d49484452', 'hex'); // the media module sniffs the magic bytes
 const NEW_ASSET = 'https://res.cloudinary.com/demo/image/upload/v1/new-asset.png';
 const OLD_ASSET = 'https://res.cloudinary.com/demo/image/upload/v1/old-asset.png';
 
@@ -86,8 +86,9 @@ describe('LOG-01: legacy code logs through req.log, never the console', () => {
   });
 
   test('an orphaned Cloudinary asset is logged at error with its URL (C11)', async () => {
-    vi.spyOn(cloudinary.uploader, 'upload').mockResolvedValue({ secure_url: NEW_ASSET } as never);
-    vi.spyOn(mongoose.model('User').prototype, 'save').mockRejectedValueOnce(
+    stubMediaClient(NEW_ASSET);
+    // the save is one atomic find-active-and-update (T3.7), so that is where the database fails
+    vi.spyOn(mongoose.model('User'), 'findOneAndUpdate').mockRejectedValueOnce(
       new Error('simulated save failure'),
     );
 
@@ -108,13 +109,12 @@ describe('LOG-01: legacy code logs through req.log, never the console', () => {
 
   test('a previous asset that cannot be destroyed is logged at warn and the update still succeeds', async () => {
     await mongoose.model('User').updateOne({ _id: admin.id }, { image: OLD_ASSET });
-    vi.spyOn(cloudinary.uploader, 'upload').mockResolvedValue({ secure_url: NEW_ASSET } as never);
-    vi.spyOn(cloudinary.uploader, 'destroy').mockRejectedValue(new Error('simulated destroy failure'));
+    stubMediaClient(NEW_ASSET).destroy.mockRejectedValue(new Error('simulated destroy failure'));
 
     const res = await replaceImage('destroy');
 
     expect(res.status).toBe(200);
-    expect(res.body).toMatchObject({ image: NEW_ASSET });
+    expect(res.body.data).toMatchObject({ image: NEW_ASSET });
     expect(recordsOf('destroy')).toContainEqual(
       expect.objectContaining({
         level: 40,
@@ -132,9 +132,8 @@ describe('LOG-01: legacy code logs through req.log, never the console', () => {
         realRm(target, options, () => done(new Error('simulated cleanup failure'))),
     );
 
-    // the Cloudinary route: it never writes under uploads/, which the security suite owns (TEST-03)
-    vi.spyOn(cloudinary.uploader, 'upload').mockResolvedValue({ secure_url: NEW_ASSET } as never);
-    vi.spyOn(cloudinary.uploader, 'destroy').mockResolvedValue({ result: 'ok' });
+    // the stubbed Cloudinary client: nothing is written outside the request's temp folder (TEST-03)
+    stubMediaClient(NEW_ASSET);
 
     const res = await replaceImage('cleanup');
 

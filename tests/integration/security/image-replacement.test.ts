@@ -6,7 +6,8 @@ import { afterAll, beforeAll, beforeEach, describe, expect, test, vi } from 'vit
 import { clearDatabase, clearLogs, loggedText, startTestApp, stopTestApp } from '../../helpers/app';
 import { expectStatus } from '../../helpers/assert';
 import { authHeader, createAdmin, createProduct, createUser, tokenFor } from '../../helpers/factories';
-import { legacyModels, stubCloudinary } from '../../helpers/legacy';
+import { legacyModels } from '../../helpers/legacy';
+import { stubMediaClient } from '../../helpers/uploads';
 
 const { User, Product } = legacyModels();
 
@@ -19,8 +20,8 @@ const replaceImage = (app: Server, url: string, token: string) =>
 
 describe('REL-04 / C11 an image is replaced as upload, save, then destroy', () => {
   let app: Server;
-  let upload: ReturnType<typeof stubCloudinary>['upload'];
-  let destroy: ReturnType<typeof stubCloudinary>['destroy'];
+  let upload: ReturnType<typeof stubMediaClient>['upload'];
+  let destroy: ReturnType<typeof stubMediaClient>['destroy'];
 
   beforeAll(async () => {
     app = await startTestApp({ LOG_LEVEL: 'warn' });
@@ -32,9 +33,7 @@ describe('REL-04 / C11 an image is replaced as upload, save, then destroy', () =
 
   beforeEach(async () => {
     await clearDatabase();
-    ({ upload, destroy } = stubCloudinary());
-    upload.mockResolvedValue({ secure_url: NEW_URL });
-    destroy.mockResolvedValue({ result: 'ok' });
+    ({ upload, destroy } = stubMediaClient(NEW_URL));
     // The failure paths below log on purpose (C1 and the orphan notice).
     clearLogs();
   });
@@ -44,7 +43,6 @@ describe('REL-04 / C11 an image is replaced as upload, save, then destroy', () =
     let imageWhenDestroyed: unknown;
     destroy.mockImplementation(async () => {
       imageWhenDestroyed = (await User.findById(owner.id)).image;
-      return { result: 'ok' };
     });
 
     const res = await replaceImage(app, `/api/uploads/user/${owner.id}`, await tokenFor(owner));
@@ -97,7 +95,8 @@ describe('REL-04 / C11 an image is replaced as upload, save, then destroy', () =
   test('when the save fails the old asset is kept and the orphaned upload is logged', async () => {
     const owner = await createUser({ image: OLD_URL });
     const token = await tokenFor(owner);
-    vi.spyOn(User.prototype, 'save').mockRejectedValueOnce(new Error('database is down'));
+    // the save is one atomic find-active-and-update (T3.7), so that is where the database fails
+    vi.spyOn(User, 'findOneAndUpdate').mockRejectedValueOnce(new Error('database is down'));
 
     const res = await replaceImage(app, `/api/uploads/user/${owner.id}`, token);
 
@@ -107,6 +106,16 @@ describe('REL-04 / C11 an image is replaced as upload, save, then destroy', () =
     expect(destroy).not.toHaveBeenCalled();
     expect((await User.findById(owner.id)).image).toBe(OLD_URL);
     expect(loggedText()).toContain(NEW_URL);
+  });
+
+  test('an old image that is not an asset of the own cloud is never destroyed', async () => {
+    const owner = await createUser({ image: 'https://lh3.googleusercontent.com/a/ACg8ocJ-avatar=s96-c' });
+
+    const res = await replaceImage(app, `/api/uploads/user/${owner.id}`, await tokenFor(owner));
+
+    expectStatus(res, 200);
+    expect(destroy).not.toHaveBeenCalled();
+    expect((await User.findById(owner.id)).image).toBe(NEW_URL);
   });
 
   test('a failed destroy of the old asset does not fail the replacement', async () => {

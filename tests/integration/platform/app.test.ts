@@ -2,17 +2,17 @@ import type { Server } from 'node:http';
 import os from 'node:os';
 import path from 'node:path';
 
-import { v2 as cloudinary } from 'cloudinary';
 import mongoose from 'mongoose';
 import request from 'supertest';
 import { afterAll, beforeAll, beforeEach, describe, expect, test, vi } from 'vitest';
 
 import { clearLogs, loggedText, startTestApp, stopTestApp } from '../../helpers/app';
+import { stubMediaClient } from '../../helpers/uploads';
 import { logRecords, requestSeenByApp, signIn, type SignedIn } from './support';
 
 const UUID_V4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 const NEW_ASSET = 'https://res.cloudinary.com/demo/image/upload/v1/platform-asset.png';
-const PNG = Buffer.from('not really a png: the upload route checks only the extension');
+const PNG = Buffer.from('89504e470d0a1a0a0000000d49484452', 'hex'); // the media module sniffs the magic bytes
 
 describe('createApp', () => {
   let server: Server;
@@ -269,45 +269,36 @@ describe('createApp', () => {
       expect(res.body).toMatchObject({ uid: user.id, name: 'Platform User' });
       expect(req.body).toEqual({});
     });
+  });
 
-    // PUT /api/uploads/:collection/:id sends the file to Cloudinary (stubbed) and never writes under uploads/,
-    // which tests/integration/security/uploads.test.ts owns and resets while other files run (TEST-03).
-    describe('PUT /api/uploads/user/:id (C10 router-level parser)', () => {
-      let upload: ReturnType<typeof vi.spyOn>;
+  // The media module (T3.7) runs the multipart parser itself, after auth. Its Cloudinary client is stubbed, so
+  // nothing is written outside the request's own temp folder (TEST-03).
+  describe('PUT /api/uploads/user/:id (C10 route-level parser)', () => {
+    let upload: ReturnType<typeof stubMediaClient>['upload'];
 
-      beforeEach(() => {
-        upload = vi
-          .spyOn(cloudinary.uploader, 'upload')
-          .mockResolvedValue({ secure_url: NEW_ASSET } as never);
-        vi.spyOn(cloudinary.uploader, 'destroy').mockResolvedValue({ result: 'ok' });
-      });
+    beforeEach(() => {
+      ({ upload } = stubMediaClient(NEW_ASSET));
+    });
 
-      const replaceImage = () =>
-        request(server).put(`/api/uploads/user/${user.id}`).set('x-token', user.token);
+    const replaceImage = () => request(server).put(`/api/uploads/user/${user.id}`).set('x-token', user.token);
 
-      test('a file-only upload reaches the controller with req.body = {} (a plain object)', async () => {
-        const { req, res } = await requestSeenByApp(server, () =>
-          replaceImage().attach('file', PNG, 'avatar.png'),
-        );
+    test('a file-only upload reaches the media controller from its per-request temp folder', async () => {
+      const res = await replaceImage().attach('file', PNG, 'avatar.png');
 
-        expect(res.status).toBe(200);
-        expect(res.body).toMatchObject({ uid: user.id, image: NEW_ASSET });
-        expect(upload).toHaveBeenCalledWith(expect.stringContaining(path.join(os.tmpdir(), 'upload-')));
-        expect(req.body).toEqual({});
-        expect(Object.getPrototypeOf(req.body)).toBe(Object.prototype);
-      });
+      expect(res.status).toBe(200);
+      expect(res.body.data).toMatchObject({ uid: user.id, image: NEW_ASSET });
+      expect(upload).toHaveBeenCalledWith(expect.stringContaining(path.join(os.tmpdir(), 'upload-')));
+    });
 
-      test('the fields of a file + fields upload land on a plain object', async () => {
-        const { req, res } = await requestSeenByApp(server, () =>
-          replaceImage().field('note', 'hello').attach('file', PNG, 'avatar.png'),
-        );
+    test('the fields of a file + fields upload never reach the record', async () => {
+      const res = await replaceImage()
+        .field('name', 'Renamed Through Multipart')
+        .field('image', 'https://evil.example/x.png')
+        .attach('file', PNG, 'avatar.png');
 
-        expect(res.status).toBe(200);
-        expect(res.body).toMatchObject({ uid: user.id, image: NEW_ASSET });
-        expect(upload).toHaveBeenCalledWith(expect.stringContaining(path.join(os.tmpdir(), 'upload-')));
-        expect(req.body).toEqual({ note: 'hello' });
-        expect(Object.getPrototypeOf(req.body)).toBe(Object.prototype);
-      });
+      expect(res.status).toBe(200);
+      expect(res.body.data).toMatchObject({ uid: user.id, name: 'Platform User', image: NEW_ASSET });
+      expect(upload).toHaveBeenCalledWith(expect.stringContaining(path.join(os.tmpdir(), 'upload-')));
     });
   });
 });

@@ -14,6 +14,7 @@ import { errorHandler } from './middlewares/error-handler';
 import { notFound } from './middlewares/not-found';
 import { requestLogger } from './middlewares/request-logger';
 import { CategoryModel, categoriesModule } from './modules/categories';
+import { mediaModule } from './modules/media';
 
 export interface AppDeps {
   config: Config;
@@ -64,6 +65,14 @@ export function createApp({ config, logger }: AppDeps): Express {
   const auth = authenticate({ tokens, users });
 
   app.use('/api/category', categoriesModule({ authenticate: auth, requireAdmin }));
+  app.use(
+    '/api/uploads',
+    mediaModule({
+      models: (name) => CategoryModel.db.model(name),
+      authenticate: auth,
+      cloudinaryUrl: config.media.cloudinaryUrl,
+    }),
+  );
   mountLegacyRoutes(app); // the routes no module owns yet
 
   app.use(notFound);
