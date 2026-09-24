@@ -8,6 +8,31 @@ Client-visible contract changes are always listed under **Breaking** and mirrore
 
 The 3.0 line accumulates on the `next` branch: M3–M6 ship together as **3.0.0** (ADR-024, ADR-026). `master` stays on 2.x for hotfixes.
 
+### M4: Database (on `next`)
+
+#### Added
+- `createdAt` and `updatedAt` on every resource.
+- Database migrations: `pnpm migrate up|down|status [--dry-run]`, an in-repo runner with a `migrations` ledger (M001–M004). Every migration aborts on its data check before writing.
+- `pnpm seed`: a create-only, idempotent first-admin bootstrap from `SEED_ADMIN_EMAIL` and `SEED_ADMIN_PASSWORD`.
+- A hidden `tokenVersion` on users, in preparation for M5.
+
+#### Changed
+- Email is trimmed and lowercased, and matched **case-insensitively** at sign-up, login and Google sign-in. A case-variant duplicate sign-up is 409 `Email already registered`; look-alike characters are rejected with 422.
+- Length limits: user `name` ≤ 120, `email` ≤ 254, category and product `name` ≤ 120, product `description` ≤ 2000. `price` must be ≥ 0. Anything outside these is 422.
+- A name that only a soft-deleted category or product holds can be reused (**201**; 3.0-line M3 answered 409). An active duplicate is still 409, whatever its case.
+
+#### Security
+- The password hash is never selected unless a read asks for it (`select: false`). Login keeps one constant-time bcrypt check per attempt.
+- Validation error messages never contain the rejected value, and rejected values and the seed secret are redacted from logs.
+
+#### Removed (data)
+- The 2.x `roles` collection (M004). Roles are a code enum (ADR-007).
+
+#### Operational
+- **Run `pnpm build && pnpm migrate up` to completion before the new code serves traffic.** Until M001 has normalized existing emails, a case-variant sign-up can create a second account and lock the original one out (M4 design §7.1 step 0).
+- `autoIndex` is off in production: the migrations build every index.
+- Back up before migrating: M001's `down` cannot restore the original email casing.
+
 ### M3: Feature modules and DTOs (on `next`)
 
 #### Breaking

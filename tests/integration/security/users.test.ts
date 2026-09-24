@@ -97,7 +97,8 @@ describe('user write policy and access control', () => {
       const after = await reload(User, victim.id);
       expect(after.name).toBe('Victim');
       expect(after.role).toBe('USER_ROLE');
-      expect(bcrypt.compareSync('attacker-password', after.password)).toBe(false);
+      const { password } = await User.findById(victim.id, '+password').orFail(); // select: false (AM-M4-1)
+      expect(bcrypt.compareSync('attacker-password', password)).toBe(false);
     });
   });
 
@@ -122,7 +123,8 @@ describe('user write policy and access control', () => {
 
       const updated = await reload(User, owner.id);
       expect(updated.name).toBe('Renamed Owner');
-      expect(bcrypt.compareSync('brand-new-password', updated.password)).toBe(true);
+      const { password } = await User.findById(owner.id, '+password').orFail(); // select: false (AM-M4-1)
+      expect(bcrypt.compareSync('brand-new-password', password)).toBe(true);
       expect(updated.email).toBe('owner@example.com');
       expect(updated.role).toBe('USER_ROLE');
       expect(updated.state).toBe(true);

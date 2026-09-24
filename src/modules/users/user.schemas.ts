@@ -7,10 +7,23 @@ const objectId = z.string().regex(/^[0-9a-fA-F]{24}$/, 'must be a Mongo id');
 
 export const userIdParams = z.object({ id: objectId });
 
+// DB-02 (§10.3): the email is trimmed, checked, then lowercased, so the uniqueness pre-check matches the stored
+// value (the schema lowercases too). The format check comes before the lowercasing: a non-ASCII look-alike such
+// as the Kelvin sign (U+212A) is refused, never folded into an ASCII address. 254 mirrors the schema cap (AM-M4-5).
+const email = z
+  .string()
+  .trim()
+  .max(254)
+  .pipe(z.email())
+  .transform((value) => value.toLowerCase());
+
+// AM-M4-5: every schema cap has its DTO mirror, so oversize input is a 422, never the C1 400.
+const name = z.string().trim().min(1).max(120);
+
 // SEC-02: sign-up has no role field; anything else in the body is stripped.
 export const createUserBody = z.object({
-  name: z.string().trim().min(1),
-  email: z.email(),
+  name,
+  email,
   password: z.string().min(8),
 });
 
@@ -18,7 +31,7 @@ export const createUserBody = z.object({
 // against ROLES, only for an administrator (the service, C6); for anyone else they are dropped.
 export const updateUserBody = z
   .object({
-    name: z.string().trim().min(1).optional(),
+    name: name.optional(),
     password: z.string().min(8).optional(),
     role: z.string().optional(),
     state: z.boolean().optional(),

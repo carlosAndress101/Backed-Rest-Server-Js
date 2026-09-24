@@ -8,11 +8,12 @@ import type { TokenService } from '../../../src/core/security/jwt';
 import {
   createAuthService,
   type GoogleSignUp,
-  type SignInUser,
+  type SignInUserModel,
+  type SignInUserWithPassword,
 } from '../../../src/modules/auth/auth.service';
 import type { GoogleProfile, GoogleVerifier } from '../../../src/modules/auth/google.client';
 
-interface Row extends SignInUser {
+interface Row extends SignInUserWithPassword {
   _id: string;
   email?: string;
   name?: string;
@@ -27,13 +28,24 @@ const PROFILE: GoogleProfile = {
   picture: 'https://example.com/g.png',
 };
 
-/** A hand-written User model holding `rows`, with only the two methods the service calls. */
+/** A found user as Mongoose returns it under `select: false` (AM-M4-1): without the password. */
+const withoutPassword = (row: Row): Omit<Row, 'password'> => {
+  const found: Partial<Row> = { ...row };
+  delete found.password;
+  return found as Omit<Row, 'password'>;
+};
+
+/**
+ * A hand-written User model holding `rows`, with only the two methods the service calls. Like the real one, a found
+ * user carries its password only when the read's projection is '+password'.
+ */
 function fakeUserModel(seed: Row[] = []) {
   const rows = seed.map((stored) => ({ ...stored }));
   const User = {
-    findOne: vi.fn((filter: { email: string | undefined }) =>
-      Promise.resolve(rows.find((stored) => stored.email === filter.email) ?? null),
-    ),
+    findOne: vi.fn((filter: { email: string | undefined }, projection?: '+password') => {
+      const row = rows.find((stored) => stored.email === filter.email) ?? null;
+      return Promise.resolve(row && (projection === '+password' ? row : withoutPassword(row)));
+    }),
     create: vi.fn((doc: GoogleSignUp) => {
       const created: Row = { _id: `id-${rows.length + 1}`, state: true, ...doc };
       rows.push(created);
@@ -52,7 +64,13 @@ const build = (seed: Row[] = [], google = fakeGoogle()) => {
   const { rows, User } = fakeUserModel(seed);
   const sign = vi.fn<TokenService['sign']>((uid) => Promise.resolve(`token-for-${uid}`));
   const tokens: TokenService = { sign, verify: vi.fn() };
-  return { rows, User, sign, google, service: createAuthService({ User, tokens, google }) };
+  return {
+    rows,
+    User,
+    sign,
+    google,
+    service: createAuthService({ User: User as unknown as SignInUserModel, tokens, google }),
+  };
 };
 
 const rejectsWithInvalidCredentials = async (promise: Promise<unknown>) => {
@@ -79,7 +97,8 @@ describe('createAuthService', () => {
 
       const session = await service.login({ email: 'ada@example.com', password: PASSWORD });
 
-      expect(User.findOne).toHaveBeenCalledExactlyOnceWith({ email: 'ada@example.com' });
+      // AM-M4-1: the login's read is the one that asks for the select: false hash.
+      expect(User.findOne).toHaveBeenCalledExactlyOnceWith({ email: 'ada@example.com' }, '+password');
       expect(sign).toHaveBeenCalledExactlyOnceWith('1');
       expect(session).toEqual({
         token: 'token-for-1',
@@ -207,6 +226,22 @@ describe('createAuthService', () => {
       expect(session).toEqual({ token: 'token-for-id-1', user: rows[0] });
     });
 
+    // §10.5: the Google address is matched as sign-up and login store it. This fake matches emails exactly (no
+    // Mongoose casting), so only the service's own normalization can find the account.
+    test('an existing account is found whatever the case or padding of the Google address', async () => {
+      const google = fakeGoogle({ ...PROFILE, email: '  Grace@Example.COM ' });
+      const { service, User } = build(
+        [{ _id: '9', email: 'grace@example.com', password: ':D', state: true }],
+        google,
+      );
+
+      const session = await service.googleSignIn({ id_token: 'google-id-token' });
+
+      expect(User.findOne).toHaveBeenCalledExactlyOnceWith({ email: 'grace@example.com' });
+      expect(User.create).not.toHaveBeenCalled();
+      expect(session.token).toBe('token-for-9');
+    });
+
     test('an existing active account signs in without being created again or changed', async () => {
       const existing: Row = { _id: '7', email: PROFILE.email, name: 'Old Name', password: ':D', state: true };
       const { service, User } = build([existing]);
@@ -214,7 +249,11 @@ describe('createAuthService', () => {
       const session = await service.googleSignIn({ id_token: 'google-id-token' });
 
       expect(User.create).not.toHaveBeenCalled();
-      expect(session).toEqual({ token: 'token-for-7', user: existing });
+      // AM-M4-1: this read does not select the password, so the session's user never carries it.
+      expect(session).toEqual({
+        token: 'token-for-7',
+        user: { _id: '7', email: PROFILE.email, name: 'Old Name', state: true },
+      });
     });
 
     test('an inactive account is the generic 401, and no token is signed', async () => {

@@ -2,15 +2,36 @@ import mongoose, { Schema, type HydratedDocument, type InferSchemaType, type Mod
 
 import { toJsonPlugin } from '../../core/database/to-json.plugin';
 
-// The stored 2.x shape, field for field. M4 adds timestamps and indexes to this schema.
+// M4 §2.2: timestamps, the name cap and casing; indexes are explicit (§3.1).
+// LOG-02 (T4.2G F1): validator messages are fixed, never Mongoose's defaults, which embed the rejected value.
 const categorySchema = new Schema(
   {
-    name: { type: String, required: [true, 'The name is required'], unique: true },
+    name: {
+      type: String,
+      required: [true, 'The name is required'],
+      trim: true,
+      uppercase: true,
+      maxlength: [120, 'The name must be at most 120 characters'],
+    },
     state: { type: Boolean, required: true, default: true },
     user: { type: Schema.Types.ObjectId, ref: 'User', required: true },
   },
-  { versionKey: false },
+  { versionKey: false, timestamps: true },
 );
+
+// §3.1: partial unique so a soft-deleted name is reusable; collated so case variants collide (duplicate check only).
+categorySchema.index(
+  { name: 1 },
+  {
+    name: 'name_active_unique',
+    unique: true,
+    collation: { locale: 'en', strength: 2 },
+    partialFilterExpression: { state: true },
+  },
+);
+categorySchema.index({ state: 1 }, { name: 'state_1' });
+categorySchema.index({ user: 1 }, { name: 'user_1' });
+
 toJsonPlugin(categorySchema); // id; no _id/__v; no uid alias (a category never exposed uid)
 
 export type Category = InferSchemaType<typeof categorySchema>;

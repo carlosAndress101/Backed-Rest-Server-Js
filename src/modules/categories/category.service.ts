@@ -13,6 +13,9 @@ export interface CategoriesService {
   softDelete(id: string): Promise<void>;
 }
 
+// The collation of the name_active_unique index (§3.1): case variants are the same name.
+const NAME_COLLATION = { locale: 'en', strength: 2 };
+
 /** The categories rules and persistence (ADR-005: the model is injected). Throws AppErrors; knows nothing of HTTP. */
 export function createCategoriesService(deps: { Category: Model<Category> }): CategoriesService {
   const { Category } = deps;
@@ -37,9 +40,12 @@ export function createCategoriesService(deps: { Category: Model<Category> }): Ca
     getActive: activeOr404,
 
     async create(dto, userId) {
-      const name = dto.name.toUpperCase();
-      // The unique index on name is the race backstop: E11000 is also a 409 (C1).
-      if (await Category.exists({ name, state: true })) throw new ConflictError('Category already exists');
+      const name = dto.name.trim().toUpperCase(); // as the schema stores it
+      // §10.3: the pre-check compares as the unique index does, so a case variant gets this message. The index stays
+      // the race backstop: E11000 is also a 409 (C1).
+      if (await Category.exists({ name, state: true }).collation(NAME_COLLATION)) {
+        throw new ConflictError('Category already exists');
+      }
       return Category.create({ name, user: userId });
     },
 

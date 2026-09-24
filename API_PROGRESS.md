@@ -1,6 +1,6 @@
 # API Progress
 
-> Baseline: commit `2f18dce` · Updated 2026-09-24 (M3 closed on `next`: the 3.0 line, unreleased; `master` is 2.1.0 and still serves the 2.x contract)
+> Baseline: commit `2f18dce` · Updated 2026-09-24 (M3 and M4 closed on `next`: the 3.0 line, unreleased; `master` is 2.1.0 and still serves the 2.x contract)
 > Status legend: 🔴 blocking defect · 🟠 works with defects · 🟢 target met · ⚪ to remove · ✂️ removed
 > Debt IDs link to [TECH_DEBT.md](TECH_DEBT.md). Contract source of truth: [docs/design/M3-modules.md](docs/design/M3-modules.md) §6.
 
@@ -63,4 +63,9 @@ Every change clients can observe is listed here before it ships, and in CHANGELO
 | M3 | **Media:** `GET /api/uploads/:collection/:id` **302-redirects** to the record's Cloudinary asset of this app's own cloud, anything else is 404 (was an image file or a placeholder); uploads must be PNG, JPEG or GIF by content (400 otherwise); a malformed multipart body is **400**; a file over 5 MB is **413** with the JSON envelope; an admin-only `product` target and an owner-or-admin `user` target are checked before the body is read | #21, #22 |
 | M3 | **Error codes:** 429 is `RATE_LIMITED`; 413 is `PAYLOAD_TOO_LARGE` (JSON over 100 kb now says `Payload too large`) | #2, #3, #21, all JSON bodies |
 | M3 | **Search:** `{ data: [...] }` (was `{ results: [...] }`) | #19 |
+| M4 | **Additive:** every resource carries `createdAt` and `updatedAt` | all resource responses |
+| M4 | **Email** is stored and returned trimmed and lowercased, and matched case-insensitively at sign-up, login and Google sign-in; a case-variant duplicate is **409** `Email already registered` | #2, #3, #4–#6 |
+| M4 | **Limits:** user `name` ≤ 120, `email` ≤ 254, category/product `name` ≤ 120, product `description` ≤ 2000, `price` ≥ 0; anything else is **422** | #5, #6, #11, #12, #16, #17 |
+| M4 | **Reusable names:** a name that only a soft-deleted category or product holds can be used again: **201** (M3 answered 409). Active duplicates stay 409, whatever the case | #11, #16 |
+| M4 | **Operational:** `pnpm migrate up` must complete **before** the M4 code serves traffic (M4 design §7.1 step 0); `pnpm seed` bootstraps the first admin from `SEED_ADMIN_EMAIL`/`SEED_ADMIN_PASSWORD` | — |
 | M5 | `Authorization: Bearer <token>`; `x-token` deprecated (still accepted, `Deprecation` header) | all authenticated |

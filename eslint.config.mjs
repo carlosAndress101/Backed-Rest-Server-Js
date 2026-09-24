@@ -12,7 +12,8 @@ const FEATURE_MODULES = rule(
   'Cross-cutting code must not import feature modules (§2.3 rule 5).',
   '(^|/)modules(/|$)',
 );
-const COMPOSITION = rule('Only the entrypoint may import the composition root.', '(^|/)(app|server)$');
+// The composition roots (AM-M4-7): src/app.ts, and the entry points src/server.ts and src/cli.ts.
+const COMPOSITION = rule('Only the entrypoint may import the composition root.', '(^|/)(app|server|cli)$');
 const PERSISTENCE = rule(
   'Routes and controllers never touch persistence; call a service (§2.3 rules 1-2).',
   '^mongoose$|\\.model$',
