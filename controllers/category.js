@@ -3,7 +3,9 @@ const { Category } = require("../models");
 
 //category obtained
 const getCategory = async (req, res = response, next) => {
-  const { limit = 5, offset = 0 } = req.query;
+  // integers only, limit capped at 50 (limit 0 would mean "no limit" to Mongo)
+  const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 5, 1), 50);
+  const offset = Math.max(parseInt(req.query.offset, 10) || 0, 0);
   const query = { state: true };
 
   try {
