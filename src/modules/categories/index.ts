@@ -10,7 +10,6 @@ export { CategoryModel, type Category, type CategoryDocument } from './category.
 
 export interface CategoriesModuleDeps {
   authenticate: RequestHandler;
-  requireAdmin: RequestHandler;
 }
 
 /** P15: model → service → controller → router. src/app.ts mounts the result at /api/category. */
@@ -19,6 +18,5 @@ export function categoriesModule(deps: CategoriesModuleDeps): Router {
   return createCategoriesRouter({
     controller: createCategoriesController(service),
     authenticate: deps.authenticate,
-    requireAdmin: deps.requireAdmin,
   });
 }
