@@ -37,6 +37,16 @@ class Server {
 
         this.app.disable('x-powered-by');
 
+        // TRUST_PROXY: how many reverse proxies sit in front of the app, so req.ip (and the
+        // auth rate limiter) sees the client's address; unset keeps the socket address
+        const { TRUST_PROXY = '' } = process.env;
+        if( TRUST_PROXY !== '' ){
+            if( !/^\d+$/.test(TRUST_PROXY) ){
+                throw new Error(`TRUST_PROXY must be a non-negative integer hop count, got "${ TRUST_PROXY }"`);
+            }
+            this.app.set('trust proxy', Number(TRUST_PROXY));
+        }
+
         // security headers; the CSP and COOP keep the demo page's Google
         // sign-in and fonts working, CORP lets other origins embed images
         this.app.use( helmet({
