@@ -80,7 +80,7 @@ const putProduct = async (req, res = response, next) => {
 
     data.user = req.user._id;
 
-    const product = await Product.findByIdAndUpdate(id, data, {new: true});
+    const product = await Product.findByIdAndUpdate(id, data, { returnDocument: 'after' });
 
     res.json(product);
   } catch (error) {
@@ -92,7 +92,7 @@ const deleteProduct = async (req = request, res = response, next) => {
     const { id } = req.params;
     try {
 
-        const productDelete = await Product.findByIdAndUpdate(id, {state: false}, {new: true});
+        const productDelete = await Product.findByIdAndUpdate(id, {state: false}, { returnDocument: 'after' });
         res.status(201).json(productDelete);
 
     } catch (error) {
