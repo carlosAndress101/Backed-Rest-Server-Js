@@ -130,6 +130,8 @@ describe('products module (§6 #14–#18)', () => {
         price: 0,
         category: expect.anything(),
         available: true,
+        createdAt: expect.any(String),
+        updatedAt: expect.any(String),
       });
       expect(res.body.data.user).toMatchObject({ name: 'Admin User' });
       expect(res.body.data.category).toMatchObject({ name: 'HARDWARE' });
@@ -178,6 +180,8 @@ describe('products module (§6 #14–#18)', () => {
         price: 0,
         category: category.id,
         available: true,
+        createdAt: expect.any(String),
+        updatedAt: expect.any(String),
       });
       expectApiShape(res.body.data);
       expect(await ProductModel.findById(res.body.data.id).lean()).toMatchObject({
@@ -280,7 +284,7 @@ describe('products module (§6 #14–#18)', () => {
       expect(res.body).toEqual({ error: { code: 'CONFLICT', message: 'Product already exists' } });
     });
 
-    test('a name only a soft-deleted product has is still 409: the unique index spans every record', async () => {
+    test('a name only a soft-deleted product has can be reused: 201 (M4 partial unique index)', async () => {
       const category = await createCategory();
       await createProduct({ name: 'RETIRED', category: category.id, state: false });
 
@@ -289,8 +293,10 @@ describe('products module (§6 #14–#18)', () => {
         .set(authHeader(userToken))
         .send({ name: 'retired', category: category.id });
 
-      expect(res.status).toBe(409);
-      expect(res.body).toEqual({ error: { code: 'CONFLICT', message: 'Resource already exists' } });
+      expect(res.status).toBe(201);
+      const followUp = await request(app).get(`/api/product/${res.body.data.id}`);
+      expect(followUp.status).toBe(200);
+      expect(followUp.body.data).toMatchObject({ id: res.body.data.id, name: 'RETIRED', state: true });
     });
   });
 
