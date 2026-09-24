@@ -40,6 +40,8 @@ describe('ProductModel', () => {
       uppercase: true,
       maxlength: 120,
     });
+    // §2.0: no field-level unique; the partial unique index is declared explicitly in §3.1.
+    expect(schema.path('name').options.unique).toBeUndefined();
     expect(schema.path('state')).toMatchObject({ instance: 'Boolean', isRequired: true, defaultValue: true });
     expect(schema.path('user')).toMatchObject({ instance: 'ObjectId', isRequired: true });
     expect(schema.path('user').options).toMatchObject({ ref: 'User' });
@@ -59,6 +61,31 @@ describe('ProductModel', () => {
     expect(schema.path('image').options.validate).toBeUndefined(); // AM-M4-4: no pattern validator
     expect(schema.get('versionKey')).toBe(false);
     expect(schema.get('timestamps')).toBe(true);
+  });
+
+  test('declares exactly the §3.1 indexes on the schema', () => {
+    const declared = ProductModel.schema.indexes().map(([fields, options]) => ({
+      fields,
+      name: options.name,
+      unique: options.unique ?? false,
+      ...(options.collation ? { collation: options.collation } : {}),
+      ...(options.partialFilterExpression
+        ? { partialFilterExpression: options.partialFilterExpression }
+        : {}),
+    }));
+
+    expect(declared).toEqual([
+      {
+        fields: { name: 1 },
+        name: 'name_active_unique',
+        unique: true,
+        collation: { locale: 'en', strength: 2 },
+        partialFilterExpression: { state: true },
+      },
+      { fields: { state: 1 }, name: 'state_1', unique: false },
+      { fields: { category: 1 }, name: 'category_1', unique: false },
+      { fields: { user: 1 }, name: 'user_1', unique: false },
+    ]);
   });
 
   test('serializes with id and without _id or uid, uppercasing the name (P13)', () => {

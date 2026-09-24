@@ -14,7 +14,6 @@ const userSchema = new Schema(
       lowercase: true,
       maxlength: 254,
       match: /^[^\s@]+@[^\s@]+\.[^\s@]+$/,
-      unique: true,
     },
     // LOG-02 (AM-M3-2): no message on this path may carry the value. A cast failure would otherwise put a non-string
     // password into err.message and err.stack, which REDACT_PATHS does not cover.
@@ -33,6 +32,10 @@ const userSchema = new Schema(
   },
   { versionKey: false, timestamps: true },
 );
+
+// §3.1: the plain unique email index is effectively case-insensitive because the field lowercases.
+userSchema.index({ email: 1 }, { name: 'email_1', unique: true });
+userSchema.index({ state: 1 }, { name: 'state_1' });
 
 toJsonPlugin(userSchema, { hidden: ['password', 'tokenVersion'], uidAlias: true }); // id + the deprecated uid (4.0.0)
 

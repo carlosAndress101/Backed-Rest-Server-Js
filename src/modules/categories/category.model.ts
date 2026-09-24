@@ -11,7 +11,6 @@ const categorySchema = new Schema(
       trim: true,
       uppercase: true,
       maxlength: 120,
-      unique: true,
     },
     state: { type: Boolean, required: true, default: true },
     user: { type: Schema.Types.ObjectId, ref: 'User', required: true },
@@ -20,6 +19,18 @@ const categorySchema = new Schema(
 );
 
 // §3.1: partial unique so a soft-deleted name is reusable; collated so case variants collide (duplicate check only).
+categorySchema.index(
+  { name: 1 },
+  {
+    name: 'name_active_unique',
+    unique: true,
+    collation: { locale: 'en', strength: 2 },
+    partialFilterExpression: { state: true },
+  },
+);
+categorySchema.index({ state: 1 }, { name: 'state_1' });
+categorySchema.index({ user: 1 }, { name: 'user_1' });
+
 toJsonPlugin(categorySchema); // id; no _id/__v; no uid alias (a category never exposed uid)
 
 export type Category = InferSchemaType<typeof categorySchema>;

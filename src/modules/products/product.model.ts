@@ -11,7 +11,6 @@ const productSchema = new Schema(
       trim: true,
       uppercase: true,
       maxlength: 120,
-      unique: true,
     },
     state: { type: Boolean, required: true, default: true },
     user: { type: Schema.Types.ObjectId, ref: 'User', required: true },
@@ -26,6 +25,19 @@ const productSchema = new Schema(
 );
 
 // §3.1: partial unique so a soft-deleted name is reusable; collated so case variants collide (duplicate check only).
+productSchema.index(
+  { name: 1 },
+  {
+    name: 'name_active_unique',
+    unique: true,
+    collation: { locale: 'en', strength: 2 },
+    partialFilterExpression: { state: true },
+  },
+);
+productSchema.index({ state: 1 }, { name: 'state_1' });
+productSchema.index({ category: 1 }, { name: 'category_1' });
+productSchema.index({ user: 1 }, { name: 'user_1' });
+
 toJsonPlugin(productSchema); // id; no _id/__v; no uid alias (a product never exposed uid)
 
 export type Product = InferSchemaType<typeof productSchema>;

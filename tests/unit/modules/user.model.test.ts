@@ -49,6 +49,8 @@ describe('UserModel', () => {
       maxlength: 254,
       match: expect.any(RegExp),
     });
+    // §2.0: no field-level unique; the unique email index is declared explicitly in §3.1.
+    expect(schema.path('email').options.unique).toBeUndefined();
     expect(schema.path('password').options).toMatchObject({
       type: String,
       required: [true, 'The password is required'],
@@ -70,6 +72,19 @@ describe('UserModel', () => {
     });
     expect(schema.get('versionKey')).toBe(false);
     expect(schema.get('timestamps')).toBe(true);
+  });
+
+  test('declares exactly the §3.1 indexes on the schema', () => {
+    const declared = UserModel.schema.indexes().map(([fields, options]) => ({
+      fields,
+      name: options.name,
+      unique: options.unique ?? false,
+    }));
+
+    expect(declared).toEqual([
+      { fields: { email: 1 }, name: 'email_1', unique: true },
+      { fields: { state: 1 }, name: 'state_1', unique: false },
+    ]);
   });
 
   test('serializes with id and the uid alias first, hides password and tokenVersion, and keeps the timestamps', () => {
