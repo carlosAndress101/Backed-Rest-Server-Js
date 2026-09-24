@@ -1,76 +1,63 @@
-import fs from 'node:fs';
 import type { Server } from 'node:http';
-import path from 'node:path';
 
 import request, { type Test } from 'supertest';
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'vitest';
 
+import type { ProductDocument } from '../../../src/modules/products';
+import { UserModel as User } from '../../../src/modules/users';
 import { clearDatabase, startTestApp, stopTestApp } from '../../helpers/app';
 import { expectStatus } from '../../helpers/assert';
 import { authHeader, createAdmin, createProduct, createUser, tokenFor } from '../../helpers/factories';
-import { legacyModels, stubCloudinary, type LegacyDoc } from '../../helpers/legacy';
-import { listTempFiles, resetUploadDirs, waitForNoTempLeak } from '../../helpers/uploads';
-
-const { User } = legacyModels();
+import { listTempFiles, stubMediaClient, waitForNoTempLeak } from '../../helpers/uploads';
 
 const JPEG = Buffer.from('ffd8ffe000104a46494600010100000100010000ffd9', 'hex');
 const SECURE_URL = 'https://res.cloudinary.com/demo/image/upload/v1/uploaded.png';
 
-const UPLOADS_DIR = path.join(__dirname, '..', '..', '..', 'uploads');
-
 const attach = (test: Test, filename = 'photo.jpg') => test.attach('file', JPEG, filename);
-
-const writeUpload = (folder: string, name: string, bytes: Buffer) => {
-  const target = path.join(UPLOADS_DIR, folder, name);
-  fs.mkdirSync(path.dirname(target), { recursive: true });
-  fs.writeFileSync(target, bytes);
-  return target;
-};
 
 describe('media write policy and file serving', () => {
   let app: Server;
-  let upload: ReturnType<typeof stubCloudinary>['upload'];
-  let destroy: ReturnType<typeof stubCloudinary>['destroy'];
+  let upload: ReturnType<typeof stubMediaClient>['upload'];
+  let destroy: ReturnType<typeof stubMediaClient>['destroy'];
 
   beforeAll(async () => {
     app = await startTestApp();
   });
 
+  // ADR-030: nothing is ever written under uploads/ (TEST-03); the Cloudinary client is stubbed.
   afterAll(async () => {
     await stopTestApp();
-    resetUploadDirs();
   });
 
   beforeEach(async () => {
     await clearDatabase();
-    resetUploadDirs();
-    ({ upload, destroy } = stubCloudinary());
-    upload.mockResolvedValue({ secure_url: SECURE_URL });
-    destroy.mockResolvedValue({ result: 'ok' });
+    ({ upload, destroy } = stubMediaClient(SECURE_URL));
   });
 
-  describe('SEC-03 POST /api/uploads is admin-only', () => {
-    test('without a token it is 401', async () => {
+  // ADR-030 (§6 #20): the local-disk upload is removed, so it is no longer a write route at all.
+  describe('SEC-03 POST /api/uploads is removed (404)', () => {
+    test('without a token it is 404', async () => {
       const res = await attach(request(app).post('/api/uploads'));
-      expect(res.statusCode).toBe(401);
+      expect(res.statusCode).toBe(404);
     });
 
-    test('with a non-admin token it is 403', async () => {
+    test('with a non-admin token it is 404', async () => {
       const user = await createUser();
       const token = await tokenFor(user);
 
       const res = await attach(request(app).post('/api/uploads').set(authHeader(token)));
-      expect(res.statusCode).toBe(403);
+      expect(res.statusCode).toBe(404);
     });
 
-    test('with an admin token it stores the file', async () => {
+    test('with an admin token it is 404 and stores nothing', async () => {
       const admin = await createAdmin();
       const token = await tokenFor(admin);
 
       const res = await attach(request(app).post('/api/uploads').set(authHeader(token)));
 
-      expectStatus(res, 200);
-      expect(typeof res.body.fullName).toBe('string');
+      expectStatus(res, 404);
+      expect(res.body).toEqual({ error: { code: 'NOT_FOUND', message: 'Route not found' } });
+      expect(upload).not.toHaveBeenCalled();
     });
   });
 
@@ -91,7 +78,7 @@ describe('media write policy and file serving', () => {
       expect(res.statusCode).toBe(403);
 
       const untouched = await User.findById(owner.id);
-      expect(untouched.image).toBeUndefined();
+      expect(untouched!.image).toBeUndefined();
     });
 
     test('for the owner it is 200 and stores the Cloudinary URL', async () => {
@@ -103,7 +90,7 @@ describe('media write policy and file serving', () => {
       expectStatus(res, 200);
 
       const updated = await User.findById(owner.id);
-      expect(updated.image).toBe(SECURE_URL);
+      expect(updated!.image).toBe(SECURE_URL);
     });
 
     test('for an admin it is 200', async () => {
@@ -118,7 +105,7 @@ describe('media write policy and file serving', () => {
   });
 
   describe('C7 PUT /api/uploads/product/:id is admin-only', () => {
-    let product: LegacyDoc;
+    let product: ProductDocument;
 
     beforeEach(async () => {
       product = await createProduct();
@@ -148,62 +135,86 @@ describe('media write policy and file serving', () => {
     });
   });
 
+  // ADR-030 / AM-M3-1: nothing is served from disk any more; a stored value that is not an asset of the app's
+  // own Cloudinary cloud is a 404 (was the notFound.jpg placeholder, or the file itself for a bare filename).
   describe('SEC-04 GET /api/uploads/:collection/:id cannot read arbitrary files', () => {
-    test('a traversal image value yields the placeholder, not the file', async () => {
+    const imageNotFound = { error: { code: 'NOT_FOUND', message: 'Image not found' } };
+
+    test('a traversal image value is 404, not the file', async () => {
       const user = await createUser({ image: '../../package.json' });
 
       const res = await request(app).get(`/api/uploads/user/${user.id}`);
 
-      expectStatus(res, 200);
-      expect(res.headers['content-type']).toMatch(/^image\//);
+      expectStatus(res, 404);
+      expect(res.body).toEqual(imageNotFound);
     });
 
-    test('a nested value that is not a bare filename yields the placeholder', async () => {
-      writeUpload('user', path.join('sub', 'secret.txt'), Buffer.from('TOP-SECRET-LEAK'));
-
+    test('a nested value that is not a bare filename is 404', async () => {
       const user = await createUser({ image: 'sub/secret.txt' });
       const res = await request(app).get(`/api/uploads/user/${user.id}`);
 
-      expectStatus(res, 200);
-      expect(res.headers['content-type']).toMatch(/^image\//);
+      expectStatus(res, 404);
+      expect(res.body).toEqual(imageNotFound);
     });
 
-    test('a normal bare filename is still served', async () => {
-      const name = 'plain-ok.jpg';
-      writeUpload('user', name, JPEG);
-
-      const user = await createUser({ image: name });
+    test('a bare filename is no longer served from disk: 404', async () => {
+      const user = await createUser({ image: 'plain-ok.jpg' });
       const res = await request(app).get(`/api/uploads/user/${user.id}`);
 
-      expectStatus(res, 200);
-      expect(res.headers['content-type']).toMatch(/^image\//);
-      expect(Buffer.isBuffer(res.body)).toBe(true);
-      expect(Buffer.compare(res.body, JPEG)).toBe(0);
+      expectStatus(res, 404);
+      expect(res.body).toEqual(imageNotFound);
+    });
+
+    test('only an own-cloud Cloudinary asset is served, as a 302 to it', async () => {
+      const user = await createUser({ image: SECURE_URL });
+      const res = await request(app).get(`/api/uploads/user/${user.id}`);
+
+      expect(res.statusCode).toBe(302);
+      expect(res.headers.location).toBe(SECURE_URL);
     });
   });
 
   describe('SEC-08 upload hardening', () => {
-    test('the extension check is case-insensitive', async () => {
-      const admin = await createAdmin();
-      const token = await tokenFor(admin);
+    test('an upper-case extension is accepted: the type comes from the bytes', async () => {
+      const owner = await createUser();
+      const token = await tokenFor(owner);
 
-      const res = await attach(request(app).post('/api/uploads').set(authHeader(token)), 'PHOTO.JPG');
+      const res = await attach(
+        request(app).put(`/api/uploads/user/${owner.id}`).set(authHeader(token)),
+        'PHOTO.JPG',
+      );
 
       expectStatus(res, 200);
     });
 
+    test('a file whose bytes are not an image is rejected with 400, whatever its name', async () => {
+      const owner = await createUser();
+      const token = await tokenFor(owner);
+
+      const res = await request(app)
+        .put(`/api/uploads/user/${owner.id}`)
+        .set(authHeader(token))
+        .attach('file', Buffer.from('<script>alert(1)</script>'), 'photo.jpg');
+
+      expectStatus(res, 400);
+      expect(upload).not.toHaveBeenCalled();
+    });
+
     test('an upload larger than 5 MB is rejected with 413', async () => {
-      const admin = await createAdmin();
-      const token = await tokenFor(admin);
+      const owner = await createUser();
+      const token = await tokenFor(owner);
       const before = listTempFiles();
       const tooBig = Buffer.alloc(5 * 1024 * 1024 + 1024, 1);
 
       const res = await request(app)
-        .post('/api/uploads')
+        .put(`/api/uploads/user/${owner.id}`)
         .set(authHeader(token))
         .attach('file', tooBig, 'too-big.jpg');
 
       expect(res.statusCode).toBe(413);
+      expect(res.body).toEqual({
+        error: { code: 'PAYLOAD_TOO_LARGE', message: 'The file is larger than 5 MB' },
+      });
       // C10: the aborted upload leaves nothing in the temp dir.
       expect(await waitForNoTempLeak(before)).toEqual([]);
     });

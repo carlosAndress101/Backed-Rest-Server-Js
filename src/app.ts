@@ -3,13 +3,21 @@ import path from 'node:path';
 import cors from 'cors';
 import express, { type Express } from 'express';
 import helmet, { type HelmetOptions } from 'helmet';
+import { isObjectIdOrHexString } from 'mongoose';
 
 import type { Config } from './config';
 import type { Logger } from './core/logger';
-import { mountLegacyRoutes } from './legacy';
+import { createTokenService } from './core/security/jwt';
+import { authenticate, type UserLookup } from './middlewares/authenticate';
 import { errorHandler } from './middlewares/error-handler';
 import { notFound } from './middlewares/not-found';
 import { requestLogger } from './middlewares/request-logger';
+import { authModule } from './modules/auth';
+import { CategoryModel, categoriesModule } from './modules/categories';
+import { mediaModule } from './modules/media';
+import { ProductModel, productsModule } from './modules/products';
+import { searchModule } from './modules/search';
+import { UserModel, usersModule } from './modules/users';
 
 export interface AppDeps {
   config: Config;
@@ -53,7 +61,31 @@ export function createApp({ config, logger }: AppDeps): Express {
   app.use(express.json());
   app.use(express.static(PUBLIC_DIR));
 
-  mountLegacyRoutes(app);
+  const tokens = createTokenService(config.auth.jwtSecret);
+  // The users module owns User (ADR-027). A uid that is not an ObjectId is no user, so authenticate answers 401,
+  // never the 400 of a CastError.
+  const users: UserLookup = {
+    findById: (id) => (isObjectIdOrHexString(id) ? UserModel.findById(id) : Promise.resolve(null)),
+  };
+  const auth = authenticate({ tokens, users });
+
+  app.use('/api/category', categoriesModule({ authenticate: auth }));
+  app.use('/api/product', productsModule({ Category: CategoryModel, authenticate: auth }));
+  app.use(
+    '/api/search',
+    searchModule({ User: UserModel, Category: CategoryModel, Product: ProductModel, authenticate: auth }),
+  );
+  app.use('/api/user', usersModule({ authenticate: auth }));
+  app.use('/api/auth', authModule({ User: UserModel, tokens, googleClientId: config.auth.googleClientId }));
+  app.use(
+    '/api/uploads',
+    mediaModule({
+      User: UserModel,
+      Product: ProductModel,
+      authenticate: auth,
+      cloudinaryUrl: config.media.cloudinaryUrl,
+    }),
+  );
 
   app.use(notFound);
   app.use(errorHandler);

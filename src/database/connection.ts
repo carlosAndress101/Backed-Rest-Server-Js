@@ -1,6 +1,6 @@
 import mongoose from 'mongoose';
 
-// SEC-14. Global for every model, legacy included. Both options exist unchanged in Mongoose 7 and 9 (verified).
+// SEC-14. Global for every model. Both options exist unchanged in Mongoose 7 and 9 (verified).
 mongoose.set('strictQuery', true); // unknown filter paths are stripped (was false)
 mongoose.set('sanitizeFilter', true); // `$`-operator objects in filter values are wrapped in $eq → CastError
 

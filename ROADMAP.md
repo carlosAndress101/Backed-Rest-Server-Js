@@ -1,7 +1,7 @@
 # Roadmap
 
 > Owner: CarlosH / SH1FT3R · Orchestrated multi-agent delivery (Claude Code · OpenCode · Nodeterm · RTK)
-> Updated 2026-09-24 · Current milestone: **M3 next** (M2 accepted 2026-09-24, release 2.1.0)
+> Updated 2026-09-24 · Current milestone: **M4 next** (M3 accepted 2026-09-24 on `next`, the unreleased 3.0 line; `master` = 2.1.0)
 
 Complexity scale: **S** (≤1 agent-day) · **M** (2–3) · **L** (4–6) · **XL** (>6). Tests are a quality gate in **every** milestone (ADR-013); M7 closes the remaining gaps.
 
@@ -10,7 +10,7 @@ Complexity scale: **S** (≤1 agent-day) · **M** (2–3) · **L** (4–6) · **
 | M0 | Audit & Baseline | S | — | ✅ Accepted 2026-09-23 |
 | M1 | Stabilization & Security Hotfix | M | M0 | ✅ Accepted 2026-09-24 (T1.5 review: ACCEPT after T1.2R), release **2.0.0** ([briefs](docs/tasks/M1-stabilization.md)) |
 | M2 | Foundation: tooling, TypeScript, config, logging, errors, Express 5 | L | M1 | ✅ Accepted 2026-09-24 (T2.8 review: ACCEPT), release **2.1.0** ([design](docs/design/M2-foundation.md)) |
-| M3 | Feature-First Refactor + Validation/DTOs | L | M2 | 🔄 In progress: design accepted ([M3-modules](docs/design/M3-modules.md)); T3.1 core running on `m3/modules` |
+| M3 | Feature-First Refactor + Validation/DTOs | L | M2 | ✅ Accepted 2026-09-24 (T3.9 review: ACCEPT), merged into `next`; ships in **3.0.0** after M6 ([design](docs/design/M3-modules.md)) |
 | M4 | Database Improvements | M | M3 | 📝 Design accepted ([M4-database](docs/design/M4-database.md)) |
 | M5 | Authentication Hardening | M | M4 | Planned |
 | M6 | Authorization (RBAC + ownership) | M | M5 | Planned |
@@ -49,7 +49,8 @@ Why this order differs from the default template: **security first** (ADR-001) b
 - **Risks:** Big-bang conversion; behaviour changes in Express 5 (`req.body` undefined without a parser, path syntax) and Mongoose 9. **Mitigation:** the M1 regression suite must be green before and after, and the upgrades land as separate commits.
 - **Complexity:** L · **Dependencies:** M1 accepted (ADR-002 accepted 2026-09-23; strangler approach per ADR-016).
 
-## M3: Feature-First Refactor + Validation/DTOs
+## M3: Feature-First Refactor + Validation/DTOs ✅ (accepted 2026-09-24, on `next`)
+- **Outcome:** six TS feature modules, the 3.0.0 contract (envelope, 200/201/204/422/404, `id`), Cloudinary-only media with an own-cloud redirect allowlist, and the legacy JS and strangler seam deleted (TypeScript only). 746 tests; `src/**` coverage about 99 %. Build rulings AM-M3-4…11 are in the design's §10. No pre-release tag: `next` is the 3.0 line until 3.0.0 (ADR-026).
 - **Goal:** Clean feature modules: thin controllers, services owning the rules, zod DTOs everywhere.
 - **Deliverables:** `src/modules/{auth,users,categories,products,search,media}` with the anatomy in ARCHITECTURE §2.2. `categories` is built first as the **reference module**; the others fan out in parallel once it passes review. Duplications removed (DUP-01) with shared helpers only where duplication is proven (pagination, find-active-or-404, soft delete). Correct status codes and envelope. Dead code removed (CQ-02). English naming (CQ-01). Cloudinary-only media (ADR-008): `GET` redirects to the asset URL, MIME sniffing, uploads restricted to the media router. Soft-deleted resources return 404.
 - **Risks:** API contract drift across parallel agents, mitigated by the reference module plus a contract table in API_PROGRESS. Client breakage, mitigated by the breaking-change ledger and CHANGELOG.

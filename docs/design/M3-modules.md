@@ -1,6 +1,6 @@
 # M3: Feature-First Refactor + Validation/DTOs — Technical Design
 
-> Author: ARCHITECT · 2026-09-24 · Status: **Accepted** by the Orchestrator 2026-09-24, with amendments **AM-M3-1…3** folded in below (marked). ADR-027…ADR-030 accepted.
+> Author: ARCHITECT · 2026-09-24 · Status: **Accepted** by the Orchestrator 2026-09-24, with amendments **AM-M3-1…3** folded in below (marked). ADR-027…ADR-030 accepted. **Built and closed 2026-09-24** (T3.1–T3.10, final review T3.9 ACCEPT); the rulings made during the build, **AM-M3-4…11**, are in §10 and override the text they name.
 > Base: `m3/design` cut from `next` @ `25fc00d` (release line ADR-026; 3.0.0 ships after M6). Builds on M2 (2.1.0, ARCHITECTURE §1.9).
 > Governing ADRs: ADR-004…ADR-026, and proposed **ADR-027…ADR-030** (§1). New decisions are proposed ADRs for the Orchestrator to accept.
 
@@ -378,6 +378,8 @@ mountLegacyRoutes(app); // remaining legacy routers
 
 `createApp` stays the only composition root (§2.3, ADR-005). Each module task adds its `app.use(...)` line and deletes its `src/legacy.ts` entry.
 
+> **As built (§10):** AM-M3-8 moves `requireAdmin` out of the module deps (routes import the stateless guards; only `authenticate` is injected); T3.3 replaced the lazy `users` lookup with `UserModel` (plus an ObjectId check → 401); T3.8b deleted `mountLegacyRoutes` and `src/legacy.ts`.
+
 ### 4.7 Tests (both proven)
 
 - **Integration** `tests/integration/modules/categories.test.ts` (3 blocks, green): the full contract table for #9–#13 (envelope, `id`/no `_id`/no `uid`, 200/201/204, 401 without token, 422 bad body with `details`, 409 duplicate, 403 non-admin PUT, 404 missing/soft-deleted, 422 bad id). Uses the M2 harness (`startTestApp` on 127.0.0.1 — AM-5, TEST-02) and factories.
@@ -399,7 +401,7 @@ Each module = the categories anatomy. Only the differences are listed; DTOs are 
 ### 5.2 `auth` (routes #2–#3)
 - **No model.** Reuses `users`' `UserModel` and a `google.client.ts` wrapping `OAuth2Client` (SDK behind a `*.client.ts`, injected — lint-enforced). `createTokenService` from core.
 - **Behaviour identical to today (M5 owns the hardening):** the F1 constant-time login (`DUMMY_HASH` + `BCRYPT_HASH` guard) is carried over verbatim into the service; generic 401 `Invalid credentials` (C5); Google failure/blocked → 401; the placeholder `':D'` password and `email_verified` stay untouched (SEC-12/M5).
-- **Rate limiter:** the shared 10/15 min/IP limiter (C5) moves to `auth.routes.ts`; its `handler` calls `next(new RateLimitedError())` so the **429 body is the envelope** (adds `RateLimitedError(429,'RATE_LIMITED')` to `core/errors`; the only `ErrorCode` addition). Budget still shared by login+google.
+- **Rate limiter:** the shared 10/15 min/IP limiter (C5) moves to `auth.routes.ts`; its `handler` calls `next(new RateLimitedError())` so the **429 body is the envelope** (adds `RateLimitedError(429,'RATE_LIMITED')` to `core/errors`; **AM-M3-10** later adds `PayloadTooLargeError(413,'PAYLOAD_TOO_LARGE')`, the second and last M3 `ErrorCode` addition). Budget still shared by login+google.
 - **Contract:** success body `{user, token}` → `envelope({ token, user })`; token stays in the body, transport stays `x-token` (M5 → Bearer). 429 body `{msg}`→envelope.
 
 ### 5.3 `products` (routes #14–#18) — mechanical mirror of `categories`
@@ -448,7 +450,7 @@ Auth column = enforced. Success = status + body. All error bodies are the envelo
 | 18 | DELETE `/api/product/:id` | admin | `:id` | **204** | 401/403; 404 |
 | 19 | GET `/api/search/:collection/:term` | user→admin; else none | `:collection,:term` | 200 `env(items)` | 400 (bad collection); 401/403 (user) |
 | 20 | POST `/api/uploads` | — | — | **removed** (404) | ADR-008 |
-| 21 | PUT `/api/uploads/:collection/:id` | user: owner/admin; product: admin | multipart 1 file ≤5 MB | 200 `env(record)` | 401/403; 404; 400 (MIME/parse); 413; 422 |
+| 21 | PUT `/api/uploads/:collection/:id` | user: owner/admin; product: admin | multipart 1 file ≤5 MB | 200 `env(record)` | 401/403; 404; 400 (MIME/parse); 413 `PAYLOAD_TOO_LARGE` (AM-M3-10); 422 |
 | 22 | GET `/api/uploads/:collection/:id` | none | `:collection,:id` | **302** → own-cloud Cloudinary URL (AM-M3-1) | 404 (no image or non-own-cloud URL); 422 |
 | 23 | GET `/` static | none | — | 200 (unchanged) | CQ-07 (M8) |
 
@@ -461,6 +463,8 @@ Auth column = enforced. Success = status + body. All error bodies are the envelo
 - Search returns `{data:[…]}` (was `{results:[…]}`).
 
 **CHANGELOG (3.0.0) Breaking** = the six bullets above, each mapped to affected routes.
+
+> **As built (§10):** product responses also include `state` (AM-M3-9, additive); 413 carries `PAYLOAD_TOO_LARGE` and JSON over 100 kb says `Payload too large` (AM-M3-10); an admin `PUT /api/user/:id` reaches a soft-deleted user, so it can reactivate it (AM-M3-7); out-of-range `limit`/`offset` is 422 (2.x clamped). The ledger rows are in API_PROGRESS.md.
 
 ---
 
@@ -494,7 +498,7 @@ Flipping the error handler to the envelope produced **exactly 23 failing asserti
 ### 7.3 Unit tests, coverage, hygiene
 - **Unit:** every service has a fake-injected unit test (proven for categories). Target: services ≥ 90% lines (M7 raises the global gate); the `src/**/*.ts` ≥ 90/90/80/90 coverage gate (M2) stays and now covers `src/modules/**`.
 - **Coverage config:** drop the `controllers/**`, `helpers/**`, `models/**`, `routes/**`, `middlewares/**` legacy globs from `vitest.config.mts` as each dir empties; at wave 4 only `src/**/*.ts` remains.
-- **Hygiene (TEST-02/03):** keep AM-5 (`startTestApp` serves on 127.0.0.1, `Connection: close`); no test writes a shared FS path — the media module's Cloudinary client is stubbed via `tests/helpers/legacy.ts`'s successor (a TS `stubCloudinary` on the injected client), so no `uploads/` writes (TEST-03 root cause removed with the local-disk path).
+- **Hygiene (TEST-02/03):** keep AM-5 (`startTestApp` serves on 127.0.0.1, `Connection: close`); no test writes a shared FS path — the media module's Cloudinary client is stubbed on the injected client (as built: `tests/helpers/uploads.ts` `stubMediaClient`; auth's Google client: `tests/helpers/auth.ts` `stubGoogleClient`), so no `uploads/` writes (TEST-03 root cause removed with the local-disk path).
 
 ---
 
@@ -576,3 +580,22 @@ Throw-away clone of `m3/design`, scratchpad, removed after. All green:
 - Registry seam: reproduced `OverwriteModelError` (naïve) → fixed (re-export + guard); reproduced `MissingSchemaError` (eager `User`) → fixed (lazy).
 - Error-envelope switch across the existing 248-case suite: **exactly 23 failures, all old-`{msg}`/`_id` assertions** (7 INTERNAL, 6 BAD_REQUEST, 4 NOT_FOUND, 2 CONFLICT, 2 key-shape, 1 legacy-body-parity on the migrated category route, 1 search `_id`) — zero crashes/schema errors. This is the §7.2 mapping, measured.
 - New deps: `@types/jsonwebtoken` 9.0.10 (dev, pinned). No new runtime dependency (MIME by magic bytes).
+
+---
+
+## 10. Amendments made during the build (Orchestrator rulings AM-M3-4…11)
+
+Recorded from `.orchestrator/briefs/M3-rulings.md`; each was confirmed sound by the ARCHITECT's reviews T3.9a/T3.9.
+
+| ID | Trigger | Ruling |
+|---|---|---|
+| AM-M3-4 | T3.5 B1: `MissingSchemaError` once a `models/*.js` became a registry re-export | The test seam registered every migrated TS model (side-effect imports) before `legacyModels()`; deleted with the seam in T3.8b. |
+| AM-M3-5 | T3.5 B2: C1 CastError/ValidationError assertions used an unvalidated legacy route as their vehicle | Re-expressed under the owning module's validation row (422 `VALIDATION_FAILED` + `details`); the C1 mapping stays guaranteed by `tests/unit/errors.test.ts` (real Mongoose errors) and `error-handler.test.ts`. |
+| AM-M3-6 | T3.5 B3: the Express-4 body-parity probe needed a still-legacy prefix | Re-pointed as prefixes migrated; deleted by T3.4 when `LEGACY_ROUTES` became empty. |
+| AM-M3-7 | T3.3 Q1 | An admin `PUT /api/user/:id` matches `{ _id }` (reaches soft-deleted users, so `state: true` can reactivate); every other read/write keeps find-active-or-404. M6 may restrict it. |
+| AM-M3-8 | T3.3 Q2 | `<x>.routes.ts` imports the stateless guards; only `authenticate` is injected. Categories/products aligned in T3.8a. Supersedes the §4.5/§4.6 injection of `requireAdmin`. |
+| AM-M3-9 | T3.9a F1 | Product responses include `state` (consistent with category/user; always `true` because soft-deleted is 404). Additive; M4 keeps `toJsonPlugin(productSchema)` without hiding it. |
+| AM-M3-10 | T3.7 Q1 | `PayloadTooLargeError` (413, `PAYLOAD_TOO_LARGE`) for media's 5 MB limit and body-parser's 413 (`Payload too large`). Supersedes §5.2's "only `ErrorCode` addition". |
+| AM-M3-11 | T3.7 Q2 | `mediaModule` takes `{ User, Product }` as narrow injected models, like `searchModule`, instead of a lazy registry lookup. |
+
+Also ruled during the build: a module that needs a sibling's model receives it from `app.ts` as a narrow interface, never by import (T3.5 B4); T3.6 search checks the collection allowlist **before** any keyed lookup (T3.6R, Object.prototype keys); media's temp-folder removal is synchronous on `close` (T3.7R: an asynchronous `fs.rm` could be cut off by process exit).

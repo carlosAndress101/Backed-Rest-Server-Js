@@ -6,6 +6,53 @@ Client-visible contract changes are always listed under **Breaking** and mirrore
 
 ## [Unreleased]
 
+The 3.0 line accumulates on the `next` branch: M3–M6 ship together as **3.0.0** (ADR-024, ADR-026). `master` stays on 2.x for hotfixes.
+
+### M3: Feature modules and DTOs (on `next`)
+
+#### Breaking
+- **Response envelope.** Every success body is `{ "data": ... }`, and lists are `{ "data": [...], "meta": { "total", "limit", "offset" } }`. This replaces the bare document, `{ total, users }`-style lists, `{ user, token }` and `{ results }`. Every error body is `{ "error": { "code", "message", "details"? } }` instead of `{ "msg" }` (ADR-021).
+- **Status codes.**
+  - Reads return 200 (category and product reads returned 201).
+  - Sign-up returns 201 (was 200).
+  - DELETE returns **204** with no body (was 200/201 with a body; the `{ userDelete, userAuthenticated }` body is gone).
+  - Invalid input returns **422** `VALIDATION_FAILED` with `details: [{ path, message }]` (was 400).
+  - A missing or soft-deleted resource returns **404**.
+- **Pagination.** A `limit` outside 1–50, or a non-integer `limit` or `offset`, returns 422. 2.x silently clamped it.
+- **Ids.** Every resource has `id`; `_id` and `__v` are never exposed. Users keep `uid` as a deprecated alias of `id`, removed in 4.0.0.
+- **Removed routes (404):** `GET /hello`, `PATCH /api/user` (a stub) and `POST /api/uploads` (local-disk upload, ADR-008/ADR-030).
+- **Media.**
+  - `GET /api/uploads/:collection/:id` now **302-redirects** to the record's image when it is an asset of this app's own Cloudinary cloud. Anything else (no image, another host, a Google avatar, a legacy filename) is 404. 2.x served a local file or a placeholder image.
+  - `PUT /api/uploads/:collection/:id` accepts one PNG, JPEG or GIF, checked by content (anything else is 400). A malformed multipart body is 400, and a file over 5 MB is **413** with the JSON envelope.
+- **Error codes.** Rate limiting is 429 `RATE_LIMITED`, with the envelope. A payload over a limit is 413 `PAYLOAD_TOO_LARGE`; JSON bodies over 100 kb now say `Payload too large` (was 413 `Invalid request data`).
+- **Search** returns `{ "data": [...] }`, not `{ "results": [...] }`.
+
+#### Added
+- Product responses include `state`, as category and user responses do (AM-M3-9).
+
+#### Changed
+- An administrator's `PUT /api/user/:id` also reaches a soft-deleted user, so `state: true` reactivates it; every other read or write treats a soft-deleted resource as missing (AM-M3-7).
+
+#### Removed
+- Local-disk media: `uploads/`, `assets/notFound.jpg` and the 2.x upload helpers.
+- The `Role` model. Roles are a code enum (`ADMIN_ROLE`, `USER_ROLE`, `VENTAS_ROLE`, ADR-007); nothing reads a 2.x `roles` collection any more, and M4 drops it.
+- `express-validator`, the legacy JavaScript and the strangler seam.
+
+#### Security
+- The request body DTOs close mass assignment on products: `_id`, `user`, `image` and `state` are no longer writable (VAL-02). Non-string inputs are rejected with 422 instead of reaching the database (REL-01, F3).
+- Media hardening:
+  - uploads are checked by magic bytes, not extension (SEC-08);
+  - the redirect only targets this app's own cloud, with an allowlisted path (AM-M3-1, no open redirect);
+  - only an own-cloud previous image is ever destroyed;
+  - the per-request temp folder is removed synchronously on every exit path.
+- A signed token whose `uid` is not an ObjectId is a 401, not a 400.
+- A rejected password never appears in validation error messages or logs (LOG-02).
+
+#### Changed (internal)
+- Feature-first TypeScript modules (`src/modules/{auth,users,categories,products,search,media}`), each composed as model → service → controller → routes, and wired in `createApp` (ADR-005, ADR-027…ADR-030). The legacy JavaScript, the strangler seam (`src/legacy.ts`) and `express-validator` are gone; the codebase is TypeScript only.
+- One zod `validate(part, schema)` middleware replaces express-validator (ADR-029). Interim `authenticate` and role guards replace the legacy middlewares (ADR-028); the roles are a code enum (ADR-007), and the `Role` model is gone.
+- Tests: 746 (was 248), including a contract test and service unit tests per module. `src/**` coverage is about 99 %.
+
 ## [2.1.0] - 2026-09-24 (M2: Foundation)
 
 Internal platform release (ADR-024). The HTTP contract of 2.0.0 is unchanged, apart from the additive and security items below.

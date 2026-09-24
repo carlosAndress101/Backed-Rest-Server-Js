@@ -1,5 +1,5 @@
-// A dedicated file: the C5 login limiter lives in the legacy router module, loaded once per process, so its
-// budget starts fresh here. The two apps below key it on different addresses and never share an entry.
+// The C5 login limiter belongs to the auth module, so each app below has its own, with a fresh budget, and
+// keys it on a different address.
 import type { Server } from 'node:http';
 
 import request from 'supertest';
@@ -27,7 +27,7 @@ describe('C9: createApp applies config.trustProxy to req.ip, the C5 limiter key'
     const repeat = await login(server, '203.0.113.10');
 
     expect(req.app.get('trust proxy')).toBe(1);
-    expect([first.status, other.status, repeat.status]).toEqual([400, 400, 400]);
+    expect([first.status, other.status, repeat.status]).toEqual([422, 422, 422]);
     expect([remaining(first), remaining(other), remaining(repeat)]).toEqual([9, 9, 8]);
   });
 
@@ -38,7 +38,7 @@ describe('C9: createApp applies config.trustProxy to req.ip, the C5 limiter key'
     const rotated = await login(server, '198.51.100.2');
 
     expect(req.app.get('trust proxy')).toBe(false);
-    expect([first.status, rotated.status]).toEqual([400, 400]);
+    expect([first.status, rotated.status]).toEqual([422, 422]);
     expect([remaining(first), remaining(rotated)]).toEqual([9, 8]);
   });
 });

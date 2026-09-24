@@ -35,7 +35,7 @@ describe('search policy', () => {
       const res = await search(app, 'category', 'LAPTOP');
 
       expect(res.statusCode).toBe(200);
-      expect(res.body.results).toHaveLength(1);
+      expect(res.body.data).toHaveLength(1);
     });
 
     test('a product can be found without a token', async () => {
@@ -44,7 +44,7 @@ describe('search policy', () => {
       const res = await search(app, 'product', 'KEYBOARD');
 
       expect(res.statusCode).toBe(200);
-      expect(res.body.results).toHaveLength(1);
+      expect(res.body.data).toHaveLength(1);
     });
   });
 
@@ -74,7 +74,7 @@ describe('search policy', () => {
       const res = await search(app, 'user', 'Findme', token);
 
       expectStatus(res, 200);
-      expect(res.body.results).toHaveLength(1);
+      expect(res.body.data).toHaveLength(1);
     });
   });
 
@@ -93,7 +93,7 @@ describe('search policy', () => {
       const res = await search(app, 'category', '.*');
 
       expect(res.statusCode).toBe(200);
-      expect(res.body.results).toEqual([]);
+      expect(res.body.data).toEqual([]);
     });
 
     test('a grouping-like term does not match everything', async () => {
@@ -102,7 +102,7 @@ describe('search policy', () => {
       const res = await search(app, 'category', '(LAPTOP)');
 
       expect(res.statusCode).toBe(200);
-      expect(res.body.results).toEqual([]);
+      expect(res.body.data).toEqual([]);
     });
   });
 
@@ -115,8 +115,8 @@ describe('search policy', () => {
       const res = await search(app, 'category', 'BULK');
 
       expect(res.statusCode).toBe(200);
-      expect(res.body.results.length).toBeGreaterThan(0);
-      expect(res.body.results.length).toBeLessThanOrEqual(20);
+      expect(res.body.data.length).toBeGreaterThan(0);
+      expect(res.body.data.length).toBeLessThanOrEqual(20);
     });
   });
 
@@ -127,7 +127,7 @@ describe('search policy', () => {
       const res = await search(app, 'category', missing.toHexString());
 
       expect(res.statusCode).toBe(200);
-      expect(res.body.results).toEqual([]);
+      expect(res.body.data).toEqual([]);
     });
 
     test('user (with an admin token)', async () => {
@@ -138,7 +138,7 @@ describe('search policy', () => {
       const res = await search(app, 'user', missing.toHexString(), token);
 
       expectStatus(res, 200);
-      expect(res.body.results).toEqual([]);
+      expect(res.body.data).toEqual([]);
     });
   });
 
@@ -149,8 +149,8 @@ describe('search policy', () => {
       const res = await search(app, 'category', category.id);
 
       expect(res.statusCode).toBe(200);
-      expect(res.body.results).toHaveLength(1);
-      expect(res.body.results[0]._id).toBe(category.id);
+      expect(res.body.data).toHaveLength(1);
+      expect(res.body.data[0].id).toBe(category.id);
     });
   });
 });

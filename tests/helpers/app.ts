@@ -25,7 +25,10 @@ export async function startTestApp(overrides: NodeJS.ProcessEnv = {}): Promise<S
   if (mongoose.connection.readyState === mongoose.ConnectionStates.disconnected) {
     await connectDatabase(config.mongoUri);
   }
-  const app = createApp({ config, logger: createLogger(config, { write: (line: string) => logLines.push(line) }) });
+  const app = createApp({
+    config,
+    logger: createLogger(config, { write: (line: string) => logLines.push(line) }),
+  });
   return serve(app); // TEST-02: never hand SuperTest a bare app (AM-5)
 }
 

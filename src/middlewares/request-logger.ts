@@ -11,12 +11,13 @@ const SAFE_REQUEST_ID = /^[\w.:-]{1,128}$/; // an inbound id is trusted for corr
 export const requestLogger = (logger: Logger) =>
   pinoHttp({
     logger,
-    quietReqLogger: true, // req.log carries only { reqId }, not the whole request, on every legacy log call
+    quietReqLogger: true, // req.log carries only { reqId }, not the whole request, on every log call
     genReqId: (req, res) => {
       const incoming = req.headers[REQUEST_ID_HEADER];
       const id = typeof incoming === 'string' && SAFE_REQUEST_ID.test(incoming) ? incoming : randomUUID();
       res.setHeader(REQUEST_ID_HEADER, id);
       return id;
     },
-    customLogLevel: (_req, res) => (res.statusCode >= 500 ? 'error' : res.statusCode >= 400 ? 'warn' : 'info'),
+    customLogLevel: (_req, res) =>
+      res.statusCode >= 500 ? 'error' : res.statusCode >= 400 ? 'warn' : 'info',
   });
