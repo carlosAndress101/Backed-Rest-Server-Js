@@ -8,11 +8,13 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, inject, t
 
 import { createLogger } from '../../../src/core/logger';
 import { MIGRATIONS } from '../../../src/cli';
-import { LEDGER, runMigrations, type Migration } from '../../../src/database/migrate';
+import { LEDGER, migrationStatus, runMigrations, type Migration } from '../../../src/database/migrate';
 import { M001 } from '../../../src/database/migrations/M001-normalize-email';
 import { M002 } from '../../../src/database/migrations/M002-rebuild-name-indexes';
 import { M003 } from '../../../src/database/migrations/M003-backfill-created-at';
 import { M004 } from '../../../src/database/migrations/M004-drop-roles-collection';
+import { M005 } from '../../../src/database/migrations/M005-backfill-token-version';
+import { M006 } from '../../../src/database/migrations/M006-drop-google-placeholder-password';
 
 const MONGO_URI = inject('mongoUri');
 const { ObjectId } = mongoose.Types;
@@ -68,19 +70,21 @@ afterEach(async () => {
 });
 
 describe('the migration list', () => {
-  test('is M001–M004, in id order, M004 (destructive) last', () => {
+  test('is M001–M006, in id order, M004 (destructive) before the M5 backfills', () => {
     expect(MIGRATIONS.map(({ id }) => id)).toEqual([
       'M001-normalize-email',
       'M002-rebuild-name-indexes',
       'M003-backfill-created-at',
       'M004-drop-roles-collection',
+      'M005-backfill-token-version',
+      'M006-drop-google-placeholder-password',
     ]);
   });
 
-  test('applies once and records all four; a second up is a no-op', async () => {
+  test('applies once and records all six; a second up is a no-op', async () => {
     await db.collection('users').insertOne(user2x('Ada@Example.com'));
 
-    expect(await run(MIGRATIONS)).toHaveLength(4);
+    expect(await run(MIGRATIONS)).toHaveLength(6);
     const once = await db.collection('users').findOne({});
     const recorded = await ledger();
 
@@ -95,7 +99,7 @@ describe('the migration list', () => {
     await db.collection('roles').insertOne({ role: 'USER_ROLE' });
     const before = await db.collection('users').findOne({});
 
-    expect(await run(MIGRATIONS, 'up', true)).toHaveLength(4);
+    expect(await run(MIGRATIONS, 'up', true)).toHaveLength(6);
 
     expect(await db.collection('users').findOne({})).toEqual(before);
     expect(await indexNames('users')).toEqual(['_id_']);
@@ -304,6 +308,131 @@ describe('M004-drop-roles-collection', () => {
   });
 });
 
+describe('M005-backfill-token-version', () => {
+  test('up sets tokenVersion 0 only where the field is absent', async () => {
+    await db
+      .collection('users')
+      .insertMany([user2x('ada@example.com'), user2x('grace@example.com', { tokenVersion: 7 })]);
+
+    expect(await run([M005])).toEqual(['M005-backfill-token-version']);
+
+    expect((await db.collection('users').findOne({ email: 'ada@example.com' }))!.tokenVersion).toBe(0);
+    expect((await db.collection('users').findOne({ email: 'grace@example.com' }))!.tokenVersion).toBe(7);
+  });
+
+  test('a second run is a no-op', async () => {
+    await db.collection('users').insertOne(user2x('ada@example.com'));
+    await run([M005]);
+    const once = await db.collection('users').find({}).toArray();
+
+    expect(await run([M005])).toEqual([]);
+    expect(await db.collection('users').find({}).toArray()).toEqual(once);
+  });
+
+  test('down unsets tokenVersion only on documents still at 0, and warns', async () => {
+    await db
+      .collection('users')
+      .insertMany([user2x('ada@example.com'), user2x('grace@example.com', { tokenVersion: 3 })]);
+    await run([M005]);
+
+    await run([M005], 'down');
+
+    expect(await db.collection('users').findOne({ email: 'ada@example.com' })).not.toHaveProperty(
+      'tokenVersion',
+    );
+    expect((await db.collection('users').findOne({ email: 'grace@example.com' }))!.tokenVersion).toBe(3);
+    expect(records()).toContainEqual(
+      expect.objectContaining({
+        level: 40,
+        msg: expect.stringContaining('tokenVersion unset on documents left at 0'),
+      }),
+    );
+  });
+
+  test('down keeps a tokenVersion bumped since up', async () => {
+    await db.collection('users').insertOne(user2x('ada@example.com'));
+    await run([M005]);
+    await db.collection('users').updateOne({ email: 'ada@example.com' }, { $set: { tokenVersion: 5 } });
+
+    await run([M005], 'down');
+
+    expect((await db.collection('users').findOne({ email: 'ada@example.com' }))!.tokenVersion).toBe(5);
+  });
+});
+
+describe('M006-drop-google-placeholder-password', () => {
+  test('up unsets the password only on the exact { google: true, password: ":D" } shape', async () => {
+    await db
+      .collection('users')
+      .insertMany([
+        user2x('google@example.com', { google: true, password: ':D' }),
+        user2x('hybrid@example.com', { google: true, password: 'real-hash' }),
+        user2x('local@example.com', { google: false, password: ':D' }),
+      ]);
+
+    expect(await run([M006])).toEqual(['M006-drop-google-placeholder-password']);
+
+    expect(await db.collection('users').findOne({ email: 'google@example.com' })).not.toHaveProperty(
+      'password',
+    );
+    expect((await db.collection('users').findOne({ email: 'hybrid@example.com' }))!.password).toBe(
+      'real-hash',
+    );
+    expect((await db.collection('users').findOne({ email: 'local@example.com' }))!.password).toBe(':D');
+  });
+
+  test('a second run is a no-op', async () => {
+    await db.collection('users').insertOne(user2x('google@example.com', { google: true, password: ':D' }));
+    await run([M006]);
+    const once = await db.collection('users').find({}).toArray();
+
+    expect(await run([M006])).toEqual([]);
+    expect(await db.collection('users').find({}).toArray()).toEqual(once);
+  });
+
+  test('down restores ":D" on every passwordless Google account, touches no hash, and warns', async () => {
+    await db
+      .collection('users')
+      .insertMany([
+        user2x('google@example.com', { google: true, password: ':D' }),
+        user2x('hybrid@example.com', { google: true, password: 'real-hash' }),
+      ]);
+    await run([M006]);
+
+    await run([M006], 'down');
+
+    expect((await db.collection('users').findOne({ email: 'google@example.com' }))!.password).toBe(':D');
+    expect((await db.collection('users').findOne({ email: 'hybrid@example.com' }))!.password).toBe(
+      'real-hash',
+    );
+    expect(records()).toContainEqual(
+      expect.objectContaining({
+        level: 40,
+        msg: expect.stringContaining("the ':D' placeholder restored"),
+      }),
+    );
+  });
+});
+
+describe('migrate status', () => {
+  test('after up, shows M001–M006 all applied, in order', async () => {
+    await run(MIGRATIONS);
+
+    const states = await migrationStatus(db, MIGRATIONS);
+
+    expect(states.map(({ id }) => id)).toEqual(MIGRATIONS.map(({ id }) => id));
+    expect(states.every(({ appliedAt }) => appliedAt instanceof Date)).toBe(true);
+    expect(await ledger()).toEqual([
+      'M001-normalize-email',
+      'M002-rebuild-name-indexes',
+      'M003-backfill-created-at',
+      'M004-drop-roles-collection',
+      'M005-backfill-token-version',
+      'M006-drop-google-placeholder-password',
+    ]);
+  });
+});
+
 describe('the whole list on a 2.x-shaped database', () => {
   test('up then down: data and indexes back to 2.x, except email casing (lossy, M001)', async () => {
     await db.collection('users').insertOne(user2x(' Ada@Example.com ', { role: 'ADMIN_ROLE' }));
@@ -318,6 +447,8 @@ describe('the whole list on a 2.x-shaped database', () => {
     expect(await collectionNames()).not.toContain('roles');
 
     expect(await run(MIGRATIONS, 'down')).toEqual([
+      'M006-drop-google-placeholder-password',
+      'M005-backfill-token-version',
       'M004-drop-roles-collection',
       'M003-backfill-created-at',
       'M002-rebuild-name-indexes',

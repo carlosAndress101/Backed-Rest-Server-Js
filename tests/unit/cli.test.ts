@@ -193,12 +193,14 @@ describe('main (the CLI process)', () => {
     return client.db(name);
   };
 
-  test('migrate runs the M4 list, M001–M004 in id order', () => {
+  test('migrate runs the list, M001–M006 in id order', () => {
     expect(MIGRATIONS.map(({ id }) => id)).toEqual([
       'M001-normalize-email',
       'M002-rebuild-name-indexes',
       'M003-backfill-created-at',
       'M004-drop-roles-collection',
+      'M005-backfill-token-version',
+      'M006-drop-google-placeholder-password',
     ]);
   });
 
