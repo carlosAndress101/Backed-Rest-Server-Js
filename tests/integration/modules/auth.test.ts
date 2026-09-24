@@ -141,7 +141,7 @@ describe('auth module (§6 #2–#3)', () => {
     test("the users module's model stores today's Google account: the ':D' placeholder password (SEC-12, M5)", async () => {
       const { body } = await googleSignin();
 
-      const stored = await UserModel.findById(body.data.user.id).lean();
+      const stored = await UserModel.findById(body.data.user.id, '+password').lean(); // select: false (AM-M4-1)
 
       expect(stored).toMatchObject({
         name: PROFILE.name,

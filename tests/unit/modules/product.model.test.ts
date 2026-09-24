@@ -38,7 +38,7 @@ describe('ProductModel', () => {
       required: [true, 'The name is required'],
       trim: true,
       uppercase: true,
-      maxlength: 120,
+      maxlength: [120, 'The name must be at most 120 characters'],
     });
     // §2.0: no field-level unique; the partial unique index is declared explicitly in §3.1.
     expect(schema.path('name').options.unique).toBeUndefined();
@@ -46,18 +46,24 @@ describe('ProductModel', () => {
     expect(schema.path('user')).toMatchObject({ instance: 'ObjectId', isRequired: true });
     expect(schema.path('user').options).toMatchObject({ ref: 'User' });
     expect(schema.path('price')).toMatchObject({ instance: 'Number', defaultValue: 0 });
-    expect(schema.path('price').options).toMatchObject({ min: 0 });
+    expect(schema.path('price').options).toMatchObject({ min: [0, 'The price cannot be negative'] });
     expect(schema.path('category')).toMatchObject({ instance: 'ObjectId', isRequired: true });
     expect(schema.path('category').options).toMatchObject({ ref: 'Category' });
     expect(schema.path('description')).toMatchObject({ instance: 'String' });
-    expect(schema.path('description').options).toMatchObject({ trim: true, maxlength: 2000 });
+    expect(schema.path('description').options).toMatchObject({
+      trim: true,
+      maxlength: [2000, 'The description must be at most 2000 characters'],
+    });
     expect(schema.path('available')).toMatchObject({
       instance: 'Boolean',
       isRequired: true,
       defaultValue: true,
     });
     expect(schema.path('image')).toMatchObject({ instance: 'String' });
-    expect(schema.path('image').options).toMatchObject({ trim: true, maxlength: 2048 });
+    expect(schema.path('image').options).toMatchObject({
+      trim: true,
+      maxlength: [2048, 'The image must be at most 2048 characters'],
+    });
     expect(schema.path('image').options.validate).toBeUndefined(); // AM-M4-4: no pattern validator
     expect(schema.get('versionKey')).toBe(false);
     expect(schema.get('timestamps')).toBe(true);

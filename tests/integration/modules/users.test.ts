@@ -121,7 +121,7 @@ describe('users module (§6 #4–#8)', () => {
         updatedAt: expect.any(String),
       });
       expectApiShape(res.body.data);
-      const stored = await UserModel.findById(res.body.data.id).lean();
+      const stored = await UserModel.findById(res.body.data.id, '+password').lean(); // select: false (AM-M4-1)
       expect(stored?.password).not.toBe(PASSWORD);
       expect(bcrypt.compareSync(PASSWORD, stored!.password)).toBe(true);
     });
@@ -197,7 +197,8 @@ describe('users module (§6 #4–#8)', () => {
       expect(res.status).toBe(200);
       expect(res.body.data).toMatchObject({ id: user.id, name: 'Ada Lovelace', role: 'USER_ROLE' });
       expectApiShape(res.body.data);
-      expect(bcrypt.compareSync(PASSWORD, (await UserModel.findById(user.id).lean())!.password)).toBe(true);
+      const stored = await UserModel.findById(user.id, '+password').lean(); // select: false (AM-M4-1)
+      expect(bcrypt.compareSync(PASSWORD, stored!.password)).toBe(true);
     });
 
     test('role and state from a non-admin are dropped, even an unknown role (C6)', async () => {

@@ -39,15 +39,15 @@ describe('UserModel', () => {
       type: String,
       required: [true, 'The name is required'],
       trim: true,
-      maxlength: 120,
+      maxlength: [120, 'The name must be at most 120 characters'],
     });
     expect(schema.path('email').options).toMatchObject({
       type: String,
       required: [true, 'The email is required'],
       trim: true,
       lowercase: true,
-      maxlength: 254,
-      match: expect.any(RegExp),
+      maxlength: [254, 'The email must be at most 254 characters'],
+      match: [expect.any(RegExp), 'The email format is invalid'],
     });
     // §2.0: no field-level unique; the unique email index is declared explicitly in §3.1.
     expect(schema.path('email').options.unique).toBeUndefined();
@@ -55,12 +55,16 @@ describe('UserModel', () => {
       type: String,
       required: [true, 'The password is required'],
     });
-    expect(schema.path('image').options).toMatchObject({ type: String, trim: true, maxlength: 2048 });
+    expect(schema.path('image').options).toMatchObject({
+      type: String,
+      trim: true,
+      maxlength: [2048, 'The image must be at most 2048 characters'],
+    });
     expect(schema.path('role').options).toMatchObject({
       type: String,
       required: true,
       default: 'USER_ROLE',
-      enum: ['ADMIN_ROLE', 'USER_ROLE', 'VENTAS_ROLE'],
+      enum: { values: ['ADMIN_ROLE', 'USER_ROLE', 'VENTAS_ROLE'], message: 'The role is not a valid role' },
     });
     expect(schema.path('state').options).toMatchObject({ type: Boolean, required: true, default: true });
     expect(schema.path('google').options).toMatchObject({ type: Boolean, required: true, default: false });
@@ -68,7 +72,7 @@ describe('UserModel', () => {
       type: Number,
       required: true,
       default: 0,
-      min: 0,
+      min: [0, 'The token version cannot be negative'],
     });
     expect(schema.get('versionKey')).toBe(false);
     expect(schema.get('timestamps')).toBe(true);
