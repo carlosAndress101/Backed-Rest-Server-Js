@@ -73,7 +73,7 @@ const putCategory = async (req, res = response, next) => {
     data.name = data.name.toUpperCase();
     data.user = req.user._id;
 
-    const categories = await Category.findByIdAndUpdate(id, data, {new: true});
+    const categories = await Category.findByIdAndUpdate(id, data, { returnDocument: 'after' });
 
     res.json(categories);
   } catch (error) {
@@ -84,7 +84,7 @@ const putCategory = async (req, res = response, next) => {
 const deleteCategory = async (req = request, res = response, next) => {
     const { id } = req.params;
     try {
-        const categoryDelete = await Category.findByIdAndUpdate(id, {state: false}, {new: true});
+        const categoryDelete = await Category.findByIdAndUpdate(id, {state: false}, { returnDocument: 'after' });
         res.status(201).json(categoryDelete);
     } catch (error) {
         next(error);

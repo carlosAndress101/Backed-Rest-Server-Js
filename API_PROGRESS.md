@@ -1,6 +1,6 @@
 # API Progress
 
-> Baseline: commit `2f18dce` · Updated 2026-09-24 (M1 closed, release 2.0.0)
+> Baseline: commit `2f18dce` · Updated 2026-09-24 (M2 closed, release 2.1.0; routes unchanged since 2.0.0)
 > Status legend: 🔴 blocking defect · 🟠 works with defects · 🟢 target met · ⚪ to remove
 > Debt IDs link to [TECH_DEBT.md](TECH_DEBT.md).
 
@@ -52,5 +52,8 @@ Every change clients can observe is listed here before it ships, and in CHANGELO
 | M1 | Uploads larger than 5 MB return 413 | #20, #21 |
 | M1 (T1.7) | Multipart bodies are parsed **only** on the upload write routes, and only after auth; elsewhere they are ignored (send JSON). Note that a form-data `PUT /api/user/:id` returns 200 and changes nothing. At most one file per upload request (extra files are ignored). On `PUT /api/uploads/:collection/:id`, an invalid `id`/`collection` gets its validator 400 before the missing-file 400 | all except #20, #21 |
 | M1 (T1.7) | Operational: the optional `TRUST_PROXY` (non-negative integer hop count) sets Express `trust proxy`; an invalid value stops the boot (exit 1). Set it to the real hop count behind any reverse proxy | — |
+| M2 | **Additive:** every response carries `x-request-id` (a valid inbound id is echoed, otherwise a generated UUID) | all |
+| M2 | **Security:** operator objects in filter values (e.g. `{"email":{"$ne":null}}`) now return **400** `Invalid request data` (`sanitizeFilter`, SEC-14) | all with a body or query filter |
+| M2 | `CORS_ORIGINS` allowlist (optional; unset keeps any origin). Static files send a lowercase `charset=utf-8` (Express 5) | all · `/` |
 | M3 | Response envelope, correct status codes (GET 200, DELETE 204, validation 422), consistent `id` field, stub/debug routes removed | all |
 | M5 | `Authorization: Bearer <token>`; `x-token` deprecated (still accepted, `Deprecation` header) | all authenticated |

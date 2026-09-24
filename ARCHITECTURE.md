@@ -179,6 +179,21 @@ Boot: `app.js` awaits the DB connection, then `listen`, and exits 1 on failure. 
 **Still open from the audit:** ARC-02 and ARC-03 (M2), and every M2+ item in TECH_DEBT.md.
 
 
+
+### 1.9 State after M2 (release 2.1.0, 2026-09-24)
+
+**Stack:** Node 24 · **TypeScript 6** (strict, CommonJS output; `src/` → `dist/`, ADR-017/018) for the platform, with the legacy JS unchanged behind one seam · **Express 5.2.1** · **Mongoose 9.10.2** (driver 7.6, MongoDB ≥ 4.4) · zod 4 (config) · pino + pino-http · Vitest 5 + supertest + mongodb-memory-server · ESLint 10 (layer rules) + Prettier · GitHub Actions CI.
+
+**Boot:** `src/server.ts`: `loadConfig()` (fail fast, exit 1 listing every bad variable) → `createLogger` → `connectDatabase` (`strictQuery`, `sanitizeFilter`) → `createApp` → `listen`, with graceful SIGTERM/SIGINT shutdown (10 s drain).
+
+**Pipeline** (`src/app.ts`): `[trust proxy]` → pino-http (request id) → helmet → cors (allowlist) → `express.json` → static `public/` → `src/legacy.ts` (`/hello` + 6 legacy routers, each behind `legacyBodyCompat`) → `notFound` → `errorHandler` (`toAppError`, `{ msg }` bodies until 3.0.0).
+
+**Layout:** `src/{server,app,legacy}.ts`, `src/config/`, `src/core/{errors,http,logger}`, `src/middlewares/`, `src/database/`; `tests/{setup,helpers,unit,integration/{platform,security}}`. Legacy `routes/ controllers/ middlewares/ helpers/ models/` are unchanged except the §4.8 ledger lines of the M2 design. `app.js`, `models/server.js`, `database/` and `e2e/` are gone.
+
+**Environment:** see `.example.env`. Required: `MONGO_CLOUD`, `SECRET_KEY`, `GOOGLE_CLIENT_ID`, `CLOUDINARY_URL`. Optional: `NODE_ENV`, `PORT`, `LOG_LEVEL`, `CORS_ORIGINS`, `TRUST_PROXY`.
+
+**Next (M3):** replace each legacy area with a TS feature module under `src/modules/` (ADR-016), removing its `src/legacy.ts` entry, with zod DTOs and the 3.0.0 envelope.
+
 ---
 
 ## 2. To-be (target)
@@ -259,5 +274,5 @@ Status: **Accepted** = Orchestrator decision, binding on agents. **Proposed** = 
 | ADR-021 | **Error bodies stay `{ msg }` in M2** (M1 C1/C2 byte-identical). `AppError`, `toAppError` and the envelope helpers ship in M2; the handler switches to `{ error: { code, message, details? } }` in M3 as part of **3.0.0** (ADR-024) | Accepted 2026-09-23 (D2 review; details in [M2-foundation](docs/design/M2-foundation.md) §1.1) | No two error shapes in one release. REL-02 fixed in M2; HTTP-01 in M3. |
 | ADR-022 | **CORS allowlist via `CORS_ORIGINS`**; unset or `*` keeps any-origin, with a `warn` at production boot. Kept as written (D2 Q3): auth is a header token, never a cookie, and consumers are unknown | Accepted 2026-09-23 (D2 review; details in [M2-foundation](docs/design/M2-foundation.md) §1.1) | SEC-10 allowlist available; the M9 production checklist sets it. |
 | ADR-023 | **No `vi.mock`** (it can't reach `require()` in legacy CJS): tests spy on the shared CommonJS instance via `tests/helpers/legacy.ts`. One process and one database per test file on a shared `mongod` | Accepted 2026-09-23 (D2 review; details in [M2-foundation](docs/design/M2-foundation.md) §1.1) | The M1 suite ports mechanically; files run in parallel safely. |
-| ADR-024 | **Release mapping (SemVer, ADR-015).** M1 ships as **2.0.0** (breaking security fixes, releasable alone). M2 ships as **2.1.0** (operational and additive; operator objects in filters now get 400 as a security fix). The M3–M6 contract changes (envelope, status codes, `id`, Bearer auth, RBAC) are batched into **3.0.0**. Deprecated aliases (`uid`, `x-token`) are removed in **4.0.0**. Releases are git tags on `master` | Accepted 2026-09-23 (Orchestrator) | Clients migrate once per major. Erratum: D2's "2.0.0" for the envelope switch reads 3.0.0, and D4's "`uid` until 3.0.0" reads 4.0.0. |
+| ADR-024 | **Release mapping (SemVer, ADR-015).** M1 ships as **2.0.0** (breaking security fixes, releasable alone). M2 ships as **2.1.0** (operational and additive; operator objects in filters now get 400 as a security fix). The M3–M6 contract changes (envelope, status codes, `id`, Bearer auth, RBAC) are batched into **3.0.0**. Deprecated aliases (`uid`, `x-token`) are removed in **4.0.0**. Releases are git tags on `master` | Accepted 2026-09-23 (Orchestrator) | Clients migrate once per major. Erratum: D2's "2.0.0" for the envelope switch reads 3.0.0, and D4's "`uid` until 3.0.0" reads 4.0.0. Version numbers come from this mapping, not from commit markers: a `!` on an M2 dependency-upgrade commit (`build(deps)!:` for Express 5 and Mongoose 9) marks an internal breaking change for developers, not an API break. Release tooling (M10) must start from the `v2.1.0` tag. |
 | ADR-025 | **Supply-chain age gate.** Keep pnpm 12's default `minimumReleaseAge` (24 h) and **never** add `minimumReleaseAgeExclude`. A dependency task pins only versions published at least 24 h earlier, or waits for the gate to clear, and proves it with a cold frozen install (empty store, state and cache) | Accepted 2026-09-24 (Orchestrator, from the T2.1 finding) | A fresh release is the classic window for a compromised package. The local verification cache hides violations, so the cold install is the only real proof. |
