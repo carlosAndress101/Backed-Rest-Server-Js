@@ -16,11 +16,16 @@ interface Row {
   role: string;
   state: boolean;
   google: boolean;
+  tokenVersion: number;
   image?: string;
 }
 
-const ADMIN = { role: 'ADMIN_ROLE' };
-const SELF = { role: 'USER_ROLE' };
+// Actors carry their own id (AM-M5-10): SELF acts on its own row '1'; ADMIN's own row is 'admin'.
+const ADMIN = { id: 'admin', role: 'ADMIN_ROLE' };
+const SELF = { id: '1', role: 'USER_ROLE' };
+const OWN_PASSWORD = new ValidationError([
+  { path: 'password', message: 'change your own password with PUT /api/auth/password' },
+]);
 const PASSWORD = 'correct-horse-battery';
 
 /** A query stand-in: chainable like a Mongoose query, and resolves when awaited (applying skip/limit to lists). */
@@ -61,12 +66,14 @@ const row = (fields: Partial<Row> & Pick<Row, '_id'>): Row => ({
   role: 'USER_ROLE',
   state: true,
   google: false,
+  tokenVersion: 0,
   ...fields,
 });
 
 /** A hand-written User model holding `rows`, with only the methods the service calls. */
 function fakeUserModel(seed: Row[] = []) {
   const rows = seed.map((stored) => ({ ...stored }));
+  const updates: unknown[] = [];
   const matching = (filter: Partial<Row>) =>
     rows.filter((stored) =>
       Object.entries(filter).every(([key, value]) => stored[key as keyof Row] === value),
@@ -83,13 +90,23 @@ function fakeUserModel(seed: Row[] = []) {
       rows.push(created);
       return Promise.resolve(created);
     },
-    findOneAndUpdate: (filter: Partial<Row>, update: Partial<Row>) =>
+    // A plain object is a $set, as Mongoose treats it; $set and $inc are applied as MongoDB would.
+    findOneAndUpdate: (
+      filter: Partial<Row>,
+      update: Partial<Row> & { $set?: Partial<Row>; $inc?: Record<string, number> },
+    ) =>
       new FakeQuery(() => {
+        updates.push(update);
         const found = matching(filter)[0];
-        return found ? Object.assign(found, update) : null;
+        if (!found) return null;
+        const { $set, $inc, ...plain } = update;
+        Object.assign(found, plain, $set);
+        for (const [key, by] of Object.entries($inc ?? {}))
+          Object.assign(found, { [key]: (found[key as keyof Row] as number) + by });
+        return found;
       }),
   };
-  return { rows, User: fake as unknown as Model<User> };
+  return { rows, updates, User: fake as unknown as Model<User> };
 }
 
 const COST = 10; // config.auth.bcryptCost in these tests
@@ -127,12 +144,12 @@ describe('createUsersService', () => {
     });
 
     // ADR-035: the cost comes from config.auth.bcryptCost, never a constant (PERF-01).
-    test('hashes at the configured cost, on create and on update', async () => {
+    test("hashes at the configured cost, on create and on an administrator's reset", async () => {
       const { User, rows } = fakeUserModel([row({ _id: '1', name: 'Ada' })]);
       const service = createUsersService({ User, bcryptCost: 11 });
 
       await service.create({ name: 'Grace', email: 'grace@example.com', password: PASSWORD });
-      await service.update('1', { password: PASSWORD }, SELF);
+      await service.update('1', { password: PASSWORD }, ADMIN);
 
       expect(rows.map((stored) => stored.password.slice(0, 7))).toEqual(['$2b$11$', '$2b$11$']);
     });
@@ -166,17 +183,62 @@ describe('createUsersService', () => {
   });
 
   describe('update', () => {
-    test('anyone may change name and password; the password is stored hashed', async () => {
+    test('anyone may change their own name; no tokenVersion is bumped', async () => {
+      const { User, rows } = fakeUserModel([row({ _id: '1', name: 'Ada' })]);
+
+      await createUsersService({ User, bcryptCost: COST }).update('1', { name: 'Ada L' }, SELF);
+
+      expect(rows[0]).toMatchObject({ name: 'Ada L', password: 'stored-hash', tokenVersion: 0 });
+    });
+
+    test.each([
+      ['a user on their own account', '1', SELF],
+      ['a sales user on their own account', '1', { id: '1', role: 'VENTAS_ROLE' }],
+      ['an administrator on their own account', 'admin', ADMIN],
+      ['an administrator on their own id spelled in uppercase', 'ADMIN', ADMIN],
+      ['a non-administrator on another account (routes forbid it; the service refuses too)', 'admin', SELF],
+    ])(
+      'a password from %s is a ValidationError naming PUT /api/auth/password, and nothing is written (AM-M5-10)',
+      async (_case, id, actor) => {
+        const { User, rows, updates } = fakeUserModel([
+          row({ _id: '1', name: 'Ada' }),
+          row({ _id: 'admin', name: 'Boss', role: 'ADMIN_ROLE' }),
+        ]);
+        const before = structuredClone(rows);
+
+        await expect(
+          createUsersService({ User, bcryptCost: COST }).update(
+            id,
+            { name: 'Changed', password: PASSWORD },
+            actor,
+          ),
+        ).rejects.toEqual(OWN_PASSWORD);
+        expect(rows).toEqual(before);
+        expect(updates).toEqual([]);
+      },
+    );
+
+    test("an administrator resets another user's password: a hash at the configured cost and tokenVersion + 1, in one write", async () => {
+      const { User, rows, updates } = fakeUserModel([row({ _id: '1', name: 'Ada', tokenVersion: 2 })]);
+
+      await createUsersService({ User, bcryptCost: 11 }).update('1', { password: PASSWORD }, ADMIN);
+
+      expect(rows[0]!.password.slice(0, 7)).toBe('$2b$11$');
+      expect(await bcrypt.compare(PASSWORD, rows[0]!.password)).toBe(true);
+      expect(rows[0]!.tokenVersion).toBe(3);
+      expect(updates).toEqual([{ $set: { password: rows[0]!.password }, $inc: { tokenVersion: 1 } }]);
+    });
+
+    test("an administrator's update without a password bumps no tokenVersion", async () => {
       const { User, rows } = fakeUserModel([row({ _id: '1', name: 'Ada' })]);
 
       await createUsersService({ User, bcryptCost: COST }).update(
         '1',
-        { name: 'Ada L', password: PASSWORD },
-        SELF,
+        { name: 'Ada L', state: false },
+        ADMIN,
       );
 
-      expect(rows[0]!.name).toBe('Ada L');
-      expect(await bcrypt.compare(PASSWORD, rows[0]!.password)).toBe(true);
+      expect(rows[0]).toMatchObject({ name: 'Ada L', state: false, tokenVersion: 0 });
     });
 
     test('role and state from a non-admin are dropped, even an unknown role (C6)', async () => {

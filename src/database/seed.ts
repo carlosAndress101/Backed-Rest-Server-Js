@@ -1,10 +1,7 @@
-import bcrypt from 'bcrypt';
-
 import type { Config } from '../config';
 import type { Logger } from '../core/logger';
+import { MAX_PASSWORD_BYTES, hashPassword } from '../core/security/password';
 
-// As the users module hashes (user.service.ts); M5 tunes both (PERF-01).
-const BCRYPT_ROUNDS = 10;
 export const MIN_PASSWORD_LENGTH = 8;
 
 /** The first admin, as the seed creates it. */
@@ -28,6 +25,8 @@ export interface SeedDeps {
   readonly User: SeedUserModel;
   /** config.seed (D-14). The password is never logged, whatever happens (P20). */
   readonly config: Config['seed'];
+  /** config.auth.bcryptCost (ADR-035, AM-M5-11): the admin's hash is made like every other one. */
+  readonly bcryptCost: number;
   readonly log: Logger;
 }
 
@@ -46,7 +45,7 @@ const isDuplicateKey = (err: unknown): boolean =>
  * create-only (never an upsert or an update, so no existing user changes), idempotent, and refuses a weak password
  * or an instance that already has an active admin. Run only by `pnpm seed`, never on boot.
  */
-export async function seedFirstAdmin({ User, config, log }: SeedDeps): Promise<SeedResult> {
+export async function seedFirstAdmin({ User, config, bcryptCost, log }: SeedDeps): Promise<SeedResult> {
   const email = config.adminEmail?.trim().toLowerCase();
   const password = config.adminPassword;
 
@@ -57,6 +56,13 @@ export async function seedFirstAdmin({ User, config, log }: SeedDeps): Promise<S
   if (password.length < MIN_PASSWORD_LENGTH) {
     log.error(
       `seed: SEED_ADMIN_PASSWORD is shorter than ${MIN_PASSWORD_LENGTH} characters; refusing to create an admin`,
+    );
+    return { created: false, reason: 'weak-password' };
+  }
+  // SEC-16 (AM-M5-11): bcrypt reads only the first 72 bytes, so a longer password would work truncated.
+  if (Buffer.byteLength(password, 'utf8') > MAX_PASSWORD_BYTES) {
+    log.error(
+      `seed: SEED_ADMIN_PASSWORD is longer than ${MAX_PASSWORD_BYTES} bytes; refusing to create an admin`,
     );
     return { created: false, reason: 'weak-password' };
   }
@@ -76,7 +82,7 @@ export async function seedFirstAdmin({ User, config, log }: SeedDeps): Promise<S
     const created = await User.create({
       name: 'Administrator',
       email,
-      password: await bcrypt.hash(password, BCRYPT_ROUNDS),
+      password: await hashPassword(password, bcryptCost),
       role: 'ADMIN_ROLE',
       state: true,
       google: false,

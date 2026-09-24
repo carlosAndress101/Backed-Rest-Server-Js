@@ -92,7 +92,14 @@ export async function main(args: readonly string[]): Promise<number> {
   try {
     // AM-M4-7: this composition root hands the users module's model to the seed.
     const seed = async (seedLog: Logger) =>
-      seedExitCode(await seedFirstAdmin({ User: UserModel, config: config.seed, log: seedLog }));
+      seedExitCode(
+        await seedFirstAdmin({
+          User: UserModel,
+          config: config.seed,
+          bcryptCost: config.auth.bcryptCost,
+          log: seedLog,
+        }),
+      );
     return await runCommand(command, { db: mongoose.connection.db!, log, migrations: MIGRATIONS, seed });
   } catch (err) {
     log.error({ err }, 'command failed'); // a migration that threw is not recorded, so the next run retries it

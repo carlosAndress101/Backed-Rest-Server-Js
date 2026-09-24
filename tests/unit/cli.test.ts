@@ -258,6 +258,29 @@ describe('main (the CLI process)', () => {
     await target.dropDatabase();
   });
 
+  test('seed hashes at BCRYPT_COST, passed by src/cli.ts from config.auth.bcryptCost (AM-M5-11)', async () => {
+    const target = useDatabase();
+    vi.stubEnv('SEED_ADMIN_EMAIL', 'admin@example.com');
+    vi.stubEnv('SEED_ADMIN_PASSWORD', 'seed-admin-secret-9f3c');
+    vi.stubEnv('BCRYPT_COST', '12');
+
+    expect(await main(['seed'])).toBe(0);
+
+    const [admin] = await target.collection('users').find({}).toArray();
+    expect((admin!.password as string).slice(0, 7)).toBe('$2b$12$');
+    await target.dropDatabase();
+  });
+
+  test('seed with a 73-byte SEED_ADMIN_PASSWORD exits 1 and creates nothing (AM-M5-11)', async () => {
+    const target = useDatabase();
+    vi.stubEnv('SEED_ADMIN_EMAIL', 'admin@example.com');
+    vi.stubEnv('SEED_ADMIN_PASSWORD', 'a'.repeat(73));
+
+    expect(await main(['seed'])).toBe(1);
+
+    expect(await target.collection('users').countDocuments()).toBe(0);
+  });
+
   test('seed without SEED_ADMIN_* exits 1 and creates nothing', async () => {
     const target = useDatabase();
 
