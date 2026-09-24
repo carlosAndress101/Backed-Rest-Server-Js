@@ -1,0 +1,29 @@
+{
+  "compilerOptions": {
+    "target": "es2025", // Node 24 runs ES2025 (RegExp.escape, Promise.try, Set methods: verified)
+    "lib": ["es2025"],
+    "module": "nodenext", // with "type": "commonjs" → CJS output (ADR-017)
+    "moduleResolution": "nodenext",
+    "types": ["node"], // TS 6 defaults `types` to []
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "noImplicitOverride": true,
+    "noFallthroughCasesInSwitch": true,
+    "isolatedModules": true, // tsx and Vitest transpile per file
+    "esModuleInterop": true, // `false` is deprecated in TS 6
+    "skipLibCheck": true,
+    "allowJs": true, // ADR-002: legacy JS is part of the program…
+    "checkJs": false, // …but is not type-checked
+    "noEmit": true
+  },
+  "include": [
+    "src",
+    "tests",
+    "routes",
+    "controllers",
+    "middlewares",
+    "helpers",
+    "models",
+    "vitest.config.mts"
+  ]
+}
