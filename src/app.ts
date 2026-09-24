@@ -3,6 +3,7 @@ import path from 'node:path';
 import cors from 'cors';
 import express, { type Express } from 'express';
 import helmet, { type HelmetOptions } from 'helmet';
+import { isObjectIdOrHexString } from 'mongoose';
 
 import type { Config } from './config';
 import type { Logger } from './core/logger';
@@ -13,7 +14,8 @@ import { requireAdmin } from './middlewares/authorize';
 import { errorHandler } from './middlewares/error-handler';
 import { notFound } from './middlewares/not-found';
 import { requestLogger } from './middlewares/request-logger';
-import { CategoryModel, categoriesModule } from './modules/categories';
+import { categoriesModule } from './modules/categories';
+import { UserModel, usersModule } from './modules/users';
 
 export interface AppDeps {
   config: Config;
@@ -58,12 +60,15 @@ export function createApp({ config, logger }: AppDeps): Express {
   app.use(express.static(PUBLIC_DIR));
 
   const tokens = createTokenService(config.auth.jwtSecret);
-  // ADR-027: User is still registered by legacy models/user.js, so it is read from the registry per request,
-  // never at createApp time. The users module (T3.3) replaces this with its UserModel.
-  const users: UserLookup = { findById: (id) => CategoryModel.db.model('User').findById(id) };
+  // The users module owns User (ADR-027). A uid that is not an ObjectId is no user, so authenticate answers 401,
+  // never the 400 of a CastError.
+  const users: UserLookup = {
+    findById: (id) => (isObjectIdOrHexString(id) ? UserModel.findById(id) : Promise.resolve(null)),
+  };
   const auth = authenticate({ tokens, users });
 
   app.use('/api/category', categoriesModule({ authenticate: auth, requireAdmin }));
+  app.use('/api/user', usersModule({ authenticate: auth }));
   mountLegacyRoutes(app); // the routes no module owns yet
 
   app.use(notFound);

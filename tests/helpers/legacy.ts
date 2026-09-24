@@ -1,5 +1,9 @@
 // tests/helpers/legacy.ts: contract P7. The one test seam into legacy CommonJS; deleted with the last legacy module (M3).
 /* eslint-disable @typescript-eslint/no-require-imports */
+// ADR-027 load order (AM-M3-4): models/index.js re-exports the TS registrations, so every migrated
+// model registers here first. A module task that migrates a model adds its line. Deleted with this file (T3.8).
+import '../../src/modules/categories/category.model';
+import '../../src/modules/users/user.model';
 import type { v2 } from 'cloudinary';
 import type { OAuth2Client } from 'google-auth-library';
 import type { Model } from 'mongoose';
