@@ -1,7 +1,6 @@
 // LOG-01 / ADR-020: the legacy sites of the M2 ledger (§4.8) log through req.log, bound to the request id,
 // and nothing reaches the console.
 import fs from 'node:fs';
-import { rm } from 'node:fs/promises';
 import type { Server } from 'node:http';
 import os from 'node:os';
 import path from 'node:path';
@@ -15,7 +14,6 @@ import { clearLogs, loggedText, startTestApp, stopTestApp } from '../../helpers/
 import { PASSWORD, createUser, logRecords, signIn, type SignedIn } from './support';
 
 const PNG = Buffer.from('not really a png: the upload routes check only the extension');
-const UPLOADS_DIR = path.join(__dirname, '..', '..', '..', 'uploads', 'imgs');
 const NEW_ASSET = 'https://res.cloudinary.com/demo/image/upload/v1/new-asset.png';
 const OLD_ASSET = 'https://res.cloudinary.com/demo/image/upload/v1/old-asset.png';
 
@@ -134,12 +132,11 @@ describe('LOG-01: legacy code logs through req.log, never the console', () => {
         realRm(target, options, () => done(new Error('simulated cleanup failure'))),
     );
 
-    const res = await request(server)
-      .post('/api/uploads')
-      .set('x-token', admin.token)
-      .set('x-request-id', 'cleanup')
-      .attach('file', PNG, 'avatar.png');
-    await rm(path.join(UPLOADS_DIR, String(res.body.fullName)), { force: true });
+    // the Cloudinary route: it never writes under uploads/, which the security suite owns (TEST-03)
+    vi.spyOn(cloudinary.uploader, 'upload').mockResolvedValue({ secure_url: NEW_ASSET } as never);
+    vi.spyOn(cloudinary.uploader, 'destroy').mockResolvedValue({ result: 'ok' });
+
+    const res = await replaceImage('cleanup');
 
     expect(res.status).toBe(200);
     // the folder is removed once the response is over, so the line can follow the response
