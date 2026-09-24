@@ -2,15 +2,24 @@ import mongoose, { Schema, type HydratedDocument, type InferSchemaType, type Mod
 
 import { toJsonPlugin } from '../../core/database/to-json.plugin';
 
-// The stored 2.x shape, field for field. M4 adds timestamps and indexes to this schema.
+// M4 §2.2: timestamps, the name cap and casing; indexes are explicit (§3.1).
 const categorySchema = new Schema(
   {
-    name: { type: String, required: [true, 'The name is required'], unique: true },
+    name: {
+      type: String,
+      required: [true, 'The name is required'],
+      trim: true,
+      uppercase: true,
+      maxlength: 120,
+      unique: true,
+    },
     state: { type: Boolean, required: true, default: true },
     user: { type: Schema.Types.ObjectId, ref: 'User', required: true },
   },
-  { versionKey: false },
+  { versionKey: false, timestamps: true },
 );
+
+// §3.1: partial unique so a soft-deleted name is reusable; collated so case variants collide (duplicate check only).
 toJsonPlugin(categorySchema); // id; no _id/__v; no uid alias (a category never exposed uid)
 
 export type Category = InferSchemaType<typeof categorySchema>;

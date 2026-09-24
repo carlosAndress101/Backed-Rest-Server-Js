@@ -1,4 +1,4 @@
-// The registry seam (ADR-027, P14) and the stored shape (M3 design §1.2, §4.1). No database needed.
+// The registry seam (ADR-027, P14) and the M4 stored shape (design §2.2). No database needed.
 import mongoose from 'mongoose';
 import { describe, expect, test, vi } from 'vitest';
 
@@ -17,24 +17,34 @@ describe('CategoryModel', () => {
     expect(mongoose.modelNames().filter((name) => name === 'Category')).toHaveLength(1);
   });
 
-  test('stores the legacy shape: name, state and user, no version key (M4 owns schema changes)', () => {
+  test('stores the M4 shape: name caps and casing, timestamps, and no version key', () => {
     const { schema } = CategoryModel;
 
-    expect(Object.keys(schema.paths).sort()).toEqual(['_id', 'name', 'state', 'user']);
+    expect(Object.keys(schema.paths).sort()).toEqual([
+      '_id',
+      'createdAt',
+      'name',
+      'state',
+      'updatedAt',
+      'user',
+    ]);
     expect(schema.path('name')).toMatchObject({ instance: 'String', isRequired: true });
     expect(schema.path('name').options).toMatchObject({
-      unique: true,
       required: [true, 'The name is required'],
+      trim: true,
+      uppercase: true,
+      maxlength: 120,
     });
     expect(schema.path('state')).toMatchObject({ instance: 'Boolean', isRequired: true, defaultValue: true });
     expect(schema.path('user')).toMatchObject({ instance: 'ObjectId', isRequired: true });
     expect(schema.path('user').options).toMatchObject({ ref: 'User' });
     expect(schema.get('versionKey')).toBe(false);
+    expect(schema.get('timestamps')).toBe(true);
   });
 
-  test('serializes with id and without _id or uid (P13)', () => {
+  test('serializes with id and without _id or uid, uppercasing the name (P13)', () => {
     const user = new mongoose.Types.ObjectId();
-    const category = new CategoryModel({ name: 'COFFEE', user });
+    const category = new CategoryModel({ name: 'coffee', user });
 
     expect(JSON.parse(JSON.stringify(category))).toEqual({
       id: category.id,
