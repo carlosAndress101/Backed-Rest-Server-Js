@@ -1,25 +1,3 @@
-const { model, Schema} = require('mongoose');
-const mongoose = require('mongoose');
-
-const CategorySchema = Schema({
-    name:{
-        type:String,
-        unique: true,
-        required: [true, 'The name is required']
-    },
-    state:{
-        type:Boolean,
-        default: true,
-        required: true
-    },
-    user:{
-        type: Schema.Types.ObjectId,
-        ref: 'User',
-        required: true
-    },
-},{
-    versionKey: false
-});
-
-
-module.exports = model('Category', CategorySchema);
+// Migrated to TS in M3: src/modules/categories/category.model.ts is the sole registrant (ADR-027).
+// Legacy consumers (models/index.js, helpers/db-validators.js, controllers/search.js) read it from the registry.
+module.exports = require('mongoose').model('Category');

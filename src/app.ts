@@ -6,10 +6,14 @@ import helmet, { type HelmetOptions } from 'helmet';
 
 import type { Config } from './config';
 import type { Logger } from './core/logger';
+import { createTokenService } from './core/security/jwt';
 import { mountLegacyRoutes } from './legacy';
+import { authenticate, type UserLookup } from './middlewares/authenticate';
+import { requireAdmin } from './middlewares/authorize';
 import { errorHandler } from './middlewares/error-handler';
 import { notFound } from './middlewares/not-found';
 import { requestLogger } from './middlewares/request-logger';
+import { CategoryModel, categoriesModule } from './modules/categories';
 
 export interface AppDeps {
   config: Config;
@@ -53,7 +57,14 @@ export function createApp({ config, logger }: AppDeps): Express {
   app.use(express.json());
   app.use(express.static(PUBLIC_DIR));
 
-  mountLegacyRoutes(app);
+  const tokens = createTokenService(config.auth.jwtSecret);
+  // ADR-027: User is still registered by legacy models/user.js, so it is read from the registry per request,
+  // never at createApp time. The users module (T3.3) replaces this with its UserModel.
+  const users: UserLookup = { findById: (id) => CategoryModel.db.model('User').findById(id) };
+  const auth = authenticate({ tokens, users });
+
+  app.use('/api/category', categoriesModule({ authenticate: auth, requireAdmin }));
+  mountLegacyRoutes(app); // the routes no module owns yet
 
   app.use(notFound);
   app.use(errorHandler);

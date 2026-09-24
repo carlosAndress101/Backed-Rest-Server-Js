@@ -244,7 +244,7 @@ describe('createApp', () => {
     });
 
     test('a legacy request without a body sees req.body as {} (Express 4 parity)', async () => {
-      const { req } = await requestSeenByApp(server, () => request(server).get('/api/category'));
+      const { req } = await requestSeenByApp(server, () => request(server).get('/api/product'));
 
       expect(req.body).toEqual({});
       expect(Object.getPrototypeOf(req.body)).toBe(Object.prototype);

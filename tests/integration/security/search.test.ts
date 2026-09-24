@@ -150,7 +150,7 @@ describe('search policy', () => {
 
       expect(res.statusCode).toBe(200);
       expect(res.body.results).toHaveLength(1);
-      expect(res.body.results[0]._id).toBe(category.id);
+      expect(res.body.results[0].id).toBe(category.id);
     });
   });
 });
