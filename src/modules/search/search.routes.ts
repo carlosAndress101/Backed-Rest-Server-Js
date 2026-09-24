@@ -1,6 +1,6 @@
 import { Router, type RequestHandler } from 'express';
 
-import { requireAdmin } from '../../middlewares/authorize';
+import { authorize } from '../../middlewares/authorize';
 import type { SearchController } from './search.controller';
 
 export interface SearchRouteDeps {
@@ -17,7 +17,7 @@ const forUserSearch =
 
 /**
  * Paths and middleware only. Auth runs before the collection check, so `GET /api/search/role/x` with no
- * token is 400 (the legacy order). The stateless guard is declared here, next to the path it protects (AM-M3-8).
+ * token is 400 (the legacy order). The policy is declared here, next to the path it protects (ADR-038).
  */
 export function createSearchRouter(deps: SearchRouteDeps): Router {
   const { controller, authenticate } = deps;
@@ -26,7 +26,7 @@ export function createSearchRouter(deps: SearchRouteDeps): Router {
   router.get(
     '/:collection/:term',
     forUserSearch(authenticate),
-    forUserSearch(requireAdmin),
+    forUserSearch(authorize({ roles: ['ADMIN_ROLE'] })),
     controller.search,
   );
 

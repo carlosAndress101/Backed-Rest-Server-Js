@@ -9,7 +9,8 @@ export interface CategoriesService {
   list(query: PaginationQuery): Promise<{ items: CategoryDocument[]; total: number }>;
   getActive(id: string): Promise<CategoryDocument>;
   create(dto: CreateCategoryDto, userId: string): Promise<CategoryDocument>;
-  update(id: string, dto: UpdateCategoryDto, userId: string): Promise<CategoryDocument>;
+  /** AM-M6-2: a pure role policy (CATALOG_ROLES) at the route; no ownership check, so no Actor here. */
+  update(id: string, dto: UpdateCategoryDto): Promise<CategoryDocument>;
   softDelete(id: string): Promise<void>;
 }
 
@@ -49,11 +50,12 @@ export function createCategoriesService(deps: { Category: Model<Category> }): Ca
       return Category.create({ name, user: userId });
     },
 
-    async update(id, dto, userId) {
-      // One atomic find-active-and-update: a category soft-deleted meanwhile is never renamed.
+    async update(id, dto) {
+      // One atomic find-active-and-update: a category soft-deleted meanwhile is never renamed. AM-M6-2: the
+      // editor is never recorded as the new owner — a category's creator does not change through PUT.
       const doc = await Category.findOneAndUpdate(
         { _id: id, state: true },
-        { name: dto.name.toUpperCase(), user: userId },
+        { name: dto.name.toUpperCase() },
         { returnDocument: 'after' },
       ).populate('user', 'name');
       if (!doc) throw new NotFoundError('Category not found');

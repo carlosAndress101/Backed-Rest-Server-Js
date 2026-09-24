@@ -300,8 +300,9 @@ describe('products module (§6 #14–#18)', () => {
     });
   });
 
-  describe('#17 PUT /api/product/:id (admin)', () => {
-    test('is 200 env(product): renamed, uppercased, and owned by the editor', async () => {
+  describe('#17 PUT /api/product/:id (admin, VENTAS_ROLE, or the creator)', () => {
+    // ADR-041: the fix. Before M6, every editor (admin included) silently became the new owner.
+    test('is 200 env(product): renamed, uppercased, and the creator is unchanged', async () => {
       const category = await createCategory();
       const product = await createProduct({ name: 'KEYBOARD', user, category: category.id });
 
@@ -317,10 +318,10 @@ describe('products module (§6 #14–#18)', () => {
         state: true,
         price: 10,
         available: false,
-        user: { name: 'Admin User' },
+        user: { name: 'Test User' },
       });
       expectApiShape(res.body.data);
-      expect(String((await ProductModel.findById(product.id).lean())?.user)).toBe(admin.id);
+      expect(String((await ProductModel.findById(product.id).lean())?.user)).toBe(user.id);
     });
 
     test('without a token it is 401', async () => {
@@ -331,11 +332,45 @@ describe('products module (§6 #14–#18)', () => {
       expect(res.status).toBe(401);
     });
 
-    test('a non-admin is 403, before the id and body are validated', async () => {
+    // ADR-039: ownership is now a service-level check, so a non-owner still reaches validation first
+    // (authorize's deferToService lets every authenticated caller through the route).
+    test('a malformed id is 422 even for a non-owner, non-privileged caller (ADR-039)', async () => {
       const res = await request(app).put(`/api/product/${BAD_ID}`).set(authHeader(userToken)).send({});
 
+      expect(res.status).toBe(422);
+      expect(res.body).toEqual(invalidId);
+    });
+
+    test('a non-owner, non-privileged caller is 403 and the product is untouched (ADR-039)', async () => {
+      const category = await createCategory();
+      const product = await createProduct({ name: 'KEYBOARD', category: category.id }); // owned by another user
+
+      const res = await request(app)
+        .put(`/api/product/${product.id}`)
+        .set(authHeader(userToken))
+        .send({ name: 'mouse' });
+
       expect(res.status).toBe(403);
-      expect(res.body).toEqual({ error: { code: 'FORBIDDEN', message: 'Administrator role required' } });
+      expect(res.body).toEqual({
+        error: {
+          code: 'FORBIDDEN',
+          message: 'Only the creator, an administrator or VENTAS_ROLE may update this product',
+        },
+      });
+      expect(await ProductModel.findById(product.id).lean()).toMatchObject({ name: 'KEYBOARD' });
+    });
+
+    test('the creator updates their own product (ADR-041, additive)', async () => {
+      const category = await createCategory();
+      const product = await createProduct({ name: 'KEYBOARD', user, category: category.id });
+
+      const res = await request(app)
+        .put(`/api/product/${product.id}`)
+        .set(authHeader(userToken))
+        .send({ name: 'mouse' });
+
+      expect(res.status).toBe(200);
+      expect(res.body.data).toMatchObject({ name: 'MOUSE' });
     });
 
     test('a product that does not exist is 404', async () => {
@@ -414,7 +449,7 @@ describe('products module (§6 #14–#18)', () => {
     });
   });
 
-  describe('#18 DELETE /api/product/:id (admin)', () => {
+  describe('#18 DELETE /api/product/:id (admin, VENTAS_ROLE, or the creator)', () => {
     test('is 204 with no body, and only soft-deletes', async () => {
       const product = await createProduct({ name: 'KEYBOARD' });
 
@@ -454,13 +489,26 @@ describe('products module (§6 #14–#18)', () => {
       expect(res.status).toBe(401);
     });
 
-    test('a non-admin is 403 and nothing is deleted', async () => {
-      const product = await createProduct();
+    test('a non-owner, non-privileged caller is 403 and nothing is deleted (ADR-039)', async () => {
+      const product = await createProduct(); // owned by a different user, not `user`
 
       const res = await request(app).delete(`/api/product/${product.id}`).set(authHeader(userToken));
 
       expect(res.status).toBe(403);
+      expect(res.body.error).toMatchObject({
+        code: 'FORBIDDEN',
+        message: 'Only the creator, an administrator or VENTAS_ROLE may delete this product',
+      });
       expect(await ProductModel.findById(product.id).lean()).toMatchObject({ state: true });
+    });
+
+    test('the creator deletes their own product (ADR-041, additive)', async () => {
+      const product = await createProduct({ user });
+
+      const res = await request(app).delete(`/api/product/${product.id}`).set(authHeader(userToken));
+
+      expect(res.status).toBe(204);
+      expect(await ProductModel.findById(product.id).lean()).toMatchObject({ state: false });
     });
 
     test('a malformed id is 422', async () => {

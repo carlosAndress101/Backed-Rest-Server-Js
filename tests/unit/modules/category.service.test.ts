@@ -169,13 +169,22 @@ describe('createCategoriesService', () => {
   });
 
   describe('update', () => {
-    test('renames with the name uppercased and records the editor', async () => {
+    test('renames with the name uppercased; no Actor is taken (AM-M6-2: a pure role policy at the route)', async () => {
       const { Category, rows } = fakeCategoryModel([{ _id: '1', name: 'COFFEE', state: true }]);
 
-      const updated = await createCategoriesService({ Category }).update('1', { name: 'espresso' }, EDITOR);
+      const updated = await createCategoriesService({ Category }).update('1', { name: 'espresso' });
 
-      expect(updated).toMatchObject({ name: 'ESPRESSO', user: EDITOR });
-      expect(rows[0]).toMatchObject({ name: 'ESPRESSO', user: EDITOR, state: true });
+      expect(updated).toMatchObject({ name: 'ESPRESSO' });
+      expect(rows[0]).toMatchObject({ name: 'ESPRESSO', state: true });
+    });
+
+    // ADR-041/AM-M6-2: the fix. Before M6, every editor (admin included) silently became the new owner.
+    test('never reassigns the category to the editor: the creator stays the owner', async () => {
+      const { Category, rows } = fakeCategoryModel([{ _id: '1', name: 'COFFEE', state: true }]);
+
+      await createCategoriesService({ Category }).update('1', { name: 'espresso' });
+
+      expect(rows[0]).toMatchObject({ user: OWNER });
     });
 
     test.each([
@@ -184,7 +193,7 @@ describe('createCategoriesService', () => {
     ])('a %s category is a NotFoundError and nothing is written', async (_case, id) => {
       const { Category, rows } = fakeCategoryModel([{ _id: '2', name: 'TEA', state: false }]);
 
-      await expect(createCategoriesService({ Category }).update(id, { name: 'x' }, EDITOR)).rejects.toEqual(
+      await expect(createCategoriesService({ Category }).update(id, { name: 'x' })).rejects.toEqual(
         new NotFoundError('Category not found'),
       );
       expect(rows).toEqual([{ _id: '2', name: 'TEA', state: false, user: OWNER }]);

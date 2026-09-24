@@ -92,7 +92,7 @@ describe('users module (§6 #4–#8)', () => {
         .set(authHeader(await tokenFor(caller)));
 
       expect(res.status).toBe(403);
-      expect(res.body).toEqual({ error: { code: 'FORBIDDEN', message: 'Administrator role required' } });
+      expect(res.body).toEqual({ error: { code: 'FORBIDDEN', message: 'Not allowed' } });
     });
 
     test('a bad page is 422', async () => {
@@ -266,7 +266,7 @@ describe('users module (§6 #4–#8)', () => {
       const res = await request(app).put(`/api/user/${BAD_ID}`).set(authHeader(userToken)).send({ name: 7 });
 
       expect(res.status).toBe(403);
-      expect(res.body).toEqual({ error: { code: 'FORBIDDEN', message: 'Owner or administrator required' } });
+      expect(res.body).toEqual({ error: { code: 'FORBIDDEN', message: 'Not allowed' } });
     });
 
     test('a user that does not exist is 404', async () => {
@@ -393,7 +393,7 @@ describe('users module (§6 #4–#8)', () => {
     });
   });
 
-  describe('#7 DELETE /api/user/:id (admin or VENTAS_ROLE)', () => {
+  describe('#7 DELETE /api/user/:id (admin only, ADR-040)', () => {
     test('is 204 with no body; the user is soft-deleted, unlisted, and their token stops working', async () => {
       const res = await request(app).delete(`/api/user/${user.id}`).set(authHeader(adminToken));
 
@@ -404,14 +404,16 @@ describe('users module (§6 #4–#8)', () => {
       expect((await request(app).put(`/api/user/${user.id}`).set(authHeader(userToken))).status).toBe(401);
     });
 
-    test('VENTAS_ROLE may delete too', async () => {
+    // ADR-040: breaking. VENTAS_ROLE is now a catalog manager only; it lost user-management rights.
+    test('VENTAS_ROLE is 403 and nothing is deleted (ADR-040)', async () => {
       const sales = await createUser({ role: 'VENTAS_ROLE' });
 
       const res = await request(app)
         .delete(`/api/user/${user.id}`)
         .set(authHeader(await tokenFor(sales)));
 
-      expect(res.status).toBe(204);
+      expect(res.status).toBe(403);
+      expect(await UserModel.findById(user.id).lean()).toMatchObject({ state: true });
     });
 
     test('USER_ROLE is 403 and nothing is deleted', async () => {

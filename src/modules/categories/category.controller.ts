@@ -30,7 +30,7 @@ export function createCategoriesController(service: CategoriesService) {
 
   const update: RequestHandler = async (req, res) => {
     const { id } = req.params as { id: string };
-    const category = await service.update(id, req.body as UpdateCategoryDto, req.user!.id);
+    const category = await service.update(id, req.body as UpdateCategoryDto);
     res.status(200).json(envelope(category));
   };
 
