@@ -7,7 +7,7 @@ export interface TokenService {
   verify(token: string): { uid: string };
 }
 
-// The same payload ({ uid }), secret and lifetime as helpers/generar-jwt.js, so either side accepts the other's tokens.
+// The same payload ({ uid }), secret and lifetime as 2.x, so a session started before the upgrade stays valid.
 const TOKEN_TTL = '4h';
 
 export function createTokenService(secret: string): TokenService {

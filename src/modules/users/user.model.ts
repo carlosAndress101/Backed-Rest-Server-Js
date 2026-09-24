@@ -3,7 +3,7 @@ import mongoose, { Schema, type HydratedDocument, type InferSchemaType, type Mod
 import { toJsonPlugin } from '../../core/database/to-json.plugin';
 import { DEFAULT_ROLE } from '../../core/security/roles';
 
-// The stored shape of models/user.js, field for field. M4 adds timestamps, indexes, the role enum and email
+// The stored 2.x shape, field for field. M4 adds timestamps, indexes, the role enum and email
 // normalisation to this schema.
 const userSchema = new Schema({
   name: { type: String, required: [true, 'The name is required'] },
@@ -25,7 +25,7 @@ toJsonPlugin(userSchema, { hidden: ['password'], uidAlias: true }); // id + the 
 export type User = InferSchemaType<typeof userSchema>;
 export type UserDocument = HydratedDocument<User>;
 
-// ADR-027: the sole registrant of 'User' (models/user.js re-exports it from the registry).
+// ADR-027: the sole registrant of 'User'.
 // The guard makes a second import idempotent (Vitest and tsx can load a file twice).
 export const UserModel: Model<User> =
   (mongoose.models.User as Model<User> | undefined) ?? mongoose.model<User>('User', userSchema);

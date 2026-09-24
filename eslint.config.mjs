@@ -2,8 +2,6 @@
 import js from '@eslint/js';
 import tseslint from 'typescript-eslint';
 
-const LEGACY_DIRS = ['routes', 'controllers', 'middlewares', 'helpers', 'models'];
-
 // ARCHITECTURE §2.3. Each file gets exactly one `no-restricted-imports` entry (flat config replaces, never merges).
 const rule = (message, regex, allowTypeImports = false) => ({ regex, message, allowTypeImports });
 const SIBLING_MODULE = rule(
@@ -14,10 +12,7 @@ const FEATURE_MODULES = rule(
   'Cross-cutting code must not import feature modules (§2.3 rule 5).',
   '(^|/)modules(/|$)',
 );
-const COMPOSITION = rule(
-  'Only the entrypoint may import the composition root or the legacy seam.',
-  '(^|/)(app|server|legacy)$',
-);
+const COMPOSITION = rule('Only the entrypoint may import the composition root.', '(^|/)(app|server)$');
 const PERSISTENCE = rule(
   'Routes and controllers never touch persistence; call a service (§2.3 rules 1-2).',
   '^mongoose$|\\.model$',
@@ -80,27 +75,7 @@ export default tseslint.config(
   layer(['src/modules/**/*.controller.ts'], SIBLING_MODULE, COMPOSITION, PERSISTENCE, SDK),
   layer(['src/modules/**/*.service.ts'], SIBLING_MODULE, COMPOSITION, HTTP, SDK),
   {
-    // Legacy JS (ADR-016) is not style-linted. It must never reach into src/ (only .ts in dev, breaks dist).
-    files: LEGACY_DIRS.map((dir) => `${dir}/**/*.js`),
-    languageOptions: { sourceType: 'commonjs' },
-    rules: {
-      'no-console': 'error', // ADR-020: legacy logs only through req.log
-      'no-restricted-syntax': [
-        'error',
-        {
-          selector: "CallExpression[callee.name='require'] > Literal[value=/(^|\\/)(src|dist)(\\/|$)/]",
-          message: 'Legacy JS must not require src/ or dist/ (breaks the compiled build).',
-        },
-        {
-          selector:
-            "MemberExpression[object.object.name='process'][object.property.name='env'][property.name!=/^(SECRET_KEY|GOOGLE_CLIENT_ID|CLOUDINARY_URL)$/]",
-          message: 'Legacy JS may only read the env vars validated by src/config/env.ts.', // ADR-019
-        },
-      ],
-    },
-  },
-  {
-    // supertest bodies and legacy Mongoose documents are untyped until M3 replaces the legacy modules.
+    // supertest response bodies are untyped (`any`).
     files: ['tests/**/*.ts'],
     rules: {
       '@typescript-eslint/no-unsafe-assignment': 'off',
@@ -114,7 +89,7 @@ export default tseslint.config(
         {
           selector: "CallExpression[callee.object.name='vi'][callee.property.name=/^(mock|doMock)$/]",
           message:
-            'vi.mock cannot reach require() in legacy JS: spy on the instance from tests/helpers/legacy.ts.',
+            'No vi.mock: inject a fake through the factory, or spy on the shared instance the code uses (tests/helpers).',
         },
       ], // ADR-023
     },

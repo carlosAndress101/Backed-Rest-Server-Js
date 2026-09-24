@@ -29,7 +29,7 @@ export const authenticate =
     try {
       uid = deps.tokens.verify(header).uid;
     } catch (err) {
-      req.log.debug({ err }, 'token rejected'); // LOG-01: the line validar-jwt.js writes
+      req.log.debug({ err }, 'token rejected'); // LOG-01: the line 2.x wrote
       throw new UnauthorizedError('Invalid token');
     }
     const user = await deps.users.findById(uid);
