@@ -1,6 +1,6 @@
 import type { Model } from 'mongoose';
 
-import { ConflictError, NotFoundError, ValidationError } from '../../core/errors';
+import { ConflictError, ForbiddenError, NotFoundError, ValidationError } from '../../core/errors';
 import type { PaginationQuery } from '../../core/http/pagination';
 import { hashPassword } from '../../core/security/password';
 import { DEFAULT_ROLE, ROLES, isRole } from '../../core/security/roles';
@@ -21,7 +21,7 @@ export interface UsersService {
   list(query: PaginationQuery): Promise<{ items: UserDocument[]; total: number }>;
   create(dto: CreateUserDto): Promise<UserDocument>;
   update(id: string, dto: UpdateUserDto, actor: Actor): Promise<UserDocument>;
-  softDelete(id: string): Promise<void>;
+  softDelete(id: string, actor: Actor): Promise<void>;
 }
 
 /** The users rules and persistence (ADR-005: the model is injected). Throws AppErrors; knows nothing of HTTP. */
@@ -60,6 +60,12 @@ export function createUsersService(deps: {
       if (dto.password !== undefined && (isSelf || !isAdmin)) {
         throw new ValidationError([{ path: 'password', message: OWN_PASSWORD }]);
       }
+      // ADR-042, refined by AM-M6-3: an administrator may not use their own PUT to change what their own role or
+      // active state actually is — the last-administrator-lockout guard. An echo of the current role, or
+      // state: true, is not a real change and passes, so a client that PUTs a whole profile does not break.
+      if (isSelf && isAdmin && ((dto.role !== undefined && dto.role !== actor.role) || dto.state === false)) {
+        throw new ForbiddenError('Ask another administrator to change your own role or active state');
+      }
       // C6: an explicit whitelist. email, google, image and _id are never writable here; role and state only by an
       // administrator, and silently dropped for anyone else.
       const changes: Partial<User> = {};
@@ -85,7 +91,11 @@ export function createUsersService(deps: {
       return doc;
     },
 
-    async softDelete(id) {
+    async softDelete(id, actor) {
+      // ADR-042: nobody may target their own account with DELETE, whatever their role — no query, no race window.
+      if (id.toLowerCase() === actor.id.toLowerCase()) {
+        throw new ForbiddenError('You cannot delete your own account');
+      }
       const doc = await User.findOneAndUpdate({ _id: id, state: true }, { state: false });
       if (!doc) throw new NotFoundError('User not found');
     },
