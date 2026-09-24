@@ -1,74 +1,48 @@
-// ARC-03: load models/server before any other application module.
-require('../models/server');
+import type { Server } from 'node:http';
 
-jest.mock('cloudinary', () => ({
-  v2: {
-    config: jest.fn(),
-    uploader: {
-      upload: jest.fn(),
-      destroy: jest.fn(),
-    },
-  },
-}));
+import request from 'supertest';
+import { afterAll, beforeAll, beforeEach, describe, expect, test, vi } from 'vitest';
 
-const request = require('supertest');
-const mongoose = require('mongoose');
+import { clearDatabase, clearLogs, loggedText, startTestApp, stopTestApp } from '../../helpers/app';
+import { expectStatus } from '../../helpers/assert';
+import { authHeader, createAdmin, createProduct, createUser, tokenFor } from '../../helpers/factories';
+import { legacyModels, stubCloudinary } from '../../helpers/legacy';
 
-const {
-  connectDatabase,
-  buildApp,
-  closeServers,
-  expectStatus,
-  clearDatabase,
-  createUser,
-  createAdmin,
-  createProduct,
-  tokenFor,
-  authHeader,
-  User,
-  Product,
-} = require('./helpers/db');
-
-const cloudinary = require('cloudinary').v2;
+const { User, Product } = legacyModels();
 
 const JPEG = Buffer.from('ffd8ffe000104a46494600010100000100010000ffd9', 'hex');
 const OLD_URL = 'https://res.cloudinary.com/demo/image/upload/v1/old-avatar.png';
 const NEW_URL = 'https://res.cloudinary.com/demo/image/upload/v1/new-avatar.png';
 
-const replaceImage = (app, url, token) =>
+const replaceImage = (app: Server, url: string, token: string) =>
   request(app).put(url).set(authHeader(token)).attach('file', JPEG, 'photo.jpg');
 
 describe('REL-04 / C11 an image is replaced as upload, save, then destroy', () => {
-  let app;
+  let app: Server;
+  let upload: ReturnType<typeof stubCloudinary>['upload'];
+  let destroy: ReturnType<typeof stubCloudinary>['destroy'];
 
   beforeAll(async () => {
-    await connectDatabase();
-    app = await buildApp();
+    app = await startTestApp({ LOG_LEVEL: 'warn' });
   });
 
   afterAll(async () => {
-    await closeServers();
-    await mongoose.connection.close();
+    await stopTestApp();
   });
 
   beforeEach(async () => {
     await clearDatabase();
-    cloudinary.uploader.upload.mockReset();
-    cloudinary.uploader.upload.mockResolvedValue({ secure_url: NEW_URL });
-    cloudinary.uploader.destroy.mockReset();
-    cloudinary.uploader.destroy.mockResolvedValue({ result: 'ok' });
+    ({ upload, destroy } = stubCloudinary());
+    upload.mockResolvedValue({ secure_url: NEW_URL });
+    destroy.mockResolvedValue({ result: 'ok' });
     // The failure paths below log on purpose (C1 and the orphan notice).
-    jest.spyOn(console, 'error').mockImplementation(() => {});
-  });
-
-  afterEach(() => {
-    jest.restoreAllMocks();
+    clearLogs();
   });
 
   test('on success the old asset is destroyed after the upload, once the record is saved', async () => {
     const owner = await createUser({ image: OLD_URL });
-    let imageWhenDestroyed;
-    cloudinary.uploader.destroy.mockImplementation(async () => {
+    let imageWhenDestroyed: unknown;
+    destroy.mockImplementation(async () => {
       imageWhenDestroyed = (await User.findById(owner.id)).image;
       return { result: 'ok' };
     });
@@ -76,12 +50,10 @@ describe('REL-04 / C11 an image is replaced as upload, save, then destroy', () =
     const res = await replaceImage(app, `/api/uploads/user/${owner.id}`, await tokenFor(owner));
 
     expectStatus(res, 200);
-    expect(cloudinary.uploader.upload).toHaveBeenCalledTimes(1);
-    expect(cloudinary.uploader.destroy).toHaveBeenCalledTimes(1);
-    expect(cloudinary.uploader.destroy).toHaveBeenCalledWith('old-avatar');
-    expect(cloudinary.uploader.destroy.mock.invocationCallOrder[0]).toBeGreaterThan(
-      cloudinary.uploader.upload.mock.invocationCallOrder[0]
-    );
+    expect(upload).toHaveBeenCalledTimes(1);
+    expect(destroy).toHaveBeenCalledTimes(1);
+    expect(destroy).toHaveBeenCalledWith('old-avatar');
+    expect(destroy.mock.invocationCallOrder[0]!).toBeGreaterThan(upload.mock.invocationCallOrder[0]!);
     expect(imageWhenDestroyed).toBe(NEW_URL);
     expect((await User.findById(owner.id)).image).toBe(NEW_URL);
   });
@@ -89,13 +61,15 @@ describe('REL-04 / C11 an image is replaced as upload, save, then destroy', () =
   test('the same order holds for a product image', async () => {
     const product = await createProduct({ image: OLD_URL });
 
-    const res = await replaceImage(app, `/api/uploads/product/${product.id}`, await tokenFor(await createAdmin()));
+    const res = await replaceImage(
+      app,
+      `/api/uploads/product/${product.id}`,
+      await tokenFor(await createAdmin()),
+    );
 
     expectStatus(res, 200);
-    expect(cloudinary.uploader.destroy).toHaveBeenCalledWith('old-avatar');
-    expect(cloudinary.uploader.destroy.mock.invocationCallOrder[0]).toBeGreaterThan(
-      cloudinary.uploader.upload.mock.invocationCallOrder[0]
-    );
+    expect(destroy).toHaveBeenCalledWith('old-avatar');
+    expect(destroy.mock.invocationCallOrder[0]!).toBeGreaterThan(upload.mock.invocationCallOrder[0]!);
     expect((await Product.findById(product.id)).image).toBe(NEW_URL);
   });
 
@@ -105,38 +79,38 @@ describe('REL-04 / C11 an image is replaced as upload, save, then destroy', () =
     const res = await replaceImage(app, `/api/uploads/user/${owner.id}`, await tokenFor(owner));
 
     expectStatus(res, 200);
-    expect(cloudinary.uploader.destroy).not.toHaveBeenCalled();
+    expect(destroy).not.toHaveBeenCalled();
   });
 
   test('when the upload fails nothing is destroyed and the image is unchanged', async () => {
-    cloudinary.uploader.upload.mockRejectedValueOnce(new Error('cloudinary is down'));
+    upload.mockRejectedValueOnce(new Error('cloudinary is down'));
     const owner = await createUser({ image: OLD_URL });
 
     const res = await replaceImage(app, `/api/uploads/user/${owner.id}`, await tokenFor(owner));
 
     expect(res.statusCode).toBe(500);
     expect(res.body).toEqual({ msg: 'Internal server error' });
-    expect(cloudinary.uploader.destroy).not.toHaveBeenCalled();
+    expect(destroy).not.toHaveBeenCalled();
     expect((await User.findById(owner.id)).image).toBe(OLD_URL);
   });
 
   test('when the save fails the old asset is kept and the orphaned upload is logged', async () => {
     const owner = await createUser({ image: OLD_URL });
     const token = await tokenFor(owner);
-    jest.spyOn(User.prototype, 'save').mockRejectedValueOnce(new Error('database is down'));
+    vi.spyOn(User.prototype, 'save').mockRejectedValueOnce(new Error('database is down'));
 
     const res = await replaceImage(app, `/api/uploads/user/${owner.id}`, token);
 
     expect(res.statusCode).toBe(500);
     expect(res.body).toEqual({ msg: 'Internal server error' });
-    expect(cloudinary.uploader.upload).toHaveBeenCalledTimes(1);
-    expect(cloudinary.uploader.destroy).not.toHaveBeenCalled();
+    expect(upload).toHaveBeenCalledTimes(1);
+    expect(destroy).not.toHaveBeenCalled();
     expect((await User.findById(owner.id)).image).toBe(OLD_URL);
-    expect(console.error).toHaveBeenCalledWith(expect.stringContaining(NEW_URL));
+    expect(loggedText()).toContain(NEW_URL);
   });
 
   test('a failed destroy of the old asset does not fail the replacement', async () => {
-    cloudinary.uploader.destroy.mockRejectedValueOnce(new Error('destroy is down'));
+    destroy.mockRejectedValueOnce(new Error('destroy is down'));
     const owner = await createUser({ image: OLD_URL });
 
     const res = await replaceImage(app, `/api/uploads/user/${owner.id}`, await tokenFor(owner));

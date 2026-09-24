@@ -1,48 +1,26 @@
-// ARC-03: load models/server before any other application module.
-require('../models/server');
+import fs from 'node:fs';
+import type { Server } from 'node:http';
+import path from 'node:path';
 
-jest.mock('cloudinary', () => ({
-  v2: {
-    config: jest.fn(),
-    uploader: {
-      upload: jest.fn(),
-      destroy: jest.fn(),
-    },
-  },
-}));
+import request, { type Test } from 'supertest';
+import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'vitest';
 
-const fs = require('fs');
-const path = require('path');
-const request = require('supertest');
-const mongoose = require('mongoose');
+import { clearDatabase, startTestApp, stopTestApp } from '../../helpers/app';
+import { expectStatus } from '../../helpers/assert';
+import { authHeader, createAdmin, createProduct, createUser, tokenFor } from '../../helpers/factories';
+import { legacyModels, stubCloudinary, type LegacyDoc } from '../../helpers/legacy';
+import { listTempFiles, resetUploadDirs, waitForNoTempLeak } from '../../helpers/uploads';
 
-const {
-  connectDatabase,
-  buildApp,
-  closeServers,
-  expectStatus,
-  clearDatabase,
-  createUser,
-  createAdmin,
-  createProduct,
-  tokenFor,
-  authHeader,
-  listTempFiles,
-  waitForNoTempLeak,
-  resetUploadDirs,
-  User,
-} = require('./helpers/db');
-
-const cloudinary = require('cloudinary').v2;
+const { User } = legacyModels();
 
 const JPEG = Buffer.from('ffd8ffe000104a46494600010100000100010000ffd9', 'hex');
 const SECURE_URL = 'https://res.cloudinary.com/demo/image/upload/v1/uploaded.png';
 
-const UPLOADS_DIR = path.join(__dirname, '..', 'uploads');
+const UPLOADS_DIR = path.join(__dirname, '..', '..', '..', 'uploads');
 
-const attach = (test, filename = 'photo.jpg') => test.attach('file', JPEG, filename);
+const attach = (test: Test, filename = 'photo.jpg') => test.attach('file', JPEG, filename);
 
-const writeUpload = (folder, name, bytes) => {
+const writeUpload = (folder: string, name: string, bytes: Buffer) => {
   const target = path.join(UPLOADS_DIR, folder, name);
   fs.mkdirSync(path.dirname(target), { recursive: true });
   fs.writeFileSync(target, bytes);
@@ -50,26 +28,25 @@ const writeUpload = (folder, name, bytes) => {
 };
 
 describe('media write policy and file serving', () => {
-  let app;
+  let app: Server;
+  let upload: ReturnType<typeof stubCloudinary>['upload'];
+  let destroy: ReturnType<typeof stubCloudinary>['destroy'];
 
   beforeAll(async () => {
-    await connectDatabase();
-    app = await buildApp();
+    app = await startTestApp();
   });
 
   afterAll(async () => {
-    await closeServers();
+    await stopTestApp();
     resetUploadDirs();
-    await mongoose.connection.close();
   });
 
   beforeEach(async () => {
     await clearDatabase();
     resetUploadDirs();
-    cloudinary.uploader.upload.mockReset();
-    cloudinary.uploader.upload.mockResolvedValue({ secure_url: SECURE_URL });
-    cloudinary.uploader.destroy.mockReset();
-    cloudinary.uploader.destroy.mockResolvedValue({ result: 'ok' });
+    ({ upload, destroy } = stubCloudinary());
+    upload.mockResolvedValue({ secure_url: SECURE_URL });
+    destroy.mockResolvedValue({ result: 'ok' });
   });
 
   describe('SEC-03 POST /api/uploads is admin-only', () => {
@@ -109,9 +86,7 @@ describe('media write policy and file serving', () => {
       const attacker = await createUser();
       const token = await tokenFor(attacker);
 
-      const res = await attach(
-        request(app).put(`/api/uploads/user/${owner.id}`).set(authHeader(token))
-      );
+      const res = await attach(request(app).put(`/api/uploads/user/${owner.id}`).set(authHeader(token)));
 
       expect(res.statusCode).toBe(403);
 
@@ -123,9 +98,7 @@ describe('media write policy and file serving', () => {
       const owner = await createUser();
       const token = await tokenFor(owner);
 
-      const res = await attach(
-        request(app).put(`/api/uploads/user/${owner.id}`).set(authHeader(token))
-      );
+      const res = await attach(request(app).put(`/api/uploads/user/${owner.id}`).set(authHeader(token)));
 
       expectStatus(res, 200);
 
@@ -138,16 +111,14 @@ describe('media write policy and file serving', () => {
       const admin = await createAdmin();
       const token = await tokenFor(admin);
 
-      const res = await attach(
-        request(app).put(`/api/uploads/user/${owner.id}`).set(authHeader(token))
-      );
+      const res = await attach(request(app).put(`/api/uploads/user/${owner.id}`).set(authHeader(token)));
 
       expectStatus(res, 200);
     });
   });
 
   describe('C7 PUT /api/uploads/product/:id is admin-only', () => {
-    let product;
+    let product: LegacyDoc;
 
     beforeEach(async () => {
       product = await createProduct();
@@ -162,9 +133,7 @@ describe('media write policy and file serving', () => {
       const user = await createUser();
       const token = await tokenFor(user);
 
-      const res = await attach(
-        request(app).put(`/api/uploads/product/${product.id}`).set(authHeader(token))
-      );
+      const res = await attach(request(app).put(`/api/uploads/product/${product.id}`).set(authHeader(token)));
 
       expect(res.statusCode).toBe(403);
     });
@@ -173,9 +142,7 @@ describe('media write policy and file serving', () => {
       const admin = await createAdmin();
       const token = await tokenFor(admin);
 
-      const res = await attach(
-        request(app).put(`/api/uploads/product/${product.id}`).set(authHeader(token))
-      );
+      const res = await attach(request(app).put(`/api/uploads/product/${product.id}`).set(authHeader(token)));
 
       expectStatus(res, 200);
     });
@@ -220,10 +187,7 @@ describe('media write policy and file serving', () => {
       const admin = await createAdmin();
       const token = await tokenFor(admin);
 
-      const res = await attach(
-        request(app).post('/api/uploads').set(authHeader(token)),
-        'PHOTO.JPG'
-      );
+      const res = await attach(request(app).post('/api/uploads').set(authHeader(token)), 'PHOTO.JPG');
 
       expectStatus(res, 200);
     });
@@ -251,24 +215,20 @@ describe('media write policy and file serving', () => {
       const token = await tokenFor(owner);
       const before = listTempFiles();
 
-      const res = await attach(
-        request(app).put(`/api/uploads/user/${owner.id}`).set(authHeader(token))
-      );
+      const res = await attach(request(app).put(`/api/uploads/user/${owner.id}`).set(authHeader(token)));
 
       expectStatus(res, 200);
       expect(await waitForNoTempLeak(before)).toEqual([]);
     });
 
     test('after a failed Cloudinary upload the request still answers and cleans up', async () => {
-      cloudinary.uploader.upload.mockRejectedValueOnce(new Error('cloudinary is down'));
+      upload.mockRejectedValueOnce(new Error('cloudinary is down'));
 
       const owner = await createUser();
       const token = await tokenFor(owner);
       const before = listTempFiles();
 
-      const res = await attach(
-        request(app).put(`/api/uploads/user/${owner.id}`).set(authHeader(token))
-      );
+      const res = await attach(request(app).put(`/api/uploads/user/${owner.id}`).set(authHeader(token)));
 
       expect(typeof res.statusCode).toBe('number');
       expect(res.headers['content-type']).toMatch(/json/);
@@ -276,7 +236,7 @@ describe('media write policy and file serving', () => {
     });
 
     test('a Cloudinary destroy failure is non-fatal and still cleans up', async () => {
-      cloudinary.uploader.destroy.mockRejectedValueOnce(new Error('destroy is down'));
+      destroy.mockRejectedValueOnce(new Error('destroy is down'));
 
       const owner = await createUser({
         image: 'https://res.cloudinary.com/demo/image/upload/v1/old.png',
@@ -284,9 +244,7 @@ describe('media write policy and file serving', () => {
       const token = await tokenFor(owner);
       const before = listTempFiles();
 
-      const res = await attach(
-        request(app).put(`/api/uploads/user/${owner.id}`).set(authHeader(token))
-      );
+      const res = await attach(request(app).put(`/api/uploads/user/${owner.id}`).set(authHeader(token)));
 
       expectStatus(res, 200);
       expect(await waitForNoTempLeak(before)).toEqual([]);

@@ -1,52 +1,31 @@
-// ARC-03: load models/server before any other application module.
-require('../models/server');
+import fs from 'node:fs';
+import type { Server } from 'node:http';
+import path from 'node:path';
 
-jest.mock('cloudinary', () => ({
-  v2: {
-    config: jest.fn(),
-    uploader: {
-      upload: jest.fn(),
-      destroy: jest.fn(),
-    },
-  },
-}));
+import request, { type Test } from 'supertest';
+import { afterAll, beforeAll, beforeEach, describe, expect, test, vi } from 'vitest';
 
-const fs = require('fs');
-const path = require('path');
-const request = require('supertest');
-const mongoose = require('mongoose');
+import { clearDatabase, startTestApp, stopTestApp } from '../../helpers/app';
+import { expectStatus } from '../../helpers/assert';
+import { authHeader, createAdmin, createUser, tokenFor } from '../../helpers/factories';
+import { legacyModels, stubCloudinary } from '../../helpers/legacy';
+import { listTempFiles, newTempFiles, waitForNoTempLeak } from '../../helpers/uploads';
 
-const {
-  connectDatabase,
-  buildApp,
-  closeServers,
-  expectStatus,
-  clearDatabase,
-  createUser,
-  createAdmin,
-  tokenFor,
-  authHeader,
-  listTempFiles,
-  newTempFiles,
-  waitForNoTempLeak,
-  User,
-} = require('./helpers/db');
-
-const cloudinary = require('cloudinary').v2;
+const { User } = legacyModels();
 
 const JPEG = Buffer.from('ffd8ffe000104a46494600010100000100010000ffd9', 'hex');
 const SECURE_URL = 'https://res.cloudinary.com/demo/image/upload/v1/uploaded.png';
 const BOUNDARY = 'm1-t17-boundary';
 
-const attach = (test, field = 'file', filename = 'photo.jpg') => test.attach(field, JPEG, filename);
+const attach = (test: Test, field = 'file', filename = 'photo.jpg') => test.attach(field, JPEG, filename);
 
-const filePartHead = (field, filename) =>
+const filePartHead = (field: string, filename: string) =>
   Buffer.from(
     `--${BOUNDARY}\r\nContent-Disposition: form-data; name="${field}"; filename="${filename}"\r\n` +
-      'Content-Type: image/jpeg\r\n\r\n'
+      'Content-Type: image/jpeg\r\n\r\n',
   );
 
-const sendRaw = (test, body) =>
+const sendRaw = (test: Test, body: Buffer) =>
   test.set('Content-Type', `multipart/form-data; boundary=${BOUNDARY}`).send(body);
 
 /**
@@ -54,43 +33,41 @@ const sendRaw = (test, body) =>
  * those calls proves a request never wrote one, even a file removed right away.
  */
 const tempWrites = () =>
-  fs.createWriteStream.mock.calls
-    .map(([file]) => String(file))
+  vi
+    .mocked(fs.createWriteStream)
+    .mock.calls.map(([file]) => String(file))
     .filter((file) => path.basename(file).startsWith('tmp-'));
 
 describe('SEC-08 / C10 multipart bodies are parsed only by the upload routes, after auth', () => {
-  let app;
-  let before;
+  let app: Server;
+  let before: Set<string>;
+  let upload: ReturnType<typeof stubCloudinary>['upload'];
+  let destroy: ReturnType<typeof stubCloudinary>['destroy'];
 
   beforeAll(async () => {
-    await connectDatabase();
-    app = await buildApp();
+    app = await startTestApp();
   });
 
   // Every request here is either rejected or goes to the mocked Cloudinary, so
   // nothing is written under uploads/ (uploads.e2e.js owns that tree).
   afterAll(async () => {
-    await closeServers();
-    await mongoose.connection.close();
+    await stopTestApp();
   });
 
   beforeEach(async () => {
     await clearDatabase();
-    cloudinary.uploader.upload.mockReset();
-    cloudinary.uploader.upload.mockResolvedValue({ secure_url: SECURE_URL });
-    cloudinary.uploader.destroy.mockReset();
-    cloudinary.uploader.destroy.mockResolvedValue({ result: 'ok' });
-    jest.spyOn(fs, 'createWriteStream');
+    ({ upload, destroy } = stubCloudinary());
+    upload.mockResolvedValue({ secure_url: SECURE_URL });
+    destroy.mockResolvedValue({ result: 'ok' });
+    vi.spyOn(fs, 'createWriteStream');
     before = listTempFiles();
-  });
-
-  afterEach(() => {
-    jest.restoreAllMocks();
   });
 
   describe('a rejected upload request never writes a temp file', () => {
     // Each case resolves to [method, url, token]; the request is built in the test.
-    const cases = [
+    const cases: Array<
+      [string, number, () => Promise<[method: 'post' | 'put', url: string, token?: string]>]
+    > = [
       ['POST /api/uploads without a token', 401, async () => ['post', '/api/uploads']],
       [
         'POST /api/uploads with a USER token',
@@ -137,7 +114,10 @@ describe('SEC-08 / C10 multipart bodies are parsed only by the upload routes, af
       const user = await createUser();
 
       const res = await attach(
-        request(app).post('/api/auth/login').field('email', user.email).field('password', 'test-password-123')
+        request(app)
+          .post('/api/auth/login')
+          .field('email', user.email)
+          .field('password', 'test-password-123'),
       );
 
       expect(res.statusCode).toBe(400);
@@ -151,7 +131,7 @@ describe('SEC-08 / C10 multipart bodies are parsed only by the upload routes, af
           .post('/api/user')
           .field('name', 'Multipart')
           .field('email', 'multipart@example.com')
-          .field('password', 'multipart-pass-1')
+          .field('password', 'multipart-pass-1'),
       );
 
       expect(res.statusCode).toBe(400);
@@ -164,7 +144,10 @@ describe('SEC-08 / C10 multipart bodies are parsed only by the upload routes, af
       const owner = await createUser({ name: 'Original' });
 
       const res = await attach(
-        request(app).put(`/api/user/${owner.id}`).set(authHeader(await tokenFor(owner))).field('name', 'Changed')
+        request(app)
+          .put(`/api/user/${owner.id}`)
+          .set(authHeader(await tokenFor(owner)))
+          .field('name', 'Changed'),
       );
 
       expectStatus(res, 200);
@@ -174,7 +157,7 @@ describe('SEC-08 / C10 multipart bodies are parsed only by the upload routes, af
   });
 
   describe('every temp file the parser writes is removed', () => {
-    let adminToken;
+    let adminToken: string;
 
     beforeEach(async () => {
       adminToken = await tokenFor(await createAdmin());
@@ -189,7 +172,11 @@ describe('SEC-08 / C10 multipart bodies are parsed only by the upload routes, af
     });
 
     test('after an extension rejection', async () => {
-      const res = await attach(request(app).post('/api/uploads').set(authHeader(adminToken)), 'file', 'evil.txt');
+      const res = await attach(
+        request(app).post('/api/uploads').set(authHeader(adminToken)),
+        'file',
+        'evil.txt',
+      );
 
       expect(res.statusCode).toBe(400);
       expect(tempWrites()).toHaveLength(1);
@@ -211,21 +198,28 @@ describe('SEC-08 / C10 multipart bodies are parsed only by the upload routes, af
       const owner = await createUser();
 
       const res = await attach(
-        attach(request(app).put(`/api/uploads/user/${owner.id}`).set(authHeader(await tokenFor(owner))))
+        attach(
+          request(app)
+            .put(`/api/uploads/user/${owner.id}`)
+            .set(authHeader(await tokenFor(owner))),
+        ),
       );
 
       expectStatus(res, 200);
-      expect(cloudinary.uploader.upload).toHaveBeenCalledTimes(1);
+      expect(upload).toHaveBeenCalledTimes(1);
       expect(tempWrites()).toHaveLength(1);
       expect(await waitForNoTempLeak(before)).toEqual([]);
     });
 
     test('after a controller error (Cloudinary upload fails)', async () => {
-      jest.spyOn(console, 'error').mockImplementation(() => {});
-      cloudinary.uploader.upload.mockRejectedValueOnce(new Error('cloudinary is down'));
+      upload.mockRejectedValueOnce(new Error('cloudinary is down'));
       const owner = await createUser();
 
-      const res = await attach(request(app).put(`/api/uploads/user/${owner.id}`).set(authHeader(await tokenFor(owner))));
+      const res = await attach(
+        request(app)
+          .put(`/api/uploads/user/${owner.id}`)
+          .set(authHeader(await tokenFor(owner))),
+      );
 
       expect(res.statusCode).toBe(500);
       expect(res.body).toEqual({ msg: 'Internal server error' });
@@ -234,11 +228,12 @@ describe('SEC-08 / C10 multipart bodies are parsed only by the upload routes, af
     });
 
     test('after a parse error that follows a complete file part', async () => {
-      jest.spyOn(console, 'error').mockImplementation(() => {});
       const body = Buffer.concat([
         filePartHead('file', 'photo.jpg'),
         JPEG,
-        Buffer.from(`\r\n--${BOUNDARY}\r\nContent-Disposition: form-data; name="note"\r\n\r\nnever terminated`),
+        Buffer.from(
+          `\r\n--${BOUNDARY}\r\nContent-Disposition: form-data; name="note"\r\n\r\nnever terminated`,
+        ),
       ]);
 
       const res = await sendRaw(request(app).post('/api/uploads').set(authHeader(adminToken)), body);
@@ -250,7 +245,6 @@ describe('SEC-08 / C10 multipart bodies are parsed only by the upload routes, af
     });
 
     test('after a body that ends in the middle of the file', async () => {
-      jest.spyOn(console, 'error').mockImplementation(() => {});
       const body = Buffer.concat([filePartHead('file', 'photo.jpg'), JPEG]);
 
       const res = await sendRaw(request(app).post('/api/uploads').set(authHeader(adminToken)), body);
