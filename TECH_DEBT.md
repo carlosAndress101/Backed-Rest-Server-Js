@@ -17,9 +17,9 @@
 |---|---|---|
 | Critical | 5 | M1 |
 | High | 19 | M1 (13), M2–M3 (6) |
-| Medium | 18 | M1 (partial) → M8 |
+| Medium | 19 | M1 (partial) → M8 |
 | Low | 6 | M1, M3, M5, M8 |
-| **Total** | **48** | |
+| **Total** | **49** | |
 
 ---
 
@@ -79,6 +79,7 @@
 | CQ-01 | Code quality | Mixed Spanish/English identifiers and messages; typos (`categoty`, "Takl", "valied", "Encript"); misleading comments ("physically eliminated" on a soft delete). | multiple | M3 | open |
 | CQ-02 | Code quality | Dead code and placeholders: `updateImage` (unrouted), `usuariosPatch` stub route, debug `GET /hello`, `role` in search's permitted collections with no handler, unused imports. | `controllers/uploads.js:29-69`, `routes/usuarios.js:43`, `models/server.js:66-70`, `controllers/search.js:10` | M3 | `updateImage` removed (M1/T1.7, e0782fd); `usuariosPatch`, `/hello`, search `role` leftovers → M3 |
 | REL-04 | Reliability | Image replacement destroys the old Cloudinary asset **before** uploading the new one. A failed upload or save leaves the record pointing at a deleted asset. Found in the T1.2 review. | `controllers/uploads.js` (`updateImageCloudinary`) | M1 (T1.7, C11) | fixed (M1/T1.7, e0782fd) |
+| TEST-02 | Testing | Intermittent failure (about 1–2% of full runs, T1.5 finding F2): `image-replacement.e2e.js` gets a 401 for a freshly minted token. Fail-closed, test reliability only; it must be fixed before the suite becomes the CI gate and is ported (T2.6). | `e2e/` | M1 (T1.8) | in-progress (M1/T1.8) |
 
 ## Low
 
