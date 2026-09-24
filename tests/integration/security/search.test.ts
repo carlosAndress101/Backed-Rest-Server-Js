@@ -1,39 +1,27 @@
-// ARC-03: load models/server before any other application module.
-require('../models/server');
+import type { Server } from 'node:http';
 
-const request = require('supertest');
-const mongoose = require('mongoose');
+import mongoose from 'mongoose';
+import request from 'supertest';
+import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'vitest';
 
-const {
-  connectDatabase,
-  buildApp,
-  closeServers,
-  expectStatus,
-  clearDatabase,
-  createUser,
-  createAdmin,
-  createCategory,
-  createProduct,
-  tokenFor,
-  authHeader,
-} = require('./helpers/db');
+import { clearDatabase, startTestApp, stopTestApp } from '../../helpers/app';
+import { expectStatus } from '../../helpers/assert';
+import { authHeader, createCategory, createProduct, createUser, tokenFor } from '../../helpers/factories';
 
-const search = (app, collection, term, token) => {
+const search = (app: Server, collection: string, term: string, token?: string) => {
   const req = request(app).get(`/api/search/${collection}/${encodeURIComponent(term)}`);
   return token ? req.set(authHeader(token)) : req;
 };
 
 describe('search policy', () => {
-  let app;
+  let app: Server;
 
   beforeAll(async () => {
-    await connectDatabase();
-    app = await buildApp();
+    app = await startTestApp();
   });
 
   afterAll(async () => {
-    await closeServers();
-    await mongoose.connection.close();
+    await stopTestApp();
   });
 
   beforeEach(async () => {
@@ -121,7 +109,6 @@ describe('search policy', () => {
   describe('C8 at most 20 results are returned', () => {
     test('25 matching categories return at most 20', async () => {
       for (let i = 0; i < 25; i++) {
-        // eslint-disable-next-line no-await-in-loop
         await createCategory({ name: `BULK ${String(i).padStart(2, '0')}` });
       }
 

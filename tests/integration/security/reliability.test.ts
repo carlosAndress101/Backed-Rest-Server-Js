@@ -1,39 +1,29 @@
-// ARC-03: load models/server before any other application module.
-require('../models/server');
+import type { Server } from 'node:http';
 
-const request = require('supertest');
-const mongoose = require('mongoose');
+import mongoose from 'mongoose';
+import request from 'supertest';
+import { afterAll, beforeAll, beforeEach, describe, expect, test, vi } from 'vitest';
 
-const {
-  connectDatabase,
-  buildApp,
-  closeServers,
-  clearDatabase,
-  createUser,
-  createCategory,
-  createProduct,
-  tokenFor,
-  authHeader,
-  Category,
-  Product,
-} = require('./helpers/db');
+import { clearDatabase, startTestApp, stopTestApp } from '../../helpers/app';
+import { authHeader, createCategory, createUser, tokenFor } from '../../helpers/factories';
+import { legacyModels, type LegacyDoc } from '../../helpers/legacy';
+
+const { Category, Product } = legacyModels();
 
 describe('crash safety and HTTP error handling', () => {
-  let app;
-  let admin;
-  let adminToken;
+  let app: Server;
+  let admin: LegacyDoc;
+  let adminToken: string;
 
   beforeAll(async () => {
-    await connectDatabase();
-    app = await buildApp();
+    app = await startTestApp();
     // Make sure the unique indexes the duplicate-key path relies on exist.
     await Category.init();
     await Product.init();
   });
 
   afterAll(async () => {
-    await closeServers();
-    await mongoose.connection.close();
+    await stopTestApp();
   });
 
   beforeEach(async () => {
@@ -99,7 +89,7 @@ describe('crash safety and HTTP error handling', () => {
     });
 
     test('an unexpected error is 500 {msg:"Internal server error"} without a stack', async () => {
-      const spy = jest.spyOn(Category, 'find').mockImplementationOnce(() => {
+      const spy = vi.spyOn(Category, 'find').mockImplementationOnce(() => {
         throw new Error('simulated database outage');
       });
 
@@ -194,7 +184,7 @@ describe('crash safety and HTTP error handling', () => {
 
     test('a forced database error in a list handler returns a response and the next request works', async () => {
       await createCategory({ name: 'LAPTOP' });
-      const spy = jest.spyOn(Category, 'find').mockImplementationOnce(() => {
+      const spy = vi.spyOn(Category, 'find').mockImplementationOnce(() => {
         throw new Error('simulated database outage');
       });
 

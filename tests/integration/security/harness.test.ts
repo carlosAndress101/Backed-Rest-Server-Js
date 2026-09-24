@@ -1,10 +1,12 @@
-// ARC-03: load models/server before any other application module.
-require('../models/server');
+import { spawn } from 'node:child_process';
+import type { Server } from 'node:http';
+import type { AddressInfo } from 'node:net';
 
-const { spawn } = require('child_process');
-const request = require('supertest');
+import request from 'supertest';
+import { afterAll, beforeAll, describe, expect, test } from 'vitest';
 
-const { buildApp, closeServers, expectStatus } = require('./helpers/db');
+import { startTestApp, stopTestApp } from '../../helpers/app';
+import { expectStatus } from '../../helpers/assert';
 
 const IN_USE = 3;
 
@@ -13,8 +15,8 @@ const IN_USE = 3;
  * 'EADDRINUSE'. The child answers through its exit code: stdout written right before
  * process.exit() can be lost on a pipe.
  */
-const bindFromAnotherProcess = (port) =>
-  new Promise((resolve, reject) => {
+const bindFromAnotherProcess = (port: number) =>
+  new Promise<string>((resolve, reject) => {
     const child = spawn(process.execPath, [
       '-e',
       `const server = require('net').createServer();
@@ -33,22 +35,22 @@ const bindFromAnotherProcess = (port) =>
 // but connects to 127.0.0.1, and on macOS another process listening on 127.0.0.1
 // with the same port answered the tests' requests instead of the app.
 describe('TEST-02 the test harness serves the app on a port no other process can take', () => {
-  let server;
+  let server: Server;
 
   beforeAll(async () => {
-    server = await buildApp();
+    server = await startTestApp();
   });
 
   afterAll(async () => {
-    await closeServers();
+    await stopTestApp();
   });
 
   test('buildApp() listens on 127.0.0.1, not on the wildcard', () => {
-    expect(server.address().address).toBe('127.0.0.1');
+    expect((server.address() as AddressInfo).address).toBe('127.0.0.1');
   });
 
   test('another process cannot listen on the same loopback port', async () => {
-    expect(await bindFromAnotherProcess(server.address().port)).toBe('EADDRINUSE');
+    expect(await bindFromAnotherProcess((server.address() as AddressInfo).port)).toBe('EADDRINUSE');
   });
 
   test('requests reach the app itself', async () => {

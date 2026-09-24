@@ -38,7 +38,7 @@ const layer = (files, ...patterns) => ({
 });
 
 export default tseslint.config(
-  { ignores: ['dist/', 'coverage/', 'public/', 'node_modules/', 'e2e/'] },
+  { ignores: ['dist/', 'coverage/', 'public/', 'node_modules/'] },
   {
     files: ['**/*.ts', '**/*.mts'],
     extends: [js.configs.recommended, ...tseslint.configs.recommendedTypeChecked],
@@ -108,6 +108,7 @@ export default tseslint.config(
       '@typescript-eslint/no-unsafe-argument': 'off',
       '@typescript-eslint/no-unsafe-call': 'off',
       '@typescript-eslint/no-unsafe-return': 'off',
+      '@typescript-eslint/require-await': 'off', // ported M1 fixtures use async setups without await
       'no-restricted-syntax': [
         'error',
         {

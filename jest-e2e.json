@@ -1,9 +1,0 @@
-{
-    "moduleFileExtensions":["js"],
-    "rootDir":".",
-    "testEnvironment": "node",
-    "testRegex":".e2e.js$",
-    "globalSetup": "./e2e/setup/globalSetup.js",
-    "globalTeardown": "./e2e/setup/globalTeardown.js",
-    "testTimeout": 10000
-}

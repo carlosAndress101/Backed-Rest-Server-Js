@@ -1,45 +1,43 @@
-// ARC-03: load models/server before any other application module.
-require('../models/server');
+import type { Server } from 'node:http';
 
-jest.mock('../helpers/google-verify', () => ({
-  googleVerify: jest.fn(),
-}));
+import bcrypt from 'bcrypt';
+import request from 'supertest';
+import {
+  afterAll,
+  afterEach,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  test,
+  vi,
+  type MockInstance,
+} from 'vitest';
 
-const bcrypt = require('bcrypt');
-const request = require('supertest');
-const mongoose = require('mongoose');
+import { clearDatabase, startTestApp, stopTestApp } from '../../helpers/app';
+import { expectStatus } from '../../helpers/assert';
+import { createUser, hashPassword } from '../../helpers/factories';
+import { googleTicket, stubGoogleVerify } from '../../helpers/legacy';
 
-const {
-  connectDatabase,
-  buildApp,
-  closeServers,
-  expectStatus,
-  clearDatabase,
-  createUser,
-  hashPassword,
-} = require('./helpers/db');
-const { googleVerify } = require('../helpers/google-verify');
-
-const login = (app, body) => request(app).post('/api/auth/login').send(body);
-const googleSignin = (app, idToken = 'fake-id-token') =>
+const login = (app: Server, body: object) => request(app).post('/api/auth/login').send(body);
+const googleSignin = (app: Server, idToken = 'fake-id-token') =>
   request(app).post('/api/auth/google').send({ id_token: idToken });
 
 describe('auth surface', () => {
-  let app;
+  let app: Server;
+  let googleVerify: ReturnType<typeof stubGoogleVerify>;
 
   beforeAll(async () => {
-    await connectDatabase();
-    app = await buildApp();
+    app = await startTestApp();
   });
 
   afterAll(async () => {
-    await closeServers();
-    await mongoose.connection.close();
+    await stopTestApp();
   });
 
   beforeEach(async () => {
     await clearDatabase();
-    jest.clearAllMocks();
+    googleVerify = stubGoogleVerify();
   });
 
   describe('C5 credential failures return a generic 401', () => {
@@ -93,11 +91,13 @@ describe('auth surface', () => {
         state: false,
         google: true,
       });
-      googleVerify.mockResolvedValueOnce({
-        name: 'Disabled Google',
-        picture: 'https://example.com/p.png',
-        email: disabled.email,
-      });
+      googleVerify.mockResolvedValueOnce(
+        googleTicket({
+          name: 'Disabled Google',
+          picture: 'https://example.com/p.png',
+          email: disabled.email,
+        }),
+      );
 
       const res = await googleSignin(app);
 
@@ -135,40 +135,33 @@ describe('auth surface', () => {
     // wall-clock time. The accounts use real cost-10 hashes, not the helper's cost 4.
     describe('every failure costs exactly one cost-10 bcrypt comparison', () => {
       const COST_10_HASH = /^\$2[ab]\$10\$[./A-Za-z0-9]{53}$/;
-      let compareSync;
+      let compareSync: MockInstance<typeof bcrypt.compareSync>;
 
       // This file shares one C5 budget (10 auth requests per IP) that the tests above
       // almost use up. Here every login comes from its own client behind a trusted
       // proxy (C9), so it gets its own bucket and the budget above is untouched.
-      let proxiedApp;
+      let proxiedApp: Server;
       let client = 0;
-      const loginAsNewClient = (body) =>
+      const loginAsNewClient = (body: object) =>
         login(proxiedApp, body).set('X-Forwarded-For', `198.51.100.${(client += 1)}`);
 
       beforeAll(async () => {
-        const original = process.env.TRUST_PROXY;
-        process.env.TRUST_PROXY = '1';
-        try {
-          proxiedApp = await buildApp();
-        } finally {
-          if (original === undefined) {
-            delete process.env.TRUST_PROXY;
-          } else {
-            process.env.TRUST_PROXY = original;
-          }
-        }
+        proxiedApp = await startTestApp({ TRUST_PROXY: '1' });
       });
 
       beforeEach(() => {
-        compareSync = jest.spyOn(bcrypt, 'compareSync');
+        compareSync = vi.spyOn(bcrypt, 'compareSync');
       });
 
       afterEach(() => {
         compareSync.mockRestore();
       });
 
-      const cases = [
-        ['an unknown email', async () => ({ email: 'timing-ghost@example.com', password: 'correct-password' })],
+      const cases: Array<[string, () => Promise<{ email: string; password: string }>]> = [
+        [
+          'an unknown email',
+          async () => ({ email: 'timing-ghost@example.com', password: 'correct-password' }),
+        ],
         [
           'a disabled account',
           async () => {
@@ -193,7 +186,11 @@ describe('auth surface', () => {
         [
           'any password on a Google-created account',
           async () => {
-            const user = await createUser({ email: 'timing-google@example.com', password: ':D', google: true });
+            const user = await createUser({
+              email: 'timing-google@example.com',
+              password: ':D',
+              google: true,
+            });
             return { email: user.email, password: 'any-password-123' };
           },
         ],
@@ -209,14 +206,21 @@ describe('auth surface', () => {
         expect(res.body).toEqual({ msg: 'Invalid credentials' });
         expect(Object.keys(res.body)).toEqual(['msg']);
         expect(compareSync).toHaveBeenCalledTimes(1);
-        expect(compareSync.mock.calls[0][1]).toMatch(COST_10_HASH);
+        expect(compareSync.mock.calls[0]![1]).toMatch(COST_10_HASH);
       });
 
       test('a Google-created account answers exactly like an unknown email', async () => {
-        const google = await createUser({ email: 'timing-google-2@example.com', password: ':D', google: true });
+        const google = await createUser({
+          email: 'timing-google-2@example.com',
+          password: ':D',
+          google: true,
+        });
 
         const googleRes = await loginAsNewClient({ email: google.email, password: 'any-password-123' });
-        const unknownRes = await loginAsNewClient({ email: 'timing-ghost-2@example.com', password: 'any-password-123' });
+        const unknownRes = await loginAsNewClient({
+          email: 'timing-ghost-2@example.com',
+          password: 'any-password-123',
+        });
 
         expect(googleRes.statusCode).toBe(unknownRes.statusCode);
         expect(googleRes.body).toEqual(unknownRes.body);

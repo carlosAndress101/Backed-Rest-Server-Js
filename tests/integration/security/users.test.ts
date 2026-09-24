@@ -1,41 +1,27 @@
-// ARC-03: load models/server before any other application module.
-require('../models/server');
+import type { Server } from 'node:http';
 
-jest.mock('../helpers/google-verify', () => ({
-  googleVerify: jest.fn(),
-}));
+import bcrypt from 'bcrypt';
+import request from 'supertest';
+import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'vitest';
 
-const request = require('supertest');
-const mongoose = require('mongoose');
-const bcrypt = require('bcrypt');
+import { clearDatabase, startTestApp, stopTestApp } from '../../helpers/app';
+import { expectStatus } from '../../helpers/assert';
+import { authHeader, createUser, reload, seedRoles, tokenFor } from '../../helpers/factories';
+import { legacyModels, type LegacyDoc } from '../../helpers/legacy';
 
-const {
-  connectDatabase,
-  buildApp,
-  closeServers,
-  expectStatus,
-  clearDatabase,
-  createUser,
-  seedRoles,
-  tokenFor,
-  authHeader,
-  reload,
-  User,
-} = require('./helpers/db');
+const { User } = legacyModels();
 
 const USER_LIMIT = 10;
 
 describe('user write policy and access control', () => {
-  let app;
+  let app: Server;
 
   beforeAll(async () => {
-    await connectDatabase();
-    app = await buildApp();
+    app = await startTestApp();
   });
 
   afterAll(async () => {
-    await closeServers();
-    await mongoose.connection.close();
+    await stopTestApp();
   });
 
   beforeEach(async () => {
@@ -63,14 +49,12 @@ describe('user write policy and access control', () => {
     });
 
     test('a sign-up asking for ADMIN_ROLE is stored as USER_ROLE', async () => {
-      const res = await request(app)
-        .post('/api/user')
-        .send({
-          name: 'Wannabe Admin',
-          email: 'wannabe@example.com',
-          password: 'password123',
-          role: 'ADMIN_ROLE',
-        });
+      const res = await request(app).post('/api/user').send({
+        name: 'Wannabe Admin',
+        email: 'wannabe@example.com',
+        password: 'password123',
+        role: 'ADMIN_ROLE',
+      });
 
       expectStatus(res, 200);
       expect(res.body.role).toBe('USER_ROLE');
@@ -81,9 +65,9 @@ describe('user write policy and access control', () => {
   });
 
   describe('SEC-01 PUT /api/user/:id requires auth and ownership', () => {
-    let victim;
-    let attacker;
-    let rolesToken;
+    let victim: LegacyDoc;
+    let attacker: LegacyDoc;
+    let rolesToken: string;
 
     beforeEach(async () => {
       await seedRoles('ADMIN_ROLE', 'USER_ROLE');
@@ -134,19 +118,16 @@ describe('user write policy and access control', () => {
       const other = await createUser({ email: 'other@example.com' });
       const token = await tokenFor(owner);
 
-      const res = await request(app)
-        .put(`/api/user/${owner.id}`)
-        .set(authHeader(token))
-        .send({
-          name: 'Renamed Owner',
-          password: 'brand-new-password',
-          email: 'hacked@evil.example',
-          role: 'ADMIN_ROLE',
-          state: false,
-          image: 'hacked.png',
-          google: true,
-          _id: other.id,
-        });
+      const res = await request(app).put(`/api/user/${owner.id}`).set(authHeader(token)).send({
+        name: 'Renamed Owner',
+        password: 'brand-new-password',
+        email: 'hacked@evil.example',
+        role: 'ADMIN_ROLE',
+        state: false,
+        image: 'hacked.png',
+        google: true,
+        _id: other.id,
+      });
 
       expectStatus(res, 200);
 
@@ -202,8 +183,8 @@ describe('user write policy and access control', () => {
   });
 
   describe('SEC-05 / C6 GET /api/user is admin-only', () => {
-    let userToken;
-    let adminToken;
+    let userToken: string;
+    let adminToken: string;
 
     beforeEach(async () => {
       const user = await createUser({ email: 'plain@example.com' });
@@ -240,9 +221,7 @@ describe('user write policy and access control', () => {
       const victim = await createUser({ email: 'deleted@example.com' });
       const token = await tokenFor(user);
 
-      const res = await request(app)
-        .delete(`/api/user/${victim.id}`)
-        .set(authHeader(token));
+      const res = await request(app).delete(`/api/user/${victim.id}`).set(authHeader(token));
 
       expect(res.statusCode).toBe(403);
     });

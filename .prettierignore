@@ -10,7 +10,3 @@ controllers/
 middlewares/
 helpers/
 models/
-e2e/
-jest-e2e.json
-app.js
-database/
