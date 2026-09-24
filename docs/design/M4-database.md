@@ -941,3 +941,16 @@ Integration branch **`m4/database`**, cut from `next` @ `98ea113`. Shared contra
 1. **`select: false` on `password` now, or defer to M5?** It is defense-in-depth (the plugin already hides `password`), but it forces an auth-service change this milestone (§10.4). M5 reworks auth (Bearer, async bcrypt) and would absorb it naturally. Recommendation: **keep it in M4** (it closes a real `.lean()`/projection leak class now) with the T4.3 coordination; defer only if M4 must not touch `src/modules/auth`.
 2. **`versionKey: false` on all three schemas (§10.6)**, standardizing away the M3 inconsistency, or keep D4's "leave `__v` in the DB"? Recommendation: `versionKey: false` (uniform, no API impact); no code uses OCC.
 3. **Login case-insensitivity (§10.5)** is a deliberate 3.0.0 improvement folded into M4. Confirm it should ship in 3.0.0 rather than be held.
+
+---
+
+## 15. Orchestrator rulings on D4R (AM-M4-1…6, binding; override the text they name)
+
+| ID | Question / finding | Ruling |
+|---|---|---|
+| AM-M4-1 | §14 Q1: `select:false` on `password` now, or in M5? | **Now, in M4.** The model-level `select: false` line lands in **T4.3**, in the **same commit** as the auth `+password` read, so the tree is never red and the pair is one revert unit. **T4.2 must not add `select: false`.** |
+| AM-M4-2 | §14 Q2: `versionKey` | **`{ versionKey: false, timestamps: true }` on all three schemas** (§10.6). Existing 2.x user documents keep a stray `__v`; nothing reads it, so there is no migration for it. |
+| AM-M4-3 | §14 Q3: case-insensitive email | **Ships in 3.0.0** (§10.5); CHANGELOG under Changed. |
+| AM-M4-4 | Orchestrator review of §2.1/§2.3: the `image` schema validator | **Design defect; drop the validator.** `IMAGE_PATTERN` accepts only a bare filename or a Cloudinary URL, but Google sign-in stores `image: picture` (a `https://lh3.googleusercontent.com/…` URL, `auth.service.ts`), so the first Google sign-in of every new user would fail validation, and every 2.x Google user's document would fail a `save()`. Its original purpose (SEC-04 local-disk path traversal) left with M3 (no disk serving), and the AM-M3-1 redirect allowlist already guards the only read. `image` keeps `trim: true` and gains `maxlength: 2048`; no pattern. |
+| AM-M4-5 | §11: schema caps without DTO caps | **Every client-visible schema constraint has a matching DTO rule**, so a client gets **422** (not the C1 400 backstop for a Mongoose `ValidationError`). DTO mirrors: user `name` ≤ 120, `email` ≤ 254 (trimmed + lowercased, §10.3); category/product `name` ≤ 120; product `description` ≤ 2000; `price ≥ 0` (exists). Owned by **T4.3**. |
+| AM-M4-6 | §12 sequence; §14 Q4 | **T4.1 and T4.2 run in parallel** (disjoint files: plumbing vs model bodies). **T4.2 is a review gate** (ARCHITECT, "T4.2G"), exactly as T3.2 was, before T4.3/T4.4 start. |
