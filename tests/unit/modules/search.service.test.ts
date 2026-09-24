@@ -42,6 +42,18 @@ describe('createSearchService', () => {
     );
   });
 
+  // F1 (T3.6R): the allowlist is checked before any lookup, so an inherited Object.prototype key is a 400.
+  test.each(['constructor', 'toString', '__proto__', 'hasOwnProperty'])(
+    'an inherited Object.prototype key (%s) is the legacy BadRequestError, not a crash',
+    async (collection) => {
+      const { service } = makeService();
+
+      await expect(service.search(collection, 'x')).rejects.toEqual(
+        new BadRequestError('The permitted collections are: user,category,product'),
+      );
+    },
+  );
+
   test('an id term looks up the active document by { _id, state: true }', async () => {
     const row = { _id: ACTIVE_ID, name: 'BY-ID', state: true };
     const { service, Category } = makeService({ category: [row] });

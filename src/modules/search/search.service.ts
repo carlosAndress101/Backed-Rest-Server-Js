@@ -33,18 +33,23 @@ export function createSearchService(deps: {
   Category: SearchableModel;
   Product: SearchableModel;
 }): SearchService {
-  const byCollection: Record<string, { model: SearchableModel; fields: string[] }> = {
+  const byCollection: Record<
+    (typeof SEARCH_COLLECTIONS)[number],
+    { model: SearchableModel; fields: string[] }
+  > = {
     user: { model: deps.User, fields: ['name', 'email'] },
     category: { model: deps.Category, fields: ['name'] },
     product: { model: deps.Product, fields: ['name', 'description'] },
   };
 
   const search = async (collection: string, term: string): Promise<unknown[]> => {
-    const target = byCollection[collection];
-    if (!target) {
+    // The allowlist is checked first, exactly as legacy does: an inherited Object.prototype key
+    // (`constructor`, `toString`, `__proto__`, `hasOwnProperty`) is the legacy 400, never a lookup miss (C8).
+    if (!(SEARCH_COLLECTIONS as readonly string[]).includes(collection)) {
       // The legacy message, kept verbatim (controllers/search.js).
       throw new BadRequestError(`The permitted collections are: ${SEARCH_COLLECTIONS.join(',')}`);
     }
+    const target = byCollection[collection as (typeof SEARCH_COLLECTIONS)[number]];
 
     if (isObjectIdOrHexString(term)) {
       const query = target.model.findOne({ _id: term, state: true });

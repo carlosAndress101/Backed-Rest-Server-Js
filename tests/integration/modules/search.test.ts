@@ -141,6 +141,16 @@ describe('search module (§6 #19)', () => {
       });
       expect(withToken.statusCode).toBe(400);
     });
+
+    // F1 (T3.6R): a collection named like an Object.prototype key must be the legacy 400, never a 500.
+    test.each(['constructor', '__proto__'])('%s is 400, not a 500', async (collection) => {
+      const res = await get(app, `/api/search/${collection}/x`);
+
+      expect(res.statusCode).toBe(400);
+      expect(res.body).toEqual({
+        error: { code: 'BAD_REQUEST', message: `The permitted collections are: ${PERMITTED}` },
+      });
+    });
   });
 
   describe('C8 at most 20 results are returned', () => {
