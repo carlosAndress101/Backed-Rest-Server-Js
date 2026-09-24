@@ -1,5 +1,12 @@
 export type ErrorCode =
-  'BAD_REQUEST' | 'UNAUTHORIZED' | 'FORBIDDEN' | 'NOT_FOUND' | 'CONFLICT' | 'VALIDATION_FAILED' | 'INTERNAL';
+  | 'BAD_REQUEST'
+  | 'UNAUTHORIZED'
+  | 'FORBIDDEN'
+  | 'NOT_FOUND'
+  | 'CONFLICT'
+  | 'VALIDATION_FAILED'
+  | 'RATE_LIMITED'
+  | 'INTERNAL';
 
 export interface ValidationIssue {
   readonly path: string;
@@ -54,6 +61,13 @@ export class ConflictError extends AppError {
 export class ValidationError extends AppError {
   constructor(details: readonly ValidationIssue[], message = 'Validation failed') {
     super(422, 'VALIDATION_FAILED', message, { details });
+  }
+}
+
+/** The auth limiter's 429 (C5), so its body is the envelope too (M3 §5.2). */
+export class RateLimitedError extends AppError {
+  constructor(message = 'Too many requests, please try again later') {
+    super(429, 'RATE_LIMITED', message);
   }
 }
 

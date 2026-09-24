@@ -5,6 +5,7 @@ export {
   ForbiddenError,
   InternalError,
   NotFoundError,
+  RateLimitedError,
   UnauthorizedError,
   ValidationError,
   type ErrorCode,
