@@ -8,7 +8,6 @@ import { isObjectIdOrHexString } from 'mongoose';
 import type { Config } from './config';
 import type { Logger } from './core/logger';
 import { createTokenService } from './core/security/jwt';
-import { mountLegacyRoutes } from './legacy';
 import { authenticate, type UserLookup } from './middlewares/authenticate';
 import { errorHandler } from './middlewares/error-handler';
 import { notFound } from './middlewares/not-found';
@@ -87,7 +86,6 @@ export function createApp({ config, logger }: AppDeps): Express {
       cloudinaryUrl: config.media.cloudinaryUrl,
     }),
   );
-  mountLegacyRoutes(app); // the routes no module owns yet
 
   app.use(notFound);
   app.use(errorHandler);

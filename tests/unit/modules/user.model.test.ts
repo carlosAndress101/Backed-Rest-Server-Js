@@ -3,14 +3,12 @@ import mongoose from 'mongoose';
 import { describe, expect, test, vi } from 'vitest';
 
 import { UserModel } from '../../../src/modules/users';
-import { legacyModels } from '../../helpers/legacy';
 
 const SECRET = 'correct-horse-battery-staple';
 
 describe('UserModel', () => {
-  test('is the one registered User, and legacy code reads that same model (ADR-027)', () => {
+  test('is the one registered User (ADR-027)', () => {
     expect(mongoose.model('User')).toBe(UserModel);
-    expect(legacyModels().User).toBe(UserModel); // models/index.js → the models/user.js re-export
   });
 
   test('a second import of the model file reuses the registration instead of throwing OverwriteModelError', async () => {

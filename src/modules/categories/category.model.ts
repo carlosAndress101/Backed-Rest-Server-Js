@@ -2,7 +2,7 @@ import mongoose, { Schema, type HydratedDocument, type InferSchemaType, type Mod
 
 import { toJsonPlugin } from '../../core/database/to-json.plugin';
 
-// The stored shape of models/category.js, field for field. M4 adds timestamps and indexes to this schema.
+// The stored 2.x shape, field for field. M4 adds timestamps and indexes to this schema.
 const categorySchema = new Schema(
   {
     name: { type: String, required: [true, 'The name is required'], unique: true },
@@ -16,7 +16,7 @@ toJsonPlugin(categorySchema); // id; no _id/__v; no uid alias (a category never 
 export type Category = InferSchemaType<typeof categorySchema>;
 export type CategoryDocument = HydratedDocument<Category>;
 
-// ADR-027: the sole registrant of 'Category' (models/category.js re-exports it from the registry).
+// ADR-027: the sole registrant of 'Category'.
 // The guard makes a second import idempotent (Vitest and tsx can load a file twice).
 export const CategoryModel: Model<Category> =
   (mongoose.models.Category as Model<Category> | undefined) ??

@@ -46,7 +46,7 @@ export function createSearchService(deps: {
     // The allowlist is checked first, exactly as legacy does: an inherited Object.prototype key
     // (`constructor`, `toString`, `__proto__`, `hasOwnProperty`) is the legacy 400, never a lookup miss (C8).
     if (!(SEARCH_COLLECTIONS as readonly string[]).includes(collection)) {
-      // The legacy message, kept verbatim (controllers/search.js).
+      // The 2.x message, kept verbatim.
       throw new BadRequestError(`The permitted collections are: ${SEARCH_COLLECTIONS.join(',')}`);
     }
     const target = byCollection[collection as (typeof SEARCH_COLLECTIONS)[number]];

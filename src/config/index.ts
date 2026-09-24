@@ -14,7 +14,7 @@ export interface Config {
   readonly cors: { readonly origins: '*' | readonly string[] };
   /** C9: reverse-proxy hops to trust for req.ip (and so the C5 limiter key); undefined keeps Express's default. */
   readonly trustProxy: number | undefined;
-  /** Consumed by the auth and users modules in M3; legacy JS reads the same variables directly until then. */
+  /** Consumed by the auth module and by authenticate's token service. */
   readonly auth: { readonly jwtSecret: string; readonly googleClientId: string };
   /** Consumed by the media module in M3. */
   readonly media: { readonly cloudinaryUrl: string };

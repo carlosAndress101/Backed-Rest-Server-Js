@@ -6,13 +6,11 @@ import mongoose from 'mongoose';
 import request, { type Test } from 'supertest';
 import { afterAll, beforeAll, beforeEach, describe, expect, test, vi } from 'vitest';
 
+import { UserModel as User } from '../../../src/modules/users';
 import { clearDatabase, startTestApp, stopTestApp } from '../../helpers/app';
 import { expectStatus } from '../../helpers/assert';
 import { authHeader, createAdmin, createProduct, createUser, tokenFor } from '../../helpers/factories';
-import { legacyModels } from '../../helpers/legacy';
 import { listTempFiles, newTempFiles, stubMediaClient, waitForNoTempLeak } from '../../helpers/uploads';
-
-const { User } = legacyModels();
 
 const JPEG = Buffer.from('ffd8ffe000104a46494600010100000100010000ffd9', 'hex');
 const SECURE_URL = 'https://res.cloudinary.com/demo/image/upload/v1/uploaded.png';
@@ -175,7 +173,7 @@ describe('SEC-08 / C10 multipart bodies are parsed only by the upload routes, af
       );
 
       expectStatus(res, 200);
-      expect((await User.findById(owner.id)).name).toBe('Original');
+      expect((await User.findById(owner.id))!.name).toBe('Original');
       expect(tempWrites()).toEqual([]);
     });
   });

@@ -1,12 +1,5 @@
 dist/
 coverage/
 public/
-uploads/
-assets/
 pnpm-lock.yaml
 *.md
-routes/
-controllers/
-middlewares/
-helpers/
-models/

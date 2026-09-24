@@ -170,7 +170,3 @@ $RECYCLE.BIN/
 *.lnk
 
 # End of https://www.toptal.com/developers/gitignore/api/node,windows,dotenv
-
-
-uploads/product/**.*
-uploads/user/**.*

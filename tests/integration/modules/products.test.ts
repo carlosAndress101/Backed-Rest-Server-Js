@@ -6,6 +6,7 @@ import request from 'supertest';
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'vitest';
 
 import { ProductModel } from '../../../src/modules/products';
+import type { UserDocument } from '../../../src/modules/users';
 import { clearDatabase, startTestApp, stopTestApp } from '../../helpers/app';
 import {
   authHeader,
@@ -15,7 +16,6 @@ import {
   createUser,
   tokenFor,
 } from '../../helpers/factories';
-import type { LegacyDoc } from '../../helpers/legacy';
 
 const MISSING_ID = new mongoose.Types.ObjectId().toHexString();
 /** A well-formed id that need not exist: validation passes, the service decides (VAL-01). */
@@ -41,9 +41,9 @@ const invalidId = {
 
 describe('products module (§6 #14–#18)', () => {
   let app: Server;
-  let admin: LegacyDoc;
+  let admin: UserDocument;
   let adminToken: string;
-  let user: LegacyDoc;
+  let user: UserDocument;
   let userToken: string;
 
   beforeAll(async () => {

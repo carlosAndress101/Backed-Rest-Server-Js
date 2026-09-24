@@ -13,7 +13,7 @@ export interface SignedIn {
   readonly token: string;
 }
 
-/** Creates a user with PASSWORD straight in the file's database (legacy models register on the first createApp). */
+/** Creates a user with PASSWORD straight in the file's database (the models register when src/app loads). */
 export async function createUser(
   role: 'USER_ROLE' | 'ADMIN_ROLE' = 'USER_ROLE',
 ): Promise<{ id: string; email: string }> {

@@ -1,9 +1,8 @@
-// M3 design §3.6: the x-token service. Interim: same payload, secret and lifetime as helpers/generar-jwt.js.
+// M3 design §3.6: the x-token service. Interim: the same payload, secret and lifetime as 2.x issued.
 import jwt from 'jsonwebtoken';
-import { afterEach, describe, expect, test, vi } from 'vitest';
+import { describe, expect, test, vi } from 'vitest';
 
 import { createTokenService } from '../../src/core/security/jwt';
-import { generarJWT } from '../helpers/legacy';
 
 const SECRET = 'unit-test-secret';
 const UID = '64b7f0c2a1b2c3d4e5f60718';
@@ -11,10 +10,6 @@ const FOUR_HOURS = 4 * 60 * 60;
 const tokens = createTokenService(SECRET);
 
 describe('createTokenService', () => {
-  afterEach(() => {
-    vi.unstubAllEnvs(); // restoreMocks does not undo vi.stubEnv
-  });
-
   test('verify returns the uid of a token sign issued', async () => {
     const token = await tokens.sign(UID);
 
@@ -35,11 +30,12 @@ describe('createTokenService', () => {
     expect(tokens.verify(token)).toEqual({ uid: UID });
   });
 
-  test('tokens are interchangeable with the legacy helpers/generar-jwt.js while both run', async () => {
-    vi.stubEnv('SECRET_KEY', SECRET);
+  test('a token 2.x issued stays valid, and its own tokens verify as 2.x verified them', async () => {
+    // 2.x signed { uid } with the secret for 4 hours, and verified with jsonwebtoken's defaults.
+    const issuedBy2x = jwt.sign({ uid: UID }, SECRET, { expiresIn: '4h' });
 
-    expect(tokens.verify(await generarJWT(UID))).toEqual({ uid: UID });
-    expect(jwt.verify(await tokens.sign(UID), SECRET)).toMatchObject({ uid: UID }); // what validar-jwt.js does
+    expect(tokens.verify(issuedBy2x)).toEqual({ uid: UID });
+    expect(jwt.verify(await tokens.sign(UID), SECRET)).toMatchObject({ uid: UID });
   });
 
   const rejected: [string, () => string][] = [

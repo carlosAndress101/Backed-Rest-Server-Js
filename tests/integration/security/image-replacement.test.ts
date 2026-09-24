@@ -3,13 +3,12 @@ import type { Server } from 'node:http';
 import request from 'supertest';
 import { afterAll, beforeAll, beforeEach, describe, expect, test, vi } from 'vitest';
 
+import { ProductModel as Product } from '../../../src/modules/products';
+import { UserModel as User } from '../../../src/modules/users';
 import { clearDatabase, clearLogs, loggedText, startTestApp, stopTestApp } from '../../helpers/app';
 import { expectStatus } from '../../helpers/assert';
 import { authHeader, createAdmin, createProduct, createUser, tokenFor } from '../../helpers/factories';
-import { legacyModels } from '../../helpers/legacy';
 import { stubMediaClient } from '../../helpers/uploads';
-
-const { User, Product } = legacyModels();
 
 const JPEG = Buffer.from('ffd8ffe000104a46494600010100000100010000ffd9', 'hex');
 const OLD_URL = 'https://res.cloudinary.com/demo/image/upload/v1/old-avatar.png';
@@ -42,7 +41,7 @@ describe('REL-04 / C11 an image is replaced as upload, save, then destroy', () =
     const owner = await createUser({ image: OLD_URL });
     let imageWhenDestroyed: unknown;
     destroy.mockImplementation(async () => {
-      imageWhenDestroyed = (await User.findById(owner.id)).image;
+      imageWhenDestroyed = (await User.findById(owner.id))!.image;
     });
 
     const res = await replaceImage(app, `/api/uploads/user/${owner.id}`, await tokenFor(owner));
@@ -53,7 +52,7 @@ describe('REL-04 / C11 an image is replaced as upload, save, then destroy', () =
     expect(destroy).toHaveBeenCalledWith('old-avatar');
     expect(destroy.mock.invocationCallOrder[0]!).toBeGreaterThan(upload.mock.invocationCallOrder[0]!);
     expect(imageWhenDestroyed).toBe(NEW_URL);
-    expect((await User.findById(owner.id)).image).toBe(NEW_URL);
+    expect((await User.findById(owner.id))!.image).toBe(NEW_URL);
   });
 
   test('the same order holds for a product image', async () => {
@@ -68,7 +67,7 @@ describe('REL-04 / C11 an image is replaced as upload, save, then destroy', () =
     expectStatus(res, 200);
     expect(destroy).toHaveBeenCalledWith('old-avatar');
     expect(destroy.mock.invocationCallOrder[0]!).toBeGreaterThan(upload.mock.invocationCallOrder[0]!);
-    expect((await Product.findById(product.id)).image).toBe(NEW_URL);
+    expect((await Product.findById(product.id))!.image).toBe(NEW_URL);
   });
 
   test('a record without a previous image destroys nothing', async () => {
@@ -89,7 +88,7 @@ describe('REL-04 / C11 an image is replaced as upload, save, then destroy', () =
     expect(res.statusCode).toBe(500);
     expect(res.body).toEqual({ error: { code: 'INTERNAL', message: 'Internal server error' } });
     expect(destroy).not.toHaveBeenCalled();
-    expect((await User.findById(owner.id)).image).toBe(OLD_URL);
+    expect((await User.findById(owner.id))!.image).toBe(OLD_URL);
   });
 
   test('when the save fails the old asset is kept and the orphaned upload is logged', async () => {
@@ -104,7 +103,7 @@ describe('REL-04 / C11 an image is replaced as upload, save, then destroy', () =
     expect(res.body).toEqual({ error: { code: 'INTERNAL', message: 'Internal server error' } });
     expect(upload).toHaveBeenCalledTimes(1);
     expect(destroy).not.toHaveBeenCalled();
-    expect((await User.findById(owner.id)).image).toBe(OLD_URL);
+    expect((await User.findById(owner.id))!.image).toBe(OLD_URL);
     expect(loggedText()).toContain(NEW_URL);
   });
 
@@ -115,7 +114,7 @@ describe('REL-04 / C11 an image is replaced as upload, save, then destroy', () =
 
     expectStatus(res, 200);
     expect(destroy).not.toHaveBeenCalled();
-    expect((await User.findById(owner.id)).image).toBe(NEW_URL);
+    expect((await User.findById(owner.id))!.image).toBe(NEW_URL);
   });
 
   test('a failed destroy of the old asset does not fail the replacement', async () => {
@@ -125,6 +124,6 @@ describe('REL-04 / C11 an image is replaced as upload, save, then destroy', () =
     const res = await replaceImage(app, `/api/uploads/user/${owner.id}`, await tokenFor(owner));
 
     expectStatus(res, 200);
-    expect((await User.findById(owner.id)).image).toBe(NEW_URL);
+    expect((await User.findById(owner.id))!.image).toBe(NEW_URL);
   });
 });
