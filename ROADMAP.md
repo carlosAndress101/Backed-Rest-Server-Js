@@ -9,7 +9,7 @@ Complexity scale: **S** (≤1 agent-day) · **M** (2–3) · **L** (4–6) · **
 |---|---|---|---|---|
 | M0 | Audit & Baseline | S | — | ✅ Accepted 2026-09-23 |
 | M1 | Stabilization & Security Hotfix | M | M0 | 🔄 In progress: T1.1 ✅ accepted; T1.2–T1.4 running ([briefs](docs/tasks/M1-stabilization.md)) |
-| M2 | Foundation: tooling, TypeScript, config, logging, errors, Express 5 | L | M1, ADR-002 | Planned |
+| M2 | Foundation: tooling, TypeScript, config, logging, errors, Express 5 | L | M1 | 📝 Design in progress (ARCHITECT) |
 | M3 | Feature-First Refactor + Validation/DTOs | L | M2 | Planned |
 | M4 | Database Improvements | M | M3 | Planned |
 | M5 | Authentication Hardening | M | M4 | Planned |
@@ -45,7 +45,7 @@ Why this order differs from the default template: **security first** (ADR-001) b
 - **Goal:** A typed, testable, observable platform for the refactor to land on.
 - **Deliverables:** TypeScript strict (`tsc` build, `tsx` dev), pending ADR-002. ESLint (flat) + Prettier, including a layer-boundary lint rule. Vitest + supertest + mongodb-memory-server harness, with the M1 suite ported. `src/config` validated with zod (fail fast), typed config object, documented `.example.env`. pino + pino-http with request id and redaction. `AppError` hierarchy, error middleware, 404, response envelope helpers. `createApp(deps)` separated from `server.ts` boot. Express 5 (ADR-003). Mongoose 9 with `sanitizeFilter` on and `strictQuery` true. CORS allowlist from config. Basic GitHub Actions CI: install, lint, typecheck, test.
 - **Risks:** Big-bang conversion; behaviour changes in Express 5 (`req.body` undefined without a parser, path syntax) and Mongoose 9. **Mitigation:** the M1 regression suite must be green before and after, and the upgrades land as separate commits.
-- **Complexity:** L · **Dependencies:** M1 accepted; ADR-002 confirmed.
+- **Complexity:** L · **Dependencies:** M1 accepted (ADR-002 accepted 2026-09-23; strangler approach per ADR-016).
 
 ## M3: Feature-First Refactor + Validation/DTOs
 - **Goal:** Clean feature modules: thin controllers, services owning the rules, zod DTOs everywhere.
