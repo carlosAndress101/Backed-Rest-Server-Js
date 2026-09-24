@@ -344,8 +344,13 @@ describe('runCommand', () => {
 describe('main (the CLI process)', () => {
   const useDatabase = () => vi.stubEnv('MONGO_CLOUD', `${MONGO_URI}cli-${randomUUID()}`);
 
-  test('the migration list is empty until T4.4 adds M001–M004', () => {
-    expect(MIGRATIONS).toEqual([]);
+  test('migrate runs the M4 list, M001–M004 in id order', () => {
+    expect(MIGRATIONS.map(({ id }) => id)).toEqual([
+      'M001-normalize-email',
+      'M002-rebuild-name-indexes',
+      'M003-backfill-created-at',
+      'M004-drop-roles-collection',
+    ]);
   });
 
   test('a usage error prints the usage and exits 2, before it reads the config or connects', async () => {

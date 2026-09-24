@@ -6,6 +6,10 @@ import { loadConfig } from '../config';
 import { createLogger, type Logger } from '../core/logger';
 import { connectDatabase, disconnectDatabase } from './connection';
 import { migrationStatus, runMigrations, type Direction, type Migration } from './migrate';
+import { M001 } from './migrations/M001-normalize-email';
+import { M002 } from './migrations/M002-rebuild-name-indexes';
+import { M003 } from './migrations/M003-backfill-created-at';
+import { M004 } from './migrations/M004-drop-roles-collection';
 
 export const USAGE = 'Usage: cli.js migrate up|down [--dry-run] | cli.js migrate status | cli.js seed';
 
@@ -26,8 +30,8 @@ export interface CliDeps {
   readonly seed: (db: mongo.Db, log: Logger) => Promise<number>;
 }
 
-/** The migrations `migrate` runs, in id order. T4.4 adds M001–M004. */
-export const MIGRATIONS: readonly Migration[] = [];
+/** The migrations `migrate` runs, in id order (M4 design §5.3). M004 is the one destructive step and runs last. */
+export const MIGRATIONS: readonly Migration[] = [M001, M002, M003, M004];
 
 /** The `seed` command until T4.4 wires the first-admin seed (§6): it refuses, so nothing looks seeded. */
 export const seedNotAvailable = (_db: mongo.Db, log: Logger): Promise<number> => {
