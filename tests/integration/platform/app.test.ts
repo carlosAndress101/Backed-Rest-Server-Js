@@ -31,15 +31,15 @@ describe('createApp', () => {
   const createCategory = (name: string) =>
     mongoose.model('Category').create({ name, user: new mongoose.Types.ObjectId(admin.id) });
 
-  describe('C2 and C1 keep the M1 bodies', () => {
-    test('an unknown route is 404 {msg:"Route not found"}', async () => {
+  describe('C2 and C1 bodies are the error envelope (3.0.0, ADR-021)', () => {
+    test('an unknown route is 404 NOT_FOUND "Route not found"', async () => {
       const res = await request(server).get('/api/definitely-not-a-route');
 
       expect(res.status).toBe(404);
-      expect(res.body).toEqual({ msg: 'Route not found' });
+      expect(res.body).toEqual({ error: { code: 'NOT_FOUND', message: 'Route not found' } });
     });
 
-    test('a duplicate key is 409 {msg:"Resource already exists"}', async () => {
+    test('a duplicate key is 409 CONFLICT', async () => {
       await createCategory('PLATFORM DUP ONE');
       const second = await createCategory('PLATFORM DUP TWO');
 
@@ -49,10 +49,10 @@ describe('createApp', () => {
         .send({ name: 'PLATFORM DUP ONE' });
 
       expect(res.status).toBe(409);
-      expect(res.body).toEqual({ msg: 'Resource already exists' });
+      expect(res.body).toEqual({ error: { code: 'CONFLICT', message: 'Resource already exists' } });
     });
 
-    test('a CastError is 400 {msg:"Invalid request data"}', async () => {
+    test('a CastError is 400 BAD_REQUEST', async () => {
       const category = await createCategory('PLATFORM CAST');
 
       const res = await request(server)
@@ -61,36 +61,36 @@ describe('createApp', () => {
         .send({ name: 'PLATFORM CAST PRODUCT', price: 'not-a-number', category: String(category._id) });
 
       expect(res.status).toBe(400);
-      expect(res.body).toEqual({ msg: 'Invalid request data' });
+      expect(res.body).toEqual({ error: { code: 'BAD_REQUEST', message: 'Invalid request data' } });
     });
 
-    test('malformed JSON is 400 {msg:"Invalid request data"}', async () => {
+    test('malformed JSON is 400 BAD_REQUEST', async () => {
       const res = await request(server)
         .post('/api/category')
         .set('Content-Type', 'application/json')
         .send('{"name":');
 
       expect(res.status).toBe(400);
-      expect(res.body).toEqual({ msg: 'Invalid request data' });
+      expect(res.body).toEqual({ error: { code: 'BAD_REQUEST', message: 'Invalid request data' } });
     });
 
-    test('JSON over 100 kb is 413 {msg:"Invalid request data"}', async () => {
+    test('JSON over 100 kb is 413 BAD_REQUEST', async () => {
       const res = await request(server)
         .post('/api/category')
         .send({ name: 'x'.repeat(120 * 1024) });
 
       expect(res.status).toBe(413);
-      expect(res.body).toEqual({ msg: 'Invalid request data' });
+      expect(res.body).toEqual({ error: { code: 'BAD_REQUEST', message: 'Invalid request data' } });
     });
 
-    test('a bad percent escape in a path param is 400 {msg:"Invalid request data"}', async () => {
+    test('a bad percent escape in a path param is 400 BAD_REQUEST', async () => {
       const res = await request(server).get('/api/category/%E0%A4%A');
 
       expect(res.status).toBe(400);
-      expect(res.body).toEqual({ msg: 'Invalid request data' });
+      expect(res.body).toEqual({ error: { code: 'BAD_REQUEST', message: 'Invalid request data' } });
     });
 
-    test('an unexpected error is 500 {msg:"Internal server error"}', async () => {
+    test('an unexpected error is 500 INTERNAL', async () => {
       vi.spyOn(mongoose.model('Category'), 'find').mockImplementationOnce(() => {
         throw new Error('simulated database outage');
       });
@@ -98,10 +98,10 @@ describe('createApp', () => {
       const res = await request(server).get('/api/category');
 
       expect(res.status).toBe(500);
-      expect(res.body).toEqual({ msg: 'Internal server error' });
+      expect(res.body).toEqual({ error: { code: 'INTERNAL', message: 'Internal server error' } });
     });
 
-    test('a thrown non-Error is 500 {msg:"Internal server error"}', async () => {
+    test('a thrown non-Error is 500 INTERNAL', async () => {
       vi.spyOn(mongoose.model('Category'), 'find').mockImplementationOnce(() => {
         // eslint-disable-next-line @typescript-eslint/only-throw-error
         throw 'not an Error';
@@ -110,7 +110,7 @@ describe('createApp', () => {
       const res = await request(server).get('/api/category');
 
       expect(res.status).toBe(500);
-      expect(res.body).toEqual({ msg: 'Internal server error' });
+      expect(res.body).toEqual({ error: { code: 'INTERNAL', message: 'Internal server error' } });
     });
   });
 

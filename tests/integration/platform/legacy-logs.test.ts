@@ -75,7 +75,7 @@ describe('LOG-01: legacy code logs through req.log, never the console', () => {
       .send({ email, password: PASSWORD });
 
     expect(res.status).toBe(500);
-    expect(res.body).toEqual({ msg: 'Internal server error' });
+    expect(res.body).toEqual({ error: { code: 'INTERNAL', message: 'Internal server error' } });
     expect(recordsOf('sign')).toContainEqual(
       expect.objectContaining({
         level: 50,

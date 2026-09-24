@@ -8,6 +8,7 @@ import {
   ForbiddenError,
   InternalError,
   NotFoundError,
+  RateLimitedError,
   UnauthorizedError,
   ValidationError,
   toAppError,
@@ -194,5 +195,25 @@ describe('the AppError hierarchy', () => {
 
   test('the base class is named AppError', () => {
     expect(new AppError(400, 'BAD_REQUEST', 'x').name).toBe('AppError');
+  });
+});
+
+describe('RateLimitedError (M3 §5.2)', () => {
+  test('is a 429 RATE_LIMITED with the legacy limiter message by default', () => {
+    const appError = new RateLimitedError();
+
+    expect(appError).toBeInstanceOf(AppError);
+    expect(appError.status).toBe(429);
+    expect(appError.code).toBe('RATE_LIMITED');
+    expect(appError.message).toBe('Too many requests, please try again later');
+    expect(appError.name).toBe('RateLimitedError');
+    expect(appError.details).toBeUndefined();
+  });
+
+  test('passes through toAppError unchanged, with an overridable message', () => {
+    const appError = new RateLimitedError('Slow down');
+
+    expect(appError.message).toBe('Slow down');
+    expect(toAppError(appError)).toBe(appError);
   });
 });

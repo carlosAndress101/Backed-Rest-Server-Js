@@ -89,7 +89,7 @@ describe('REL-04 / C11 an image is replaced as upload, save, then destroy', () =
     const res = await replaceImage(app, `/api/uploads/user/${owner.id}`, await tokenFor(owner));
 
     expect(res.statusCode).toBe(500);
-    expect(res.body).toEqual({ msg: 'Internal server error' });
+    expect(res.body).toEqual({ error: { code: 'INTERNAL', message: 'Internal server error' } });
     expect(destroy).not.toHaveBeenCalled();
     expect((await User.findById(owner.id)).image).toBe(OLD_URL);
   });
@@ -102,7 +102,7 @@ describe('REL-04 / C11 an image is replaced as upload, save, then destroy', () =
     const res = await replaceImage(app, `/api/uploads/user/${owner.id}`, token);
 
     expect(res.statusCode).toBe(500);
-    expect(res.body).toEqual({ msg: 'Internal server error' });
+    expect(res.body).toEqual({ error: { code: 'INTERNAL', message: 'Internal server error' } });
     expect(upload).toHaveBeenCalledTimes(1);
     expect(destroy).not.toHaveBeenCalled();
     expect((await User.findById(owner.id)).image).toBe(OLD_URL);
