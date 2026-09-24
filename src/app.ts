@@ -79,7 +79,8 @@ export function createApp({ config, logger }: AppDeps): Express {
   app.use(
     '/api/uploads',
     mediaModule({
-      models: (name) => (name === 'User' ? UserModel : ProductModel),
+      User: UserModel,
+      Product: ProductModel,
       authenticate: auth,
       cloudinaryUrl: config.media.cloudinaryUrl,
     }),
