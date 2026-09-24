@@ -64,7 +64,7 @@ describe('crash safety and HTTP error handling', () => {
       expect(res.body).toEqual({ error: { code: 'CONFLICT', message: 'Resource already exists' } });
     });
 
-    test('a CastError is 400 BAD_REQUEST', async () => {
+    test('an invalid product price is rejected by the DTO: 422 VALIDATION_FAILED (AM-M3-5)', async () => {
       const category = await createCategory();
 
       const res = await request(app)
@@ -72,20 +72,26 @@ describe('crash safety and HTTP error handling', () => {
         .set(authHeader(adminToken))
         .send({ name: 'CAST-ERROR', price: 'not-a-number', category: category.id });
 
-      expect(res.statusCode).toBe(400);
+      expect(res.statusCode).toBe(422);
       expect(res.headers['content-type']).toMatch(/json/);
-      expect(res.body).toEqual({ error: { code: 'BAD_REQUEST', message: 'Invalid request data' } });
+      expect(res.body.error.code).toBe('VALIDATION_FAILED');
+      expect(res.body.error.details).toEqual(
+        expect.arrayContaining([expect.objectContaining({ path: 'price' })]),
+      );
     });
 
-    test('a ValidationError is 400 BAD_REQUEST', async () => {
+    test('a product without a category is rejected by the DTO: 422 VALIDATION_FAILED (AM-M3-5)', async () => {
       const res = await request(app)
         .post('/api/product')
         .set(authHeader(adminToken))
         .send({ name: 'MISSING-CATEGORY' });
 
-      expect(res.statusCode).toBe(400);
+      expect(res.statusCode).toBe(422);
       expect(res.headers['content-type']).toMatch(/json/);
-      expect(res.body).toEqual({ error: { code: 'BAD_REQUEST', message: 'Invalid request data' } });
+      expect(res.body.error.code).toBe('VALIDATION_FAILED');
+      expect(res.body.error.details).toEqual(
+        expect.arrayContaining([expect.objectContaining({ path: 'category' })]),
+      );
     });
 
     test('an unexpected error is 500 INTERNAL without a stack', async () => {

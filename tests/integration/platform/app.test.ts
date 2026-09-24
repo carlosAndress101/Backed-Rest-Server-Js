@@ -52,7 +52,7 @@ describe('createApp', () => {
       expect(res.body).toEqual({ error: { code: 'CONFLICT', message: 'Resource already exists' } });
     });
 
-    test('a CastError is 400 BAD_REQUEST', async () => {
+    test('an invalid product price is rejected by the DTO: 422 VALIDATION_FAILED (AM-M3-5)', async () => {
       const category = await createCategory('PLATFORM CAST');
 
       const res = await request(server)
@@ -60,8 +60,12 @@ describe('createApp', () => {
         .set('x-token', admin.token)
         .send({ name: 'PLATFORM CAST PRODUCT', price: 'not-a-number', category: String(category._id) });
 
-      expect(res.status).toBe(400);
-      expect(res.body).toEqual({ error: { code: 'BAD_REQUEST', message: 'Invalid request data' } });
+      expect(res.status).toBe(422);
+      expect(res.headers['content-type']).toMatch(/json/);
+      expect(res.body.error.code).toBe('VALIDATION_FAILED');
+      expect(res.body.error.details).toEqual(
+        expect.arrayContaining([expect.objectContaining({ path: 'price' })]),
+      );
     });
 
     test('malformed JSON is 400 BAD_REQUEST', async () => {
@@ -244,7 +248,7 @@ describe('createApp', () => {
     });
 
     test('a legacy request without a body sees req.body as {} (Express 4 parity)', async () => {
-      const { req } = await requestSeenByApp(server, () => request(server).get('/api/product'));
+      const { req } = await requestSeenByApp(server, () => request(server).get('/api/auth'));
 
       expect(req.body).toEqual({});
       expect(Object.getPrototypeOf(req.body)).toBe(Object.prototype);
