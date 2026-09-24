@@ -8,6 +8,7 @@ require('../models/server');
 const request = require('supertest');
 
 const Server = require('../models/server');
+const { serve, closeServers } = require('./helpers/db');
 
 const LIMIT = 10;
 
@@ -27,6 +28,10 @@ describe('SEC-15 / C9 proxy trust is configured by TRUST_PROXY', () => {
     }
     return new Server().app;
   };
+
+  afterAll(async () => {
+    await closeServers();
+  });
 
   afterEach(() => {
     if (original === undefined) {
@@ -58,7 +63,7 @@ describe('SEC-15 / C9 proxy trust is configured by TRUST_PROXY', () => {
 
   describe('the auth limiter keys on the client address', () => {
     test('with TRUST_PROXY=1, clients behind the proxy have independent budgets', async () => {
-      const app = buildWith('1');
+      const app = await serve(buildWith('1'));
       const clientA = '203.0.113.10';
       const clientB = '203.0.113.20';
 
@@ -73,7 +78,7 @@ describe('SEC-15 / C9 proxy trust is configured by TRUST_PROXY', () => {
     });
 
     test('with TRUST_PROXY unset, rotating X-Forwarded-For does not escape the limit', async () => {
-      const app = buildWith(undefined);
+      const app = await serve(buildWith(undefined));
 
       for (let i = 0; i < LIMIT; i++) {
         expect((await login(app, `198.51.100.${i + 1}`)).statusCode).toBe(400);

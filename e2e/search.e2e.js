@@ -7,6 +7,8 @@ const mongoose = require('mongoose');
 const {
   connectDatabase,
   buildApp,
+  closeServers,
+  expectStatus,
   clearDatabase,
   createUser,
   createAdmin,
@@ -26,10 +28,11 @@ describe('search policy', () => {
 
   beforeAll(async () => {
     await connectDatabase();
-    app = buildApp();
+    app = await buildApp();
   });
 
   afterAll(async () => {
+    await closeServers();
     await mongoose.connection.close();
   });
 
@@ -82,7 +85,7 @@ describe('search policy', () => {
 
       const res = await search(app, 'user', 'Findme', token);
 
-      expect(res.statusCode).toBe(200);
+      expectStatus(res, 200);
       expect(res.body.results).toHaveLength(1);
     });
   });
@@ -147,7 +150,7 @@ describe('search policy', () => {
 
       const res = await search(app, 'user', missing.toHexString(), token);
 
-      expect(res.statusCode).toBe(200);
+      expectStatus(res, 200);
       expect(res.body.results).toEqual([]);
     });
   });
