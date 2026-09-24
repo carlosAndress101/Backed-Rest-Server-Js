@@ -64,6 +64,38 @@ class Server {
         this.app.use(this.paths.product, productRouter)
         this.app.use(this.paths.search, searchRouter)
         this.app.use(this.paths.uploads, uploadRouter)
+
+        // unknown routes
+        this.app.use((req, res) => {
+            res.status(404).json({
+                msg: 'Route not found'
+            })
+        })
+
+        // error handler, must stay the last middleware
+        this.app.use((err, req, res, next) => {
+            console.error(err);
+
+            if( res.headersSent ){
+                return next(err);
+            }
+
+            if( err.code === 11000 ){
+                return res.status(409).json({
+                    msg: 'Resource already exists'
+                })
+            }
+
+            if( err.name === 'ValidationError' || err.name === 'CastError' ){
+                return res.status(400).json({
+                    msg: 'Invalid request data'
+                })
+            }
+
+            res.status(500).json({
+                msg: 'Internal server error'
+            })
+        })
     }
 
     listen(){
