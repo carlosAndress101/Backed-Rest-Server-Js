@@ -15,7 +15,8 @@ import { errorHandler } from './middlewares/error-handler';
 import { notFound } from './middlewares/not-found';
 import { requestLogger } from './middlewares/request-logger';
 import { CategoryModel, categoriesModule } from './modules/categories';
-import { productsModule } from './modules/products';
+import { ProductModel, productsModule } from './modules/products';
+import { searchModule } from './modules/search';
 import { UserModel, usersModule } from './modules/users';
 
 export interface AppDeps {
@@ -70,6 +71,10 @@ export function createApp({ config, logger }: AppDeps): Express {
 
   app.use('/api/category', categoriesModule({ authenticate: auth, requireAdmin }));
   app.use('/api/product', productsModule({ Category: CategoryModel, authenticate: auth, requireAdmin }));
+  app.use(
+    '/api/search',
+    searchModule({ User: UserModel, Category: CategoryModel, Product: ProductModel, authenticate: auth }),
+  );
   app.use('/api/user', usersModule({ authenticate: auth }));
   mountLegacyRoutes(app); // the routes no module owns yet
 
