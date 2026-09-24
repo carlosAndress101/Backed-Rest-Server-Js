@@ -77,6 +77,18 @@ const FIXTURES: Record<string, Fixture> = {
     sibling: ['err', 'errors', 'password', 'properties', 'path'],
     siblingValue: 'password',
   },
+  'err.errors.*.value': {
+    fields: { err: { errors: { email: { value: SECRET, kind: 'regexp' } } } },
+    redacted: ['err', 'errors', 'email', 'value'],
+    sibling: ['err', 'errors', 'email', 'kind'],
+    siblingValue: 'regexp',
+  },
+  'err.errors.*.properties.value': {
+    fields: { err: { errors: { name: { properties: { value: SECRET, path: 'name' } } } } },
+    redacted: ['err', 'errors', 'name', 'properties', 'value'],
+    sibling: ['err', 'errors', 'name', 'properties', 'path'],
+    siblingValue: 'name',
+  },
 };
 
 describe('createLogger redaction', () => {

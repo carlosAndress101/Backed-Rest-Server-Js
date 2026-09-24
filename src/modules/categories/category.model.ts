@@ -3,6 +3,7 @@ import mongoose, { Schema, type HydratedDocument, type InferSchemaType, type Mod
 import { toJsonPlugin } from '../../core/database/to-json.plugin';
 
 // M4 §2.2: timestamps, the name cap and casing; indexes are explicit (§3.1).
+// LOG-02 (T4.2G F1): validator messages are fixed, never Mongoose's defaults, which embed the rejected value.
 const categorySchema = new Schema(
   {
     name: {
@@ -10,7 +11,7 @@ const categorySchema = new Schema(
       required: [true, 'The name is required'],
       trim: true,
       uppercase: true,
-      maxlength: 120,
+      maxlength: [120, 'The name must be at most 120 characters'],
     },
     state: { type: Boolean, required: true, default: true },
     user: { type: Schema.Types.ObjectId, ref: 'User', required: true },

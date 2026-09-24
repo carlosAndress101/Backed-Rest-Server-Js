@@ -20,8 +20,15 @@ const EDITOR = 'editor-id';
 class FakeQuery<T> implements PromiseLike<T> {
   private offset = 0;
   private max = Infinity;
+  private strength: number | undefined;
 
-  constructor(private readonly run: () => T) {}
+  constructor(private readonly run: (strength?: number) => T) {}
+
+  /** Like the index's collation: at strength 2 or less, strings compare case-insensitively. */
+  collation(collation: { locale: string; strength?: number }): this {
+    this.strength = collation.strength;
+    return this;
+  }
 
   skip(offset: number): this {
     this.offset = offset;
@@ -43,26 +50,35 @@ class FakeQuery<T> implements PromiseLike<T> {
   ): Promise<R1 | R2> {
     return Promise.resolve()
       .then(() => {
-        const result = this.run();
+        const result = this.run(this.strength);
         return (Array.isArray(result) ? result.slice(this.offset, this.offset + this.max) : result) as T;
       })
       .then(onFulfilled, onRejected);
   }
 }
 
+/** Equality as MongoDB applies it, under a collation of `strength` (only 'en' strength ≤ 2 is needed here). */
+const same = (stored: unknown, wanted: unknown, strength?: number) =>
+  strength !== undefined && strength <= 2 && typeof stored === 'string' && typeof wanted === 'string'
+    ? stored.localeCompare(wanted, 'en', { sensitivity: 'accent' }) === 0
+    : stored === wanted;
+
 /** A hand-written Category model holding `rows`, with only the methods the service calls. */
 function fakeCategoryModel(seed: Omit<Row, 'user'>[] = []) {
   const rows: Row[] = seed.map((row) => ({ ...row, user: OWNER }));
-  const matching = (filter: Partial<Row>) =>
-    rows.filter((row) => Object.entries(filter).every(([key, value]) => row[key as keyof Row] === value));
+  const matching = (filter: Partial<Row>, strength?: number) =>
+    rows.filter((row) =>
+      Object.entries(filter).every(([key, value]) => same(row[key as keyof Row], value, strength)),
+    );
   const fake = {
     find: (filter: Partial<Row>) => new FakeQuery(() => matching(filter)),
     findOne: (filter: Partial<Row>) => new FakeQuery(() => matching(filter)[0] ?? null),
     countDocuments: (filter: Partial<Row>) => Promise.resolve(matching(filter).length),
-    exists: (filter: Partial<Row>) => {
-      const row = matching(filter)[0];
-      return Promise.resolve(row ? { _id: row._id } : null);
-    },
+    exists: (filter: Partial<Row>) =>
+      new FakeQuery((strength) => {
+        const row = matching(filter, strength)[0];
+        return row ? { _id: row._id } : null;
+      }),
     create: (doc: Pick<Row, 'name' | 'user'>) => {
       const row = { _id: `id-${rows.length + 1}`, state: true, ...doc };
       rows.push(row);
@@ -127,6 +143,28 @@ describe('createCategoriesService', () => {
         new ConflictError('Category already exists'),
       );
       expect(rows).toHaveLength(1);
+    });
+
+    // §10.3: the pre-check compares as the name_active_unique index does, so even a row stored in another case
+    // (written before M4 normalized names) is the same name, and gets the specific message.
+    test('the duplicate pre-check uses the index collation: a row stored in another case is the same name', async () => {
+      const { Category, rows } = fakeCategoryModel([{ _id: '1', name: 'Coffee', state: true }]);
+
+      await expect(createCategoriesService({ Category }).create({ name: 'COFFEE' }, EDITOR)).rejects.toEqual(
+        new ConflictError('Category already exists'),
+      );
+      expect(rows).toHaveLength(1);
+    });
+
+    test('a soft-deleted category does not hold its name', async () => {
+      const { Category, rows } = fakeCategoryModel([{ _id: '1', name: 'COFFEE', state: false }]);
+
+      await expect(
+        createCategoriesService({ Category }).create({ name: 'Coffee' }, EDITOR),
+      ).resolves.toMatchObject({
+        name: 'COFFEE',
+      });
+      expect(rows).toHaveLength(2);
     });
   });
 

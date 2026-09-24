@@ -13,6 +13,10 @@ export const REDACT_PATHS = [
   '*.password',
   'err.errors.password.value', // Mongoose ValidationError on User
   'err.errors.password.properties.value',
+  // LOG-02 (T4.2G F1): a Mongoose ValidationError carries every rejected value, whatever the path; the validator
+  // messages are fixed, so these are the only copies.
+  'err.errors.*.value',
+  'err.errors.*.properties.value',
 ];
 
 export function createLogger(config: Pick<Config, 'logLevel'>, destination?: pino.DestinationStream): Logger {

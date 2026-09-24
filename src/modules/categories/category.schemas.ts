@@ -6,8 +6,13 @@ export { paginationQuerySchema } from '../../core/http/pagination';
 const objectId = z.string().regex(/^[0-9a-fA-F]{24}$/, 'must be a Mongo id');
 
 export const categoryIdParams = z.object({ id: objectId });
-export const createCategoryBody = z.object({ name: z.string().trim().min(1) });
-export const updateCategoryBody = z.object({ name: z.string().trim().min(1) });
+
+// Normalized as the schema stores it (trim, uppercase), then capped (AM-M4-5): uppercasing can lengthen a name
+// ('ß' → 'SS'), so the cap is checked on the stored form and oversize input is a 422, never the C1 400.
+const name = z.string().trim().toUpperCase().min(1).max(120);
+
+export const createCategoryBody = z.object({ name });
+export const updateCategoryBody = z.object({ name });
 
 export type CreateCategoryDto = z.infer<typeof createCategoryBody>;
 export type UpdateCategoryDto = z.infer<typeof updateCategoryBody>;

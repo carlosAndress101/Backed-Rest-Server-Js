@@ -85,7 +85,9 @@ export function createAuthService(deps: {
         throw invalidCredentials();
       }
 
-      const { name, picture, email } = profile;
+      const { name, picture } = profile;
+      // §10.5: the Google address is matched the way sign-up and login store and read it (trimmed, lowercased).
+      const email = profile.email?.trim().toLowerCase();
       const user =
         (await User.findOne({ email })) ??
         (await User.create({ name, email, password: ':D', image: picture, google: true }));

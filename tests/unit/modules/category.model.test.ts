@@ -33,7 +33,7 @@ describe('CategoryModel', () => {
       required: [true, 'The name is required'],
       trim: true,
       uppercase: true,
-      maxlength: 120,
+      maxlength: [120, 'The name must be at most 120 characters'],
     });
     // §2.0: no field-level unique; the partial unique index is declared explicitly in §3.1.
     expect(schema.path('name').options.unique).toBeUndefined();
