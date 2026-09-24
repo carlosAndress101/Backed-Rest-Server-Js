@@ -9,7 +9,7 @@ Client-visible contract changes are always listed under **Breaking** and mirrore
 ### Added
 - M2 foundation design (`docs/design/M2-foundation.md`) and M4 database design (`docs/design/M4-database.md`); ADR-017…ADR-025.
 
-## [2.0.0] - pending (M1: Stabilization & Security Hotfix; release after the T1.5 review)
+## [2.0.0] - 2026-09-24 (M1: Stabilization & Security Hotfix)
 
 First release with breaking changes (ADR-015, ADR-024). Security fixes for the Critical and High issues in the M0 audit. The public repository carried exploitable issues; see TECH_DEBT.md SEC-01…SEC-08.
 

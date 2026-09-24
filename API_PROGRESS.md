@@ -1,40 +1,40 @@
 # API Progress
 
-> Baseline: commit `2f18dce` · Updated 2026-09-23 (Milestone 0)
+> Baseline: commit `2f18dce` · Updated 2026-09-24 (M1 closed, release 2.0.0)
 > Status legend: 🔴 blocking defect · 🟠 works with defects · 🟢 target met · ⚪ to remove
 > Debt IDs link to [TECH_DEBT.md](TECH_DEBT.md).
 
-## Route inventory (as-is)
+## Route inventory (after M1, 2.0.0)
 
-"Auth" = what is **enforced** today, not what the comments claim.
+"Auth" = what is **enforced**, not what the comments claim. **Bold** = changed by M1.
 
 | # | Method | Path | Auth today | Validation today | Handler | Issues | Status | Target |
 |---|---|---|---|---|---|---|---|---|
 | 1 | GET | `/hello` | none | none | inline (`models/server.js`) | CQ-02 | ⚪ | Remove (M3); replaced by `/health` (M9) |
-| 2 | POST | `/api/auth/login` | none | email, password non-empty | `auth.login` | SEC-06, SEC-07, PERF-01 | 🟠 | M1 rate limit + generic errors; M5 |
-| 3 | POST | `/api/auth/google` | none | `id_token` non-empty | `auth.googleSignin` | SEC-06, SEC-12 | 🟠 | M1 rate limit; M5 |
-| 4 | GET | `/api/user` | **none** | none | `usuarios.getUsers` | SEC-05 | 🔴 | M1 admin-only |
-| 5 | POST | `/api/user` | none (public sign-up) | name, password ≥8, email, email unique, role exists | `usuarios.postUser` | **SEC-02**, REL-02, DB-01 | 🔴 | M1 ignore client role |
-| 6 | PUT | `/api/user/:id` | **none** | id, id exists, role exists | `usuarios.putUser` | **SEC-01**, VAL-02 | 🔴 | M1 JWT + self/admin + field whitelist |
-| 7 | DELETE | `/api/user/:id` | JWT + `ADMIN_ROLE`\|`VENTAS_ROLE` | id, id exists | `usuarios.deleteUser` | SEC-13, CQ-05, HTTP-01 | 🟠 | M6 |
+| 2 | POST | `/api/auth/login` | none; **rate-limited** 10 / 15 min / IP (shared with #3) | email, password non-empty | `auth.login` | PERF-01, SEC-11 | 🟠 | M5 (Bearer, async bcrypt) |
+| 3 | POST | `/api/auth/google` | none; **rate-limited** (shared with #2) | `id_token` non-empty | `auth.googleSignin` | SEC-12 | 🟠 | M5 (`email_verified`, no placeholder password) |
+| 4 | GET | `/api/user` | **JWT + admin** | none (limit/offset not validated) | `usuarios.getUsers` | VAL-01, HTTP-01 | 🟠 | M3 |
+| 5 | POST | `/api/user` | none (public sign-up); **`role` ignored, always `USER_ROLE`** | name, password ≥8, email, email unique | `usuarios.postUser` | VAL-02, HTTP-01 | 🟠 | M3 |
+| 6 | PUT | `/api/user/:id` | **JWT + owner-or-admin**; field whitelist | id, id exists, role (admin only) | `usuarios.putUser` | VAL-02 | 🟠 | M3 DTO, M6 policy |
+| 7 | DELETE | `/api/user/:id` | JWT + `ADMIN_ROLE`\|`VENTAS_ROLE` (403 otherwise) | id, id exists | `usuarios.deleteUser` | SEC-13, CQ-05, HTTP-01 | 🟠 | M6 |
 | 8 | PATCH | `/api/user` | none | none | `usuarios.usuariosPatch` (stub) | CQ-02 | ⚪ | Remove (M3) |
-| 9 | GET | `/api/category` | none (public) | none (limit/offset unbounded) | `category.getCategory` | PERF-02, HTTP-01 | 🟠 | M3 |
+| 9 | GET | `/api/category` | none (public) | limit/offset coerced, `limit` ≤ 50 | `category.getCategory` | HTTP-01 | 🟠 | M3 |
 | 10 | GET | `/api/category/:id` | none (public) | id exists → isMongoId | `category.getCategoryId` | VAL-01, HTTP-01 | 🟠 | M3 |
-| 11 | POST | `/api/category` | JWT (any role) | name non-empty | `category.createCategory` | **REL-01** | 🔴 | M1 crash-safe; M6 policy |
+| 11 | POST | `/api/category` | JWT (any role) | name non-empty | `category.createCategory` (crash-safe) | VAL-02 (non-string name → 500), SEC-13 | 🟠 | M3 DTO; M6 policy |
 | 12 | PUT | `/api/category/:id` | JWT + admin | name, id | `category.putCategory` | VAL-02 | 🟠 | M3 |
 | 13 | DELETE | `/api/category/:id` | JWT + admin | id | `category.deleteCategory` | HTTP-01 | 🟠 | M3 |
-| 14 | GET | `/api/product` | none (public) | none (limit/offset unbounded) | `product.getProducts` | PERF-02, HTTP-01 | 🟠 | M3 |
+| 14 | GET | `/api/product` | none (public) | limit/offset coerced, `limit` ≤ 50 | `product.getProducts` | HTTP-01 | 🟠 | M3 |
 | 15 | GET | `/api/product/:id` | none (public) | id exists → isMongoId | `product.getProductId` | VAL-01, HTTP-01 | 🟠 | M3 |
-| 16 | POST | `/api/product` | JWT (any role) | name non-empty | `product.createProduct` | **REL-01**, VAL-02 | 🔴 | M1 crash-safe; M3 DTO |
+| 16 | POST | `/api/product` | JWT (any role) | name non-empty | `product.createProduct` (crash-safe) | VAL-02 (mass-assigns `_id`/`image`) | 🟠 | M3 DTO |
 | 17 | PUT | `/api/product/:id` | JWT + admin | name, id | `product.putProduct` | VAL-02 | 🟠 | M3 |
 | 18 | DELETE | `/api/product/:id` | JWT + admin | id | `product.deleteProduct` | HTTP-01 | 🟠 | M3 |
-| 19 | GET | `/api/search/:collection/:term` | **none** | collection allow-list only | `search.search` | **REL-01**, SEC-05, PERF-02 | 🔴 | M1 escape + cap + `user` admin-only |
-| 20 | POST | `/api/uploads` | **none** | file present | `uploads.fileUpload` (local disk) | **SEC-03**, SEC-08 | 🔴 | M1 admin-only; M3 remove (ADR-008) |
-| 21 | PUT | `/api/uploads/:collection/:id` | **none** | file, id, collection ∈ {user, product} | `uploads.updateImageCloudinary` | **SEC-03**, SEC-08, REL-01 | 🔴 | M1 JWT + self/admin |
-| 22 | GET | `/api/uploads/:collection/:id` | none (public) | id, collection ∈ {user, product} | `uploads.showImage` | **SEC-04**, FUNC-01 | 🔴 | M1 containment; M3 redirect to URL |
-| 23 | GET | `/` (static `public/`) | none | — | `express.static` | CQ-07 | 🟠 | M8 decide |
+| 19 | GET | `/api/search/:collection/:term` | category/product public; **user: JWT + admin** | collection ∈ {user, category, product}; term escaped; ≤ 20 results | `search.search` | PERF-02 (scan, accepted until the D4 trigger) | 🟠 | M3 module |
+| 20 | POST | `/api/uploads` | **JWT + admin** | file (1, ≤ 5 MB), extension allow-list | `uploads.fileUpload` (local disk) | SEC-08 (MIME), HTTP-02 | 🟠 | M3 remove (ADR-008) |
+| 21 | PUT | `/api/uploads/:collection/:id` | **JWT + owner-or-admin** (`product`: admin) | id, collection ∈ {user, product}, file (1, ≤ 5 MB) | `uploads.updateImageCloudinary` (upload → save → destroy) | HTTP-02, FUNC-01 | 🟠 | M3 media module |
+| 22 | GET | `/api/uploads/:collection/:id` | none (public) | id, collection ∈ {user, product} | `uploads.showImage` (bare filename inside `uploads/<collection>/` only) | FUNC-01 | 🟠 | M3 redirect to URL |
+| 23 | GET | `/` (static `public/`) | none | — | `express.static` | CQ-07 (dead demo URL) | 🟠 | M8 decide |
 
-**Totals:** 23 entry points · 🔴 9 · 🟠 11 · ⚪ 3 · 🟢 0
+**Totals:** 23 entry points · 🔴 0 (was 9) · 🟠 20 · ⚪ 3 · 🟢 0
 
 ## Planned contract changes (breaking-change ledger)
 

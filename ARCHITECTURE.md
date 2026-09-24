@@ -151,6 +151,34 @@ Resolved versions come from a fresh resolution of `package.json` ranges; the com
 **Security-related packages present:** `bcrypt`, `jsonwebtoken`, `google-auth-library`, `cors`, `express-validator`.
 **Absent:** `helmet`, rate limiting, request size/file limits, NoSQL filter sanitisation (`mongoose.set('sanitizeFilter')`), structured logging with redaction.
 
+
+### 1.8 State after M1 (release 2.0.0, 2026-09-24)
+
+M1 changed the as-is state above in place. There was no restructuring (ADR-001); the layout of §1.2 is unchanged.
+
+**Request pipeline** (`models/server.js`):
+```
+[trust proxy ← TRUST_PROXY] → helmet(CSP for GIS + Fonts, COOP same-origin-allow-popups, CORP cross-origin) → cors() → express.json()
+  → express.static(public/) → router
+      /api/auth/{login,google}: authLimiter (10 / 15 min / IP, shared) → validators → controller
+      /api/uploads writes:      validarJWT → esAdminRole | esAdminOrOwner → param validators → fileParser (1 file, 5 MB,
+                                per-request temp folder removed on close) → fileValid → controller
+      other routes:             [validarJWT] → [esAdminRole | esAdminOrOwner | hasRole] → validators → controller
+  → 404 {msg:'Route not found'} → error middleware (C1 + A1: 409 / 400 / client 4xx / 500, no internals)
+```
+Boot: `app.js` awaits the DB connection, then `listen`, and exits 1 on failure. `new Server()` has no side effects.
+
+**Environment:** adds the optional `TRUST_PROXY` (a non-negative integer hop count; an invalid value stops the boot). `GOOGLE_SECRET_ID` is still unused and is removed in M2.
+
+**Dependencies:** pnpm 12.3.4 (lockfile v9), `engines.node >=24`, bcrypt 6, cloudinary 2, google-auth-library 11 (runtime), `uuid` removed; new: `helmet` 8 and `express-rate-limit` 8, plus `mongodb-memory-server` 11 and supertest 7 in dev. `pnpm audit --prod`: **0 advisories** (was 48).
+
+**Security packages present:** `bcrypt`, `jsonwebtoken`, `google-auth-library`, `cors` (still any origin, allowlist in M2), `express-validator`, **`helmet`**, **`express-rate-limit`**. Still absent until M2: `sanitizeFilter`/`strictQuery`, structured logging with redaction.
+
+**Tests:** 101 Jest + supertest + mongodb-memory-server e2e tests across 9 files (the security regression suite), with one known flake (TEST-02, T1.8).
+
+**Still open from the audit:** ARC-02 and ARC-03 (M2), and every M2+ item in TECH_DEBT.md.
+
+
 ---
 
 ## 2. To-be (target)
