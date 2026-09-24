@@ -11,7 +11,7 @@
 
 **Assumes M3 has landed.** By M4 the feature modules exist at `src/modules/<feature>/` with the ARCHITECTURE §2.2 anatomy, controllers are thin, services own persistence, zod schemas are the DTOs, and the app is Express 5 + TypeScript strict + Mongoose 9. Nothing in this design re-derives those decisions; it only changes the schemas, the indexes, serialization, migrations and seed that live *under* those modules.
 
-**In scope (M4 deliverables):** timestamps on every schema; normalized + uniquely indexed email; role enum with the `Role` collection removed; `price ≥ 0`; partial unique indexes on `name` where `state: true`; indexes on `state`/`category`/`user`; an indexable search strategy; a shared `toJSON` plugin; a migration runner with up/down and a reversible-where-possible migration set; an idempotent first-admin seed; a `tokenVersion` field for M5; the operational checklist and test plan that prove all of it.
+**In scope (M4 deliverables):** timestamps on every schema; normalized + uniquely indexed email; role enum with the `Role` collection removed; `price ≥ 0`; partial unique indexes on `name` where `state: true`; indexes on `state`/`category`/`user`; a search strategy that keeps substring semantics at current volume with a documented revisit trigger; a shared `toJSON` plugin; a migration runner with up/down and a reversible-where-possible migration set; an idempotent first-admin seed; a `tokenVersion` field for M5; the operational checklist and test plan that prove all of it.
 
 **Out of scope:** bearer-token transport, `tokenVersion` enforcement, refresh tokens and password policy (M5); the `authorize(policy)` middleware and the ownership matrix (M6); Docker and graceful shutdown (M9); the zod `image` DTO itself (M3 — M4 only adds the schema-level guard); `sanitizeFilter`/`strictQuery` (M2, restated as an assumption).
 
@@ -52,8 +52,8 @@
 
 | Field | Type | Required | Validation | Default | Index | Notes |
 |---|---|---|---|---|---|---|
-| `name` | `String` | yes | `trim: true`, `maxlength: 120` | — | `name_prefix_ci` (search) | Trims accidental whitespace; length cap guards junk. |
-| `email` | `String` | yes | `trim: true`, **`lowercase: true`**, `maxlength: 254`, `match: /^[^\s@]+@[^\s@]+\.[^\s@]+$/` | — | **`email_1` unique, collation `en@strength 2`** | Normalization (DB-02) makes uniqueness case-insensitive; the collation also lets the admin user-search use the index. Legacy `unique: true` field option removed. |
+| `name` | `String` | yes | `trim: true`, `maxlength: 120` | — | — | Trims accidental whitespace; length cap guards junk. No search index: user search is admin-only and low volume (§3.2). |
+| `email` | `String` | yes | `trim: true`, **`lowercase: true`**, `maxlength: 254`, `match: /^[^\s@]+@[^\s@]+\.[^\s@]+$/` | — | **`email_1` unique** | Normalization (DB-02) makes the plain unique index case-insensitive; it serves login/Google lookup and sign-up uniqueness. Legacy `unique: true` field option removed. |
 | `password` | `String` | yes | `select: false` | — | — | bcrypt hash. Google users will get a real secret in M5 (SEC-12); for now required. **Any service that authenticates must `.select('+password')`.** |
 | `image` | `String` | no | `trim: true`, `validate`: bare filename **or** a `https://res.cloudinary.com/...` URL | — | — | Preserves the M1 SEC-04 policy; the DB now rejects traversal-looking values that a rogue client could store. |
 | `role` | `String` | yes | `enum: ['ADMIN_ROLE','USER_ROLE','VENTAS_ROLE']` | `'USER_ROLE'` | — | ADR-007, preserves existing stored strings (incl. `VENTAS_ROLE`, referenced today but undefined — SEC-13). |
@@ -87,8 +87,7 @@ export const userSchema = new Schema(
   { timestamps: true },
 );
 
-userSchema.index({ email: 1 }, { name: 'email_1', unique: true, collation: { locale: 'en', strength: 2 } });
-userSchema.index({ name: 1 },  { name: 'name_prefix_ci',  collation: { locale: 'en', strength: 2 } });
+userSchema.index({ email: 1 }, { name: 'email_1', unique: true });
 userSchema.index({ state: 1 }, { name: 'state_1' });
 
 toJsonPlugin(userSchema, { hidden: ['password', 'tokenVersion'], uidAlias: true });
@@ -102,7 +101,7 @@ export const UserModel = model('User', userSchema);
 
 | Field | Type | Required | Validation | Default | Index | Notes |
 |---|---|---|---|---|---|---|
-| `name` | `String` | yes | `trim: true`, `uppercase: true`, `maxlength: 120` | — | **`name_active_unique`** (partial unique, collated) + search | Existing controller uppercases; schema makes it authoritative. |
+| `name` | `String` | yes | `trim: true`, `uppercase: true`, `maxlength: 120` | — | **`name_active_unique`** (partial unique, collated) | Existing controller uppercases; schema makes it authoritative. The collation is for the *duplicate check*, not for search (§3.2). |
 | `state` | `Boolean` | yes | — | `true` | `state_1` | — |
 | `user` | `ObjectId` ref `User` | yes | — | — | `user_1` | Creator; M6 ownership. |
 | `createdAt` / `updatedAt` | `Date` | auto | — | now | — | `timestamps: true`. |
@@ -140,12 +139,12 @@ export const CategoryModel = model('Category', categorySchema);
 
 | Field | Type | Required | Validation | Default | Index | Notes |
 |---|---|---|---|---|---|---|
-| `name` | `String` | yes | `trim: true`, `uppercase: true`, `maxlength: 120` | — | **`name_active_unique`** + search | — |
+| `name` | `String` | yes | `trim: true`, `uppercase: true`, `maxlength: 120` | — | **`name_active_unique`** (partial unique, collated) | Duplicate check only; search is a substring scan (§3.2). |
 | `state` | `Boolean` | yes | — | `true` | `state_1` | — |
 | `user` | `ObjectId` ref `User` | yes | — | — | `user_1` | Creator. |
 | `price` | `Number` | no | **`min: 0`** | `0` | — | DB-02 (`min` added). No upper bound (out of scope). |
 | `category` | `ObjectId` ref `Category` | yes | — | — | `category_1` | Adds the missing index (PERF-03). M3 validates existence; M4 indexes the FK. |
-| `description` | `String` | no | `trim: true`, `maxlength: 2000` | — | `description_prefix_ci` (search) | Search field (C8). |
+| `description` | `String` | no | `trim: true`, `maxlength: 2000` | — | — | Searchable by substring (C8); no search index at current volume (§3.2). |
 | `available` | `Boolean` | yes | — | `true` | — | — |
 | `image` | `String` | no | bare filename or Cloudinary URL (same validator as User) | — | — | M3 stores a Cloudinary `secure_url`. |
 | `createdAt` / `updatedAt` | `Date` | auto | — | now | — | `timestamps: true`. |
@@ -177,11 +176,6 @@ productSchema.index(
   { name: 1 },
   { name: 'name_active_unique', unique: true,
     collation: { locale: 'en', strength: 2 },
-    partialFilterExpression: { state: true } },
-);
-productSchema.index(
-  { description: 1 },
-  { name: 'description_prefix_ci', collation: { locale: 'en', strength: 2 },
     partialFilterExpression: { state: true } },
 );
 productSchema.index({ state: 1 },    { name: 'state_1' });
@@ -220,7 +214,7 @@ erDiagram
     USER {
         ObjectId _id
         string   name      "required, trim, <=120"
-        string   email     "required, lowercase+trim, unique(ci), <=254"
+        string   email     "required, lowercase+trim, unique, <=254"
         string   password  "required, select:false, secret"
         string   image     "optional, bare filename or Cloudinary URL"
         string   role      "required, enum ADMIN_ROLE|USER_ROLE|VENTAS_ROLE, default USER_ROLE"
@@ -245,7 +239,7 @@ erDiagram
         ObjectId user        "required, ref User, indexed"
         number   price       "default 0, min 0"
         ObjectId category    "required, ref Category, indexed"
-        string   description "optional, <=2000, prefix-indexed"
+        string   description "optional, <=2000, substring-searchable"
         boolean  available   "required, default true"
         string   image       "optional, bare filename or Cloudinary URL"
         date     createdAt
@@ -265,15 +259,16 @@ Collections and index names are exact; every index maps to a query that exists a
 
 | Index | Definition | Query served |
 |---|---|---|
-| `email_1` | `{ email: 1 }`, `unique: true`, `collation: { locale: 'en', strength: 2 }` | Login/Google lookup `UserModel.findOne({ email })` and sign-up uniqueness; also the admin user-search email prefix branch. Case-insensitive uniqueness is the belt to the `lowercase: true` braces. |
-| `name_prefix_ci` | `{ name: 1 }`, `collation: { locale: 'en', strength: 2 }` | Admin user search: `{ state: true, $or: [{ name: /^x/ }, { email: /^x/ }] }`. |
+| `email_1` | `{ email: 1 }`, `unique: true` | Login/Google lookup `UserModel.findOne({ email })` and sign-up uniqueness. The field's `lowercase: true` is what makes it effectively case-insensitive; the index itself needs no collation. |
 | `state_1` | `{ state: 1 }` | `GET /api/user` list/count `{ state: true }` (PERF-03). |
+
+> There is deliberately **no index for user search**: it is admin-only and low volume, and search is a substring scan by decision (§3.2).
 
 **`categories`**
 
 | Index | Definition | Query served |
 |---|---|---|
-| `name_active_unique` | `{ name: 1 }`, `unique: true`, `collation: { locale: 'en', strength: 2 }`, `partialFilterExpression: { state: true }` | The create/rename duplicate check `findOne({ name }).collation(en@2)`; **and** the active prefix search `{ state: true, name: /^x/ }` (the partial filter already guarantees `state: true`, so the planner may scan this index). Makes a soft-deleted name reusable (DB-02). |
+| `name_active_unique` | `{ name: 1 }`, `unique: true`, `collation: { locale: 'en', strength: 2 }`, `partialFilterExpression: { state: true }` | The create/rename duplicate check `findOne({ name }).collation(en@2)`, so a soft-deleted name is reusable (DB-02) and case variants (`Phone`/`PHONE`) collide. Not a search index (§3.2). |
 | `state_1` | `{ state: 1 }` | `GET /api/category` list/count `{ state: true }` (PERF-03). |
 | `user_1` | `{ user: 1 }` | "Categories created by this user" (M6 ownership) and joins on `user`. |
 
@@ -281,8 +276,7 @@ Collections and index names are exact; every index maps to a query that exists a
 
 | Index | Definition | Query served |
 |---|---|---|
-| `name_active_unique` | `{ name: 1 }`, `unique: true`, `collation: { locale: 'en', strength: 2 }`, `partialFilterExpression: { state: true }` | Duplicate check **and** the name branch of the product search. Also makes a soft-deleted product name reusable. |
-| `description_prefix_ci` | `{ description: 1 }`, `collation: { locale: 'en', strength: 2 }`, `partialFilterExpression: { state: true }` | The description branch of the product search (`$or` index union). |
+| `name_active_unique` | `{ name: 1 }`, `unique: true`, `collation: { locale: 'en', strength: 2 }`, `partialFilterExpression: { state: true }` | Duplicate check, so a soft-deleted product name is reusable and case variants collide. Not a search index (§3.2). |
 | `state_1` | `{ state: 1 }` | `GET /api/product` list/count `{ state: true }` (PERF-03). |
 | `category_1` | `{ category: 1 }` | Filter/populate by category, and "products in a category". |
 | `user_1` | `{ user: 1 }` | "Products created by this user" (M6). |
@@ -291,7 +285,7 @@ Notes:
 - ObjectId lookups use the built-in `_id_` index — no extra index.
 - Production must run with `autoIndex: false` (M2/M9): indexes are created by these migrations, not at boot, so a deploy never triggers an unbudgeted index build. Dev/test may keep `autoIndex: true` so a fresh in-memory DB gets the schema.
 - `collation` and `partialFilterExpression` compose (both supported since MongoDB 3.2/3.4; the baseline is mongod 8.x). `unique` + `partialFilterExpression` + `collation` is a supported combination.
-- The collated indexes let case-insensitive *equality* and *prefix* queries use the index. The application must pass the **same** collation on the query (`.collation({ locale: 'en', strength: 2 })`), otherwise the planner cannot use the collated index.
+- Only the two partial unique `name` indexes carry a collation (`en@strength 2`), and it is there for the **duplicate check**, not for search. The duplicate-check query must pass the same collation (`.collation({ locale: 'en', strength: 2 })`); otherwise it uses the default collation and case variants slip through.
 
 ### 3.2 Search strategy decision (PERF-02, C8)
 
@@ -301,47 +295,44 @@ The endpoint after M3 is unchanged in contract: `GET /api/search/:collection/:te
 - terms match **literally** (regex metacharacters escaped), case-insensitively, at most **20** results;
 - `role` is not an allowed collection.
 
-**Decision: anchored, case-insensitive prefix search backed by collation indexes. Not a MongoDB text index.**
+**Decision (as amended in D4 review): keep case-insensitive SUBSTRING (`contains`) matching with escaped terms and the 20-result cap. Add no search-specific index.**
 
-| Criterion | `$text` (text index) | Anchored prefix + collation index (**chosen**) |
-|---|---|---|
-| Term semantics | Word/token search with stemming and stop words. `"lap"` does **not** match `"LAPTOP"`; `".*"` is meaningless. | Literal prefix: `^lap` matches `LAPTOP`, exactly what a type-ahead expects, and matches the C8 "literal" rule. |
-| C8 compliance | Cannot express "literal, escaped term"; `$text` parsing would interpret `-`/`"` specially. | The service escapes the user term and anchors it; only the prefix is variable. |
-| Id lookups | `$text` cannot serve the `findById` branch. | Keep `findById`; fall back to prefix only for non-id terms. |
-| Filters | `$text` cannot be combined with a partial filter or with the `{ state: true }` equality in one index; a text index also has per-collection limits and cannot be partial. | The `state: true` partial filter is part of the same index, so soft-deleted rows are never scanned. |
-| Index use | `$text` requires a `$text` query (no `$or` across fields without a text index covering both). | `{ state: true, $or: [{ name: /^x/ }, { description: /^x/ }] }` uses index union; each branch is an `IXSCAN` range scan. |
-| PII | Indexing `email` into a text index makes it globally tokenized/searchable. | User search stays admin-gated and only the email/name prefix indexes are touched. |
+Rationale — YAGNI, no volume evidence:
+- The existing contract is a substring match. Switching to prefix matching to make the query indexable is a behaviour change the data does not justify: there is no measure showing search is a bottleneck. It was **rejected** in the D4 review.
+- The collections are small and the only non-admin search surface on real traffic is category/product. A collection scan over a few thousand documents is well within the current SLO; a search index would optimise a query nobody has measured.
+- A `$text` index is not a drop-in either: word/stem semantics (so `"lap"` would not match `"LAPTOP"`), no support for the ObjectId branch, per-collection limits, and it cannot express the C8 "literal, escaped term" rule.
+- Safety is already covered by M1 (C8): `escapeRegex` makes any term literal, the result is capped at **20**, and `state: true` is preserved. Only the index is deferred — not the correctness work.
 
-Trade-offs recorded:
-1. **Behaviour change.** The legacy query was an unanchored substring (`contains`) match; M4 makes it a prefix match. This is a deliberate, indexable narrowing and must be listed in the CHANGELOG **Breaking** section and API_PROGRESS (ADR-015). If "contains" is genuinely required later, the fallback is a `$text` index on `{ name, description }` with a separate contract decision — not a silent revert to an unanchored regex.
-2. **`sanitizeFilter` (M2, SEC-14) must not reject the service-built `$or`.** The service builds the filter from a zod-parsed `string` term and a fixed structure; the term is escaped, never a raw `req.query` object. The M7 test plan asserts the `$or` prefix query still returns the expected rows with `sanitizeFilter` on.
-3. **`description_prefix_ci` costs space.** It is included because C8 keeps description searchable; if the owner later drops description from search, the index is removed with it (one line, one migration).
-
-Search service sketch (products; categories/users analogous):
+Query (products; categories/users analogous):
 
 ```ts
 // src/modules/search/search.service.ts
 const escapeRegex = (term: string) => term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-const COLLATION = { locale: 'en', strength: 2 } as const;
 const LIMIT = 20;
 
-// non-ObjectId term
-const prefix = new RegExp(`^${escapeRegex(term)}`);
-return ProductModel.find({ state: true, $or: [{ name: prefix }, { description: prefix }] })
-  .collation(COLLATION)   // required for the collated index to be used
+// non-ObjectId term: case-insensitive substring, literal (escaped), capped
+const contains = new RegExp(escapeRegex(term), 'i');
+return ProductModel.find({ state: true, $or: [{ name: contains }, { description: contains }] })
   .limit(LIMIT);
   // no `.lean()`: hydrating lets the shared `toJSON` plugin shape the response
   // (id, no _id/__v). If a `.lean()` projection is ever preferred, it MUST be
   // paired with an explicit DTO mapper, because `.lean()` bypasses the plugin.
 ```
 
-> `$options: 'i'` is intentionally **omitted**: case-insensitivity comes from the collation, which is what allows MongoDB to use the collated prefix index. Case-insensitive regex + `$options:'i'` is the form the planner cannot index.
+- No `.collation()` and no `^` anchor: the term is escaped first, so the regex `i` flag is the simple case-insensitive form, and the term is never interpreted as a regex operator.
+- **`sanitizeFilter` (M2, SEC-14) must not reject the service-built `$or`.** The service builds the filter from a zod-validated `string` term and a fixed structure; the term is escaped, never a raw `req.query` object. The test plan asserts the `$or` substring query still returns the expected rows with `sanitizeFilter` on.
+
+**Revisit trigger (documented, not automatic).** Open a performance task when *either* holds for the searched collection:
+- documents > **50,000**, or
+- p95 latency of `GET /api/search/*` > **200 ms** (measured, not estimated).
+
+At that point evaluate a MongoDB **text index** on `{ name, description }` (and `{ name, email }` for users), together with an explicit contract decision to move from substring to word/prefix semantics and the matching CHANGELOG entry. An anchored prefix + collation index is the alternative if the contract must stay literal. Until the trigger fires, substring search with the 20-cap stays, and no search-specific index is added.
 
 ### 3.3 Rollout notes
 
 - Build indexes with the app draining writes where practical; MongoDB 4.2+ uses an optimized build that only briefly holds an exclusive lock. On a large collection, schedule a maintenance window anyway (M4 risk).
 - The partial **unique** name index fails to build if duplicates exist among active rows. The pre-check (§7.2) and migration M002 abort with the offending ids rather than letting `createIndex` fail opaquely.
-- Verify after deploy with `db.<coll>.getIndexes()` and `explain('executionStats')` (see §8). Every list/search query must show `IXSCAN` and a bounded `docsExamined`.
+- Verify after deploy with `db.<coll>.getIndexes()` and `explain('executionStats')` (see §8). Every **list** query must show `IXSCAN` and a bounded `docsExamined`. Search is intentionally a scan at current volume (§3.2); it is not part of this check until the revisit trigger fires.
 
 ---
 
@@ -397,10 +388,9 @@ Wiring: `UserModel` gets `{ hidden: ['password', 'tokenVersion'], uidAlias: true
 1. `_id` is gone from every payload; `id` is the canonical key (`uid` still present **on users only**).
 2. Product now exposes `state` (previously hidden).
 3. Every payload gains `createdAt`/`updatedAt`.
-4. Search changes from substring to prefix (§3.2).
-5. Email is returned lowercased/trimmed.
+4. Email is returned lowercased/trimmed.
 
-All five go in the CHANGELOG **Breaking** section and the API_PROGRESS ledger for the release that ships M3+M4; none of them is silently introduced.
+All four go in the CHANGELOG **Breaking** section and the API_PROGRESS ledger for the release that ships M3+M4; none of them is silently introduced. (Search semantics do **not** change — §3.2 keeps substring matching.)
 
 ---
 
@@ -486,18 +476,18 @@ async up(db, log) {
     { $set: { email: { $toLower: { $trim: { input: { $ifNull: ['$email', ''] } } } } } },
   ]);
 
-  // 3. Rebuild the unique index with the case-insensitive collation used by search.
+  // 3. Rebuild the unique index on the normalized (lowercased) field.
   const indexes = await users.indexes();
   if (indexes.some((i) => i.name === 'email_1')) await users.dropIndex('email_1');
-  await users.createIndex({ email: 1 }, { name: 'email_1', unique: true, collation: { locale: 'en', strength: 2 } });
-  log.info('M001: emails normalized, email_1 rebuilt (unique, en@2)');
+  await users.createIndex({ email: 1 }, { name: 'email_1', unique: true });
+  log.info('M001: emails normalized, email_1 rebuilt (unique on lowercased email)');
 }
 
 async down(db, log) {
   const users = db.collection('users');
   const indexes = await users.indexes();
   if (indexes.some((i) => i.name === 'email_1')) await users.dropIndex('email_1');
-  await users.createIndex({ email: 1 }, { name: 'email_1', unique: true }); // default collation
+  await users.createIndex({ email: 1 }, { name: 'email_1', unique: true }); // non-collated unique index
   log.warn('M001 down: casing is NOT restored (lossy). Restore from backup to recover original emails.');
 }
 ```
@@ -533,11 +523,6 @@ async up(db, log) {
     await c.createIndex({ user: 1 },  { name: 'user_1' });
     if (coll === 'products') {
       await c.createIndex({ category: 1 }, { name: 'category_1' });
-      await c.createIndex({ description: 1 }, {
-        name: 'description_prefix_ci',
-        collation: { locale: 'en', strength: 2 },
-        partialFilterExpression: { state: true },
-      });
     }
     log.info({ coll }, 'M002: partial unique name + supporting indexes built');
   }
@@ -546,7 +531,7 @@ async up(db, log) {
 async down(db) {
   for (const coll of ['categories', 'products'] as const) {
     const c = db.collection(coll);
-    for (const name of ['name_active_unique', 'state_1', 'user_1', 'category_1', 'description_prefix_ci']) {
+    for (const name of ['name_active_unique', 'state_1', 'user_1', 'category_1']) {
       try { await c.dropIndex(name); } catch (err: any) { if (err.codeName !== 'IndexNotFound') throw err; }
     }
     await c.createIndex({ name: 1 }, { name: 'name_1', unique: true }); // fails if case/state duplicates exist
@@ -614,7 +599,7 @@ async down(db) {
 
 ## 6. Seed — first-admin bootstrap
 
-`src/database/seed.ts`, run by `pnpm seed` (and, if the Orchestrator wants it, once from `server.ts` when `SEED_ADMIN_*` is present). New env: `SEED_ADMIN_EMAIL`, `SEED_ADMIN_PASSWORD` (optional; added to `.example.env` and the M2 zod config).
+`src/database/seed.ts`, run **only** by the explicit `pnpm seed` command (never on boot — confirmed in D4 review). New env: `SEED_ADMIN_EMAIL`, `SEED_ADMIN_PASSWORD` (optional; added to `.example.env` and the M2 zod config).
 
 ```ts
 export async function seedFirstAdmin({ UserModel, passwordHasher, config, logger }: SeedDeps) {
@@ -636,7 +621,7 @@ export async function seedFirstAdmin({ UserModel, passwordHasher, config, logger
     logger.info({ id: String(existingAdmin._id) }, 'seed: an active admin already exists — skipped');
     return { created: false, reason: 'admin-exists' as const };
   }
-  const emailTaken = await UserModel.findOne({ email }).collation({ locale: 'en', strength: 2 }).lean();
+  const emailTaken = await UserModel.findOne({ email }).lean();
   if (emailTaken) {
     logger.info('seed: the configured email already exists — skipped, untouched');
     return { created: false, reason: 'email-exists' as const };
@@ -659,7 +644,7 @@ export async function seedFirstAdmin({ UserModel, passwordHasher, config, logger
 }
 ```
 
-Guarantees: **create-only** (no `upsert`, no `$set`), so an existing user's password/role/state is never modified; safe to run on every boot; refuses a weak password; refuses when any active admin exists (true *first*-admin bootstrap). A recovery admin for a locked-out instance is a manual break-glass procedure (documented, not automated).
+Guarantees: **create-only** (no `upsert`, no `$set`), so an existing user's password/role/state is never modified; safe to run repeatedly (it is never wired into boot); refuses a weak password; refuses when any active admin exists (true *first*-admin bootstrap). A recovery admin for a locked-out instance is a manual break-glass procedure (documented, not automated).
 
 ---
 
@@ -733,14 +718,14 @@ pnpm migrate up          # M001 -> M002 -> M003 -> M004, in order
 ```
 
 Verify (all must pass before declaring success):
-- `db.users.getIndexes()` shows `email_1` unique collated; `db.categories.getIndexes()` / `db.products.getIndexes()` show `name_active_unique` partial collated plus the supporting indexes.
+- `db.users.getIndexes()` shows `email_1` unique (plain, non-collated); `db.categories.getIndexes()` / `db.products.getIndexes()` show `name_active_unique` partial collated plus the supporting indexes.
 - `db.users.countDocuments()`, `db.categories.countDocuments()`, `db.products.countDocuments()` are unchanged from the pre-run counts.
 - `db.users.aggregate([{ $match: { $expr: { $ne: ['$email', { $toLower: { $ifNull: ['$email', ''] } }] } } }, { $count: 'notNormalized' }])` returns no rows (every email already lowercase/trimmed).
 - `db.products.countDocuments({ price: { $lt: 0 } })` is `0` (schema guard; migrate any legacy negatives beforehand).
 - `db.roles` no longer exists (`db.getCollectionNames()` excludes it).
 - `pnpm seed` creates the first admin (or reports one exists), and login with it succeeds.
 - Spot-check the app: list, search, sign-up, login, media.
-- `explain('executionStats')` on the list + search queries shows `IXSCAN`.
+- `explain('executionStats')` on the **list** queries shows `IXSCAN` (search scans by decision, §3.2).
 
 ### 7.4 Rollback
 
@@ -765,8 +750,8 @@ Harness: the M2 **Vitest + supertest + `mongodb-memory-server`** integration sui
 | 2 | `tests/integration/models/category.model.spec.ts` | `name` is trimmed+uppercased; two **active** categories with the same name (incl. different case) → 11000; soft-delete one (`state: false`) then creating the same name **succeeds** (DB-02, partial unique); `user` is required. |
 | 3 | `tests/integration/models/product.model.spec.ts` | `price: -1` → `ValidationError`, `price: 0` allowed; `category`/`user` required; `name` partial-unique behavior as categories; `image` validator accepts a bare filename and a Cloudinary URL and rejects `../../package.json`. |
 | 4 | `tests/integration/models/serialization.spec.ts` | `toJSON` for all three models exposes `id`, removes `_id`/`__v`; User never exposes `password`/`tokenVersion` and exposes `uid === id`; Category/Product expose `state`; a schema-coverage test asserts every exported model has a `toJSON` transform. |
-| 5 | `tests/integration/database/indexes.spec.ts` | `getIndexes()` returns exactly the catalogue names/options from §3.1 (no `name_1` legacy unique, no field-level auto index). `explain('executionStats')` shows `IXSCAN` (not `COLLSCAN`) for: user by email; `{ state: true }` list/count; product by `category`; category/product by `user`; category/product **prefix search**; user prefix search. |
-| 6 | `tests/integration/search/search.spec.ts` | C8 contract re-proved on the new indexes: category/product public, user admin-only (401/403), `role` → 400; prefix (not substring) case-insensitive matching; regex metacharacters (`.*`, `(`, `[`) are literal; ≤20 results with 25 matches; non-existent id → `{ results: [] }`; soft-deleted docs excluded; **`$or` prefix query still works with `sanitizeFilter` on** (SEC-14). |
+| 5 | `tests/integration/database/indexes.spec.ts` | `getIndexes()` returns exactly the catalogue names/options from §3.1 (no `name_1` legacy unique, no field-level auto index, no `description_prefix_ci`, no `name_prefix_ci`). `explain('executionStats')` shows `IXSCAN` (not `COLLSCAN`) for: user by email; `{ state: true }` list/count; product by `category`; category/product by `user`. |
+| 6 | `tests/integration/search/search.spec.ts` | C8 contract re-proved on the unchanged substring query: category/product public, user admin-only (401/403), `role` → 400; **substring (contains)** case-insensitive matching (`"top"` matches `"LAPTOP"`); regex metacharacters (`.*`, `(`, `[`) are literal; ≤20 results with 25 matches; non-existent id → `{ results: [] }`; soft-deleted docs excluded; **`$or` substring query still works with `sanitizeFilter` on** (SEC-14). |
 | 7 | `tests/integration/database/migrations.spec.ts` | Runner applies M001–M004 in order once and records them; a second run is a **no-op**; `--dry-run` plans but writes nothing. M001 **aborts** on seeded case-duplicate emails and leaves data untouched; M002 aborts on duplicate active names; M003 backfills `createdAt` from the `ObjectId` timestamp (insert raw docs without timestamps, then assert equality to `_id.getTimestamp()`); M004 aborts on an unknown role value and drops `roles` when clean; `down` reverses M003, M002 (index set back to legacy) and M004 (roles recreated), and M001 reports the lossy-casing warning. |
 | 8 | `tests/integration/database/seed.spec.ts` | With env set and an empty DB → creates exactly one active `ADMIN_ROLE`; run twice → still one, second call reports `admin-exists`; with an existing admin → no write; configured email belonging to a non-admin → no write and that user's password/role unchanged; weak/missing password → refuses, creates nothing; email is lowercased. |
 | 9 | `tests/integration/users/*.spec.ts` (existing, updated) | Sign-up stores `USER_ROLE` and lowercased email; the M1 assertions still hold with the new JSON shape (`id`, `uid`, no `password`, `state` visible). |
@@ -780,7 +765,7 @@ Determinism: the harness starts one memory server per worker and gives each file
 |---|---|---|
 | DB-01 | §2.4 (no Role collection), §6 (seed) | 8, 9 |
 | DB-02 | §2.1–§2.3 (timestamps, email, enum, min, partial name, serialization) | 1–4 |
-| PERF-02 | §3.1 (partial active-name/search indexes), §3.2 (prefix strategy) | 5, 6 |
+| PERF-02 | §3.1 (list/fk indexes), §3.2 (substring kept, revisit trigger) | 5, 6 |
 | PERF-03 | §3.1 (`state`, `category`, `user`) | 5 |
 | SEC-14 | §3.2 note (sanitizeFilter + service-built `$or`) | 6 |
 | ADR-007 | §2.4, M004 | 3, 7 |
@@ -799,9 +784,11 @@ Determinism: the harness starts one memory server per worker and gives each file
 
 Scripts to add (M4 implementation): `"migrate": "tsx src/database/cli.ts migrate"`, `"seed": "tsx src/database/cli.ts seed"`.
 
-## Appendix B — Open items for the Orchestrator
+## Appendix B — Resolutions from the D4 review
 
-1. **`VENTAS_ROLE`** is kept in the enum because it is referenced today (SEC-13) and existing data may use it; M6 decides whether it stays a real role or is removed (a removal is then a DTO/enum change plus a data migration).
-2. **Product `description` search** is preserved and indexed; if the owner prefers `$text` for description, the decision in §3.2 must be revisited as a whole (not mixed).
-3. **`price` upper bound** and currency are unspecified; M4 only enforces `min: 0`.
-4. **Migration lock** for multi-instance deploys is deferred to M9; M4 assumes a single app instance during migration.
+1. **Search keeps case-insensitive substring matching** with escaped terms and the 20-result cap; **no search-specific index** is added, and the prefix/substring behaviour change is dropped (the only revisit path is the documented trigger in §3.2).
+2. **`VENTAS_ROLE` stays** in the enum; M6 defines its permissions.
+3. **Product `description` stays searchable by substring** (not `$text`).
+4. **`tokenVersion` stays hidden** from JSON.
+5. **The seed runs only via the explicit `pnpm seed` command**, never on boot.
+6. **Migration lock** for multi-instance deploys is deferred to M9; M4 assumes a single app instance during migration.
