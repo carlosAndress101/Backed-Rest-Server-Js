@@ -41,6 +41,7 @@ describe('loadConfig defaults', () => {
       trustProxy: undefined,
       auth: { jwtSecret: VALID.SECRET_KEY, googleClientId: VALID.GOOGLE_CLIENT_ID },
       media: { cloudinaryUrl: VALID.CLOUDINARY_URL },
+      seed: { adminEmail: undefined, adminPassword: undefined },
     });
   });
 
@@ -165,5 +166,44 @@ describe('CORS_ORIGINS', () => {
 
   test('a list of only separators means any origin', () => {
     expect(load({ CORS_ORIGINS: ' , ,' }).cors.origins).toBe('*');
+  });
+});
+
+describe('SEED_ADMIN_* (M4 design §6, D-14)', () => {
+  const PASSWORD = 'seed-admin-secret-9f3c';
+
+  test('both set: config.seed carries them as given (the seed trims and lowercases the email)', () => {
+    expect(load({ SEED_ADMIN_EMAIL: ' Admin@Example.com ', SEED_ADMIN_PASSWORD: PASSWORD }).seed).toEqual({
+      adminEmail: ' Admin@Example.com ',
+      adminPassword: PASSWORD,
+    });
+  });
+
+  test('both are optional, and an empty value counts as unset', () => {
+    expect(load({ SEED_ADMIN_EMAIL: '', SEED_ADMIN_PASSWORD: '' }).seed).toEqual({
+      adminEmail: undefined,
+      adminPassword: undefined,
+    });
+  });
+
+  test("any value loads: a weak password or a malformed email is the seed's to refuse, never a boot failure", () => {
+    expect(load({ SEED_ADMIN_EMAIL: 'not-an-email', SEED_ADMIN_PASSWORD: 'short' }).seed).toEqual({
+      adminEmail: 'not-an-email',
+      adminPassword: 'short',
+    });
+  });
+
+  test('P20: a ConfigError never echoes SEED_ADMIN_PASSWORD, or any other value', () => {
+    const { message } = configError({
+      SEED_ADMIN_EMAIL: 'admin@example.com',
+      SEED_ADMIN_PASSWORD: PASSWORD,
+      PORT: 'not-a-port',
+      NODE_ENV: 'staging',
+    });
+
+    expect(message).toMatch(/→ at MONGO_CLOUD$/m);
+    expect(message).not.toContain(PASSWORD);
+    expect(message).not.toContain('not-a-port');
+    expect(message).not.toContain('staging');
   });
 });
