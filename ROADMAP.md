@@ -1,7 +1,7 @@
 # Roadmap
 
 > Owner: CarlosH / SH1FT3R · Orchestrated multi-agent delivery (Claude Code · OpenCode · Nodeterm · RTK)
-> Updated 2026-09-24 · Current milestone: **M5 next** (M3 and M4 accepted 2026-09-24 on `next`, the unreleased 3.0 line; `master` = 2.1.0)
+> Updated 2026-09-24 · Current milestone: **M6 next** (M3, M4 and M5 accepted 2026-09-24 on `next`, the unreleased 3.0 line; `master` = 2.1.0)
 
 Complexity scale: **S** (≤1 agent-day) · **M** (2–3) · **L** (4–6) · **XL** (>6). Tests are a quality gate in **every** milestone (ADR-013); M7 closes the remaining gaps.
 
@@ -12,7 +12,7 @@ Complexity scale: **S** (≤1 agent-day) · **M** (2–3) · **L** (4–6) · **
 | M2 | Foundation: tooling, TypeScript, config, logging, errors, Express 5 | L | M1 | ✅ Accepted 2026-09-24 (T2.8 review: ACCEPT), release **2.1.0** ([design](docs/design/M2-foundation.md)) |
 | M3 | Feature-First Refactor + Validation/DTOs | L | M2 | ✅ Accepted 2026-09-24 (T3.9 review: ACCEPT), merged into `next`; ships in **3.0.0** after M6 ([design](docs/design/M3-modules.md)) |
 | M4 | Database Improvements | M | M3 | ✅ Accepted 2026-09-24 (T4.5 review: ACCEPT), merged into `next`; ships in **3.0.0** ([design](docs/design/M4-database.md)) |
-| M5 | Authentication Hardening | M | M4 | Planned |
+| M5 | Authentication Hardening | M | M4 | ✅ Accepted 2026-09-24 (T5.4 review: ACCEPT), merged into `next`; ships in **3.0.0** ([design](docs/design/M5-auth.md)) |
 | M6 | Authorization (RBAC + ownership) | M | M5 | Planned |
 | M7 | Testing Hardening | M | M6 | Planned |
 | M8 | API Documentation | S–M | M3, M6 | Planned |

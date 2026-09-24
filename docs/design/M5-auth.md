@@ -506,3 +506,50 @@ The owner delegated decisions to the Orchestrator ("toma las mejores decisiones"
 | AM-M5-5 | §8 Q5: throttle `PUT /api/auth/password`? | **Not in M5.** Revisit with M9 telemetry. Recorded as a TECH_DEBT note. |
 | AM-M5-6 | Orchestrator review of the T5.1 row: Files allowed | T5.1 re-signs the test fixtures and must raise the test `SECRET_KEY` to ≥ 32 characters. Its Files allowed also include **`tests/helpers/**`** (`tokenFor` signs `{ uid, tokenVersion }`) and **`tests/setup/**`** (the test env), plus any test file whose **only** change is the token-minting or header fixture. That is a mechanical change, listed per file. |
 | AM-M5-7 | Sequencing | As in §6: T5.1 (a **review gate**, "T5.1G", ARCHITECT) runs in parallel with T5.3 from the start; T5.2 starts after the T5.1 merge; T5.4 is the final review. |
+
+---
+
+## 10. As built (M5 close, 2026-09-24)
+
+M5 was built on `m5/auth` (T5.3, T5.1 + T5.1R, T5.2, T5.2R) and accepted by the T5.4 final review. Its build rulings AM-M5-8…11 and the accepted build decisions are recorded here, and they **override** the sections they name.
+
+### 10.1 Deploy runbook (T5.4 F1)
+
+This is the M5 equivalent of the M4 design's §7.1 step 0. The M4 steps still apply to any database that has not run M001–M004.
+
+0. **Before the deploy window**, set `SECRET_KEY` to at least 32 characters, or the new code refuses to boot (`ConfigError` naming `SECRET_KEY`, never its value). Rotating the secret costs nothing extra: every session ends anyway.
+1. **Warn clients** that every session ends at the deploy. Every earlier token fails the `iss`/`aud`/`tv` checks with the ordinary 401, and the client signs in again.
+2. Optionally set `JWT_TTL` (default `4h`) and `BCRYPT_COST` (default 10, range 10–14).
+3. Run `pnpm build && pnpm migrate up`:
+   - M005 backfills `tokenVersion: 0`;
+   - M006 removes the `':D'` placeholder from pure Google-only accounts, leaving a Google account with a real hash untouched.
+
+   Unlike M001, neither is a hard ordering gate (§7), but run them before serving traffic, as usual.
+4. **Rollback:** `pnpm migrate down` (M006, then M005) **before** reverting the code, as in M4 §7.4.
+
+### 10.2 Build rulings (AM-M5-8…11)
+
+| ID | Ruling |
+|---|---|
+| AM-M5-8 | The `Bearer` scheme is case-insensitive (RFC 7235 §2.1); only the scheme is. Everything else stays strict: one space, an RFC 6750 b64token, and no x-token fallback on a malformed header. It amends ADR-032's "exactly `Bearer`". |
+| AM-M5-9 | Every token is signed with the user's own `tokenVersion` (login, Google, the password change): `tokens.sign(uid, tokenVersion)`, positional. Without it, the first logout-all would lock the user out of every later login. A test pins the `JWT_TTL` → `app.ts` wiring. |
+| AM-M5-10 | `PUT /api/user/:id` never writes the caller's own password, for any role, administrators included. The own id is compared case-insensitively, because the route accepts hex ids in either case. A password there is 422, pointing to `PUT /api/auth/password`. An administrator's reset of **another** user's password follows the policy and lands with `$inc: { tokenVersion: 1 }` in the same atomic update. **Breaking** (§2.2). |
+| AM-M5-11 | The seed hashes at `config.auth.bcryptCost`, passed in by `src/cli.ts` (this supersedes ADR-035's "the seed keeps its own constant"), and refuses a `SEED_ADMIN_PASSWORD` over 72 bytes, as it refuses a short one. |
+
+### 10.3 Superseded text
+
+- **§3.4, the `login` sketch:**
+  - **The usable-hash guard is kept** (T5.2 D1). The refusal is `!user || !isUsableHash(hash) || !user.state || !valid`. Without the guard, a Google-only account compared against the dummy would log in with the dummy's plaintext.
+  - **The rehash is a compare-and-swap** (T5.2 D2): `updateOne({ _id, password: <compared hash> }, { password })`. A rehash that finishes after a password change is then a no-op instead of restoring the old password. Its failure is logged at warn through the request logger, never left as an unhandled rejection.
+  - The login's `tokens.sign` is positional (AM-M5-9).
+- **§3.4, `changePassword`:** a wrong current password is the generic `invalidCredentials()`, not `'Current password is incorrect'` (T5.2 D8). The new hash and the `tokenVersion` bump land in one `findOneAndUpdate` on an active account.
+- **§1 ADR-037 and §7, the `'no-email'` bucket:** there is none (T5.2 D9).
+  - A body without a string email skips the account limiter, and `validate` refuses it (422) before any password is checked. A shared bucket would let anyone exhaust it for every malformed request.
+  - The account limiter sends no `RateLimit-*` headers, which would reveal how many attempts an account has had.
+- **§5.2, the 72-byte case:** the truncated-equivalent of a password **stored before M5** that was longer than 72 bytes logs in (200), not 401 (T5.2 R1, reproduced in T5.4). bcrypt reads only 72 bytes, so no check at login can tell the two apart. The policy on every write (sign-up, the password change, an administrator reset, the seed) prevents new cases; the residual is TECH_DEBT SEC-16.
+
+### 10.4 Residual risks (TECH_DEBT)
+
+- **SEC-16 residual:** hashes of passwords over 72 bytes, written before M5, are truncation-equivalent.
+- **SEC-07 residual (ADR-035):** a wrong password against a hash of another cost takes that cost's time, about 200 ms at cost 12 against about 51 ms, until the account's next successful login. A dormant account keeps it.
+- **SEC-17 (new):** anyone can spend a victim's per-account login budget, a targeted lockout inherent to ADR-037. The per-IP budget is unaffected. The limiter stores are per instance (SEC-06, M9).

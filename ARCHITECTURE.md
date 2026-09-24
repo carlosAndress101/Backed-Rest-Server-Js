@@ -287,6 +287,47 @@ tests/{setup,helpers,unit,unit/modules,integration/{modules,platform,security}}
 
 
 
+### 1.12 State after M5 (the 3.0 line on `next`, unreleased, 2026-09-24)
+
+**Authentication** (design [M5-auth](docs/design/M5-auth.md), §1 and §10):
+- **Transport (ADR-032):** `authenticate` reads `Authorization: Bearer <token>`, where the scheme is case-insensitive (AM-M5-8).
+  - It reads `x-token` only when there is no `Authorization` header, and marks that response `Deprecation: true`.
+  - A malformed `Authorization` is 401 and never falls back.
+- **Tokens (ADR-034):**
+  - `src/core/security/jwt.ts` signs `{ uid, tv, iat, exp, iss, aud }` with HS256 pinned on sign and verify;
+  - `iss`/`aud` are code constants;
+  - `JWT_TTL` is converted to seconds once, in the config.
+- **Revocation (ADR-033):**
+  - `authenticate` refuses a token whose `tv` differs from the user's `tokenVersion`, with the same 401 as any invalid token.
+  - `tokenVersion` goes up on `POST /api/auth/logout-all`, on `PUT /api/auth/password`, and on an administrator's reset of another user's password (AM-M5-10), each in one atomic write.
+- **Passwords (ADR-035):** `src/core/security/password.ts` is the only module that imports `bcrypt`.
+  - It hashes and compares asynchronously at `BCRYPT_COST`.
+  - `passwordPolicy` accepts 8 characters to 72 UTF-8 bytes.
+  - After a successful login, a hash of another cost is replaced by a compare-and-swap that is never awaited.
+  - Every credential failure on login and on the password change costs one compare at the configured cost (F1).
+  - Your own password changes only through `PUT /api/auth/password`, which requires the current one (AM-M5-10).
+- **Google (ADR-036):**
+  - `email_verified` is required;
+  - a Google-only account has no `password` field;
+  - a password account's address is refused rather than linked (AM-M5-1).
+- **Rate limits (ADR-037):** `/login` has the shared per-IP budget and a per-account budget keyed on the normalized email. Both stores are in memory, per instance (SEC-06, M9).
+
+**Data:** M005 backfills `tokenVersion`; M006 removes the Google `':D'` placeholder. The seed hashes at `BCRYPT_COST` (AM-M5-11).
+
+**Environment:** `SECRET_KEY` must be at least 32 characters, or the boot fails. New variables: `JWT_TTL` (default `4h`) and `BCRYPT_COST` (10–14, default 10).
+
+**Deploy order** (M5 design §10.1), on top of §1.11's M4 gate:
+1. `SECRET_KEY` of at least 32 characters **before** the deploy.
+2. Clients warned that every session ends at the deploy.
+3. `pnpm migrate up` (M005/M006).
+4. Rollback: `migrate down` before reverting the code.
+
+**Tests:** 1109. This adds the password, token, revocation, limiter, Google and AM-M5-10 adversarial suites. `src/**` coverage is about 99 %.
+
+**Next:** M6, authorization: `authorize(policy)` replaces the interim guards (ADR-028), with a permission matrix, ownership rules and the `VENTAS_ROLE` decision (SEC-13). Then 3.0.0 is released from `next` (ADR-024, ADR-026).
+
+
+
 ---
 
 ## 2. To-be (target)
@@ -375,3 +416,9 @@ Status: **Accepted** = Orchestrator decision, binding on agents. **Proposed** = 
 | ADR-029 | **zod DTOs and one `validate(part, schema)` middleware → 422 with `details`.** `express-validator` and `db-validators` are removed; existence checks become find-active-or-404 in services | Accepted 2026-09-24 (D3 review; details in [M3-modules](docs/design/M3-modules.md) §1.1); implemented in M3 (T3.1 255cd1e + every module); `express-validator` removed (T3.8b) | Fixes VAL-01, VAL-02 and F3. Express 5 getter-only `query`/`params` are handled with `defineProperty`. |
 | ADR-030 | **Media is Cloudinary only.** `POST /api/uploads` is removed. `GET` 302-redirects **only to this app's own Cloudinary cloud** (AM-M3-1), otherwise 404. Magic-byte MIME sniffing; parser errors → 400; oversize → 413 JSON; C10/C11 kept | Accepted 2026-09-24 (D3 review; details in [M3-modules](docs/design/M3-modules.md) §1.1); implemented in M3 (T3.7 8f74d0c, T3.7R c1094a0) | Fixes FUNC-01, HTTP-02, F4 and SEC-08 (MIME). The allowlist prevents an open redirect from legacy `image` values. |
 | ADR-031 | **Schema-owned data changes run through an in-repo migration runner, and the CLI is a second composition root.** Migrations live in `src/database/migrations/`, are recorded in a `migrations` ledger, and each `up` aborts on a data check before writing. `autoIndex` is off in production, so only the migrations build indexes. `src/cli.ts` (like `src/server.ts`) wires models into the seed; `src/database/**` imports no module. | Accepted 2026-09-24 (M4: D4R §9–§15, AM-M4-7; implemented T4.1/T4.4) | No new dependency (ADR-025); a production index build only happens after its data check; the layer rules stay intact. |
+| ADR-032 | **Auth transport: `Authorization: Bearer` first; `x-token` only when there is no `Authorization` header,** with `Deprecation: true` (RFC 9745) on those responses. A malformed `Authorization` is 401 with no fallback. The scheme is case-insensitive (AM-M5-8) | Accepted 2026-09-24 (D5 review, AM-M5-1…11; details in [M5-auth](docs/design/M5-auth.md) §1 and §10); implemented in M5 (T5.1 51f7ce3, T5.1R 760bf5d) | Implements ADR-010's transport. The precedence is deterministic and testable; `x-token` goes in 4.0.0 (a `Sunset` date is added once 4.0.0 is scheduled). |
+| ADR-033 | **Revocation by one per-user `tokenVersion`, signed as the `tv` claim.** It goes up on logout-all, on a password change and on an administrator's password reset of another user; a mismatch is the same 401 as any invalid token | Accepted 2026-09-24 (D5 review, AM-M5-1…11; details in [M5-auth](docs/design/M5-auth.md) §1 and §10); implemented in M5 (T5.1 51f7ce3, T5.2 40f3176, T5.2R f072de4) | No session store: `authenticate` already loads the user. Every device is signed out together (no per-device logout, YAGNI). |
+| ADR-034 | **JWT claims `{ uid, tv, iat, exp, iss, aud }`, HS256 pinned on sign and verify;** `iss`/`aud` are code constants; `JWT_TTL` is configurable (default 4h); `SECRET_KEY` ≥ 32 characters at boot | Accepted 2026-09-24 (D5 review, AM-M5-1…11; details in [M5-auth](docs/design/M5-auth.md) §1 and §10); implemented in M5 (T5.1 a4ec277, 51f7ce3) | Closes the "any HMAC variant" laxity and gives tokens an audience. **Breaking:** every earlier token is refused on deploy, and a short secret stops the boot. |
+| ADR-035 | **Async bcrypt at `BCRYPT_COST` (10–14, default 10) everywhere, the seed included (AM-M5-11); a 72-byte password policy; rehash-on-login** as a never-awaited compare-and-swap after a successful compare | Accepted 2026-09-24 (D5 review, AM-M5-1…11; details in [M5-auth](docs/design/M5-auth.md) §1 and §10); implemented in M5 (T5.2 f853ba9, T5.2R b190101) | Fixes PERF-01 and SEC-16 for new writes, and narrows the SEC-07 timing residual to accounts not yet rehashed. |
+| ADR-036 | **Google sign-in requires `email_verified`; a Google-only account has no password; a password account's address is refused, not linked** (AM-M5-1). Every failure is the generic 401 | Accepted 2026-09-24 (D5 review, AM-M5-1…11; details in [M5-auth](docs/design/M5-auth.md) §1 and §10); implemented in M5 (T5.2 d20d641, T5.3 M006 27cef33) | Fixes SEC-12. It is the reversible safe default for account linking; an explicit, authenticated linking flow is future work if a client needs it. |
+| ADR-037 | **Two limiters on `/login`:** the shared per-IP budget (C5/C9, unchanged) and a per-account budget on the normalized email (10 / 15 min), both in memory. There is no account budget for a body without a string email, and the account limiter sends no `RateLimit-*` headers | Accepted 2026-09-24 (D5 review, AM-M5-1…11; details in [M5-auth](docs/design/M5-auth.md) §1 and §10); implemented in M5 (T5.2 f823254) | Caps IP-rotating attacks on one account. No new dependency; the store stays per instance (M9). Targeted lockout is accepted (SEC-17). |
