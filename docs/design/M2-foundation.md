@@ -1523,7 +1523,7 @@ Source: the official migration guide, <https://expressjs.com/en/guide/migrating-
 | 6 | `res.send(status)` number-only removed | no | — | — |
 | 7 | `res.redirect(url, status)` order; `'back'` magic string | no | — | — |
 | 8 | `res.sendfile()` removed | no (`sendFile` already) | — | — |
-| 9 | `express.static.mime` removed; `.js` served as `text/javascript` | only the MIME value of `public/js/auth.js` | `public/` | none needed (browsers accept both) |
+| 9 | `express.static.mime` removed; `.js` served as `text/javascript` | only the static MIME values: `public/js/auth.js` becomes `text/javascript; charset=utf-8`, and `text/html` is emitted with a lowercase `charset=utf-8` (observed in T2.2; charset is case-insensitive, RFC 9110 §8.3.2) | `public/` | none needed (browsers accept both) |
 | 10 | `express:router` debug namespace → `router` | no | — | — |
 | 11 | Path syntax: unnamed `*`, `?`, regexp chars, reserved chars | no. Every path is literal or `:param`: `/`, `/:id`, `/:collection/:term`, `/:collection/:id`, `/login`, `/google`, `/hello` | all routers | — |
 | 12 | Rejected promises forwarded to the error middleware | **yes, beneficial**: an async handler that throws no longer crashes the process (REL-01 structurally closed) | all async handlers | none (M1 try/catch stays until M3) |
