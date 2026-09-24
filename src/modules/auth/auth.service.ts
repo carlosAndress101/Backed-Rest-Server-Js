@@ -2,7 +2,7 @@ import { UnauthorizedError } from '../../core/errors';
 import type { Logger } from '../../core/logger';
 import type { TokenService } from '../../core/security/jwt';
 import { comparePassword, hashPassword, isUsableHash, needsRehash } from '../../core/security/password';
-import type { GoogleDto, LoginDto } from './auth.schemas';
+import type { GoogleDto, LoginDto, PasswordChangeDto } from './auth.schemas';
 import type { GoogleProfile, GoogleVerifier } from './google.client';
 
 /** A stored user, as far as sign-in reads it. The password is not part of it (select: false, AM-M4-1). */
@@ -35,9 +35,19 @@ export interface SignInUserModel {
     filter: { email: string | undefined },
     projection: '+password',
   ): PromiseLike<SignInUserWithPassword | null>;
+  /** The password change's read: the caller's own account, with its hash. */
+  findById(id: string, projection: '+password'): PromiseLike<SignInUserWithPassword | null>;
   create(doc: GoogleSignUp): PromiseLike<SignInUser>;
   /** The rehash (P25): replaces the stored hash only if it is still the one the login compared against. */
   updateOne(filter: { _id: unknown; password: string }, update: { password: string }): PromiseLike<unknown>;
+  /** logout-all (ADR-033): one more tokenVersion, so every token signed before stops verifying. */
+  updateOne(filter: { _id: string }, update: { $inc: { tokenVersion: 1 } }): PromiseLike<unknown>;
+  /** The password change: the new hash and the next tokenVersion in one atomic update. */
+  findOneAndUpdate(
+    filter: { _id: string; state: true },
+    update: { password: string; $inc: { tokenVersion: 1 } },
+    options: { returnDocument: 'after' },
+  ): PromiseLike<SignInUser | null>;
 }
 
 /** Where a failed background rehash is reported: the request's logger. */
@@ -53,6 +63,10 @@ export interface AuthService {
   /** `log` reports a failed background rehash (P25); it never affects the answer. */
   login(dto: LoginDto, log: RehashLog): Promise<Session>;
   googleSignIn(dto: GoogleDto): Promise<Session>;
+  /** AM-M5-4: every token of the user stops verifying, the one of this request included. */
+  logoutAll(uid: string): Promise<void>;
+  /** Every earlier token of the user stops verifying; the returned one keeps the caller signed in. */
+  changePassword(uid: string, dto: PasswordChangeDto): Promise<{ token: string }>;
 }
 
 /**
@@ -127,6 +141,31 @@ export function createAuthService(deps: {
       if (!user.state) throw invalidCredentials();
 
       return session(user);
+    },
+
+    async logoutAll(uid) {
+      await User.updateOne({ _id: uid }, { $inc: { tokenVersion: 1 } });
+    },
+
+    async changePassword(uid, { currentPassword, newPassword }) {
+      // F1, extended: exactly one compare at the configured cost, and the one generic answer, whether the current
+      // password is wrong or the account has none to check (a Google-only account takes the dummy path).
+      const user = await User.findById(uid, '+password');
+      const hash = user?.password;
+      const validPassword = await comparePassword(currentPassword, hash, await dummyHash);
+      if (!user || !isUsableHash(hash) || !user.state || !validPassword) throw invalidCredentials();
+
+      // One atomic update: the new hash and the next tokenVersion land together, on an account still active.
+      const password = await hashPassword(newPassword, bcryptCost);
+      const updated = await User.findOneAndUpdate(
+        { _id: uid, state: true },
+        { password, $inc: { tokenVersion: 1 } },
+        { returnDocument: 'after' },
+      );
+      if (!updated) throw invalidCredentials();
+
+      // A fresh token at the new tokenVersion, so the caller stays signed in here (AM-M5-4).
+      return { token: await tokens.sign(String(updated._id), updated.tokenVersion) };
     },
   };
 }

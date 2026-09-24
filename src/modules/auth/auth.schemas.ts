@@ -1,5 +1,7 @@
 import { z } from 'zod';
 
+import { passwordPolicy } from '../../core/security/password';
+
 // The shapes the legacy express-validator chains checked. Whether the credentials are right is the service's
 // question, answered with the generic 401 (C5), never validation's.
 export const loginBody = z.object({
@@ -18,5 +20,12 @@ export const googleBody = z.object({
   id_token: z.string().min(1),
 });
 
+// §2.1 #25: the current password is checked by the service (the generic 401), the new one by the policy (P26).
+export const passwordChangeBody = z.object({
+  currentPassword: z.string().min(1),
+  newPassword: passwordPolicy,
+});
+
 export type LoginDto = z.infer<typeof loginBody>;
 export type GoogleDto = z.infer<typeof googleBody>;
+export type PasswordChangeDto = z.infer<typeof passwordChangeBody>;

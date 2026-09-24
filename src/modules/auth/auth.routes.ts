@@ -4,10 +4,12 @@ import { rateLimit } from 'express-rate-limit';
 import { RateLimitedError } from '../../core/errors';
 import { validate } from '../../middlewares/validate';
 import type { AuthController } from './auth.controller';
-import { googleBody, loginBody } from './auth.schemas';
+import { googleBody, loginBody, passwordChangeBody } from './auth.schemas';
 
 export interface AuthRouteDeps {
   controller: AuthController;
+  /** The one src/app.ts builds (ADR-028/032): logout-all and the password change act on the caller. */
+  authenticate: RequestHandler;
 }
 
 // C5 / SEC-07: 10 sign-in requests per client IP per 15 minutes, across the whole auth surface; and, ADR-037, 10 login
@@ -27,7 +29,7 @@ const loginAccount = (body: unknown): string | undefined => {
 
 /** Paths, middleware and handlers only. The order is the legacy chain's: limiter → validate → controller. */
 export function createAuthRouter(deps: AuthRouteDeps): Router {
-  const { controller } = deps;
+  const { controller, authenticate } = deps;
   const router = Router();
 
   // One limiter for both routes, so /login and /google spend one budget. It runs before validation, so a malformed
@@ -56,6 +58,9 @@ export function createAuthRouter(deps: AuthRouteDeps): Router {
   // only known once Google has verified the token (ADR-037).
   router.post('/login', limiter, accountLimiter, validate('body', loginBody), controller.login);
   router.post('/google', limiter, validate('body', googleBody), controller.googleSignIn);
+  router.post('/logout-all', authenticate, controller.logoutAll);
+  // Not throttled in M5 (AM-M5-5): the caller already holds a valid token, and the check is F1-flat.
+  router.put('/password', authenticate, validate('body', passwordChangeBody), controller.changePassword);
 
   return router;
 }

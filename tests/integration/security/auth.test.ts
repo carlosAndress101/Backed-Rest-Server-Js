@@ -18,7 +18,7 @@ import { UserModel } from '../../../src/modules/users';
 import { clearDatabase, startTestApp, stopTestApp } from '../../helpers/app';
 import { expectStatus } from '../../helpers/assert';
 import { stubGoogleClient } from '../../helpers/auth';
-import { createUser, hashPassword } from '../../helpers/factories';
+import { authHeader, createUser, hashPassword, tokenFor } from '../../helpers/factories';
 
 const login = (app: Server, body: object) => request(app).post('/api/auth/login').send(body);
 const googleSignin = (app: Server, idToken = 'fake-id-token') =>
@@ -251,6 +251,39 @@ describe('auth surface', () => {
           expect(res.body).toEqual(INVALID_CREDENTIALS);
         }
       });
+    });
+  });
+
+  // F1 extended to PUT /api/auth/password (§5.1): a wrong current password, an account with no password (Google-only)
+  // and one with the old placeholder all cost exactly one cost-10 compare and get the one generic 401.
+  describe('F1 on the password change', () => {
+    const COST_10_HASH = /^\$2[ab]\$10\$[./A-Za-z0-9]{53}$/;
+    const change = (token: string, currentPassword: string) =>
+      request(app)
+        .put('/api/auth/password')
+        .set(authHeader(token))
+        .send({ currentPassword, newPassword: 'a-brand-new-password' });
+
+    test.each<[string, Record<string, unknown>, string]>([
+      ['a wrong current password', { password: bcrypt.hashSync('correct-password', 10) }, 'wrong-password'],
+      ['a Google-only account with no password', { password: undefined, google: true }, 'any-password-123'],
+      ["an account with the old ':D' placeholder", { password: ':D', google: true }, ':D'],
+      [
+        'the dummy password on a Google-only account',
+        { password: undefined, google: true },
+        'dummy-password',
+      ],
+    ])('%s: one cost-10 compare, the generic 401', async (_case, account, currentPassword) => {
+      const user = await createUser(account);
+      const token = await tokenFor(user);
+      const compare = vi.spyOn(bcrypt, 'compare');
+
+      const res = await change(token, currentPassword);
+
+      expect(res.status).toBe(401);
+      expect(res.body).toEqual(INVALID_CREDENTIALS);
+      expect(compare).toHaveBeenCalledTimes(1);
+      expect(compare.mock.calls[0]![1]).toMatch(COST_10_HASH);
     });
   });
 

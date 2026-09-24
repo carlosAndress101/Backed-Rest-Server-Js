@@ -55,12 +55,40 @@ function fakeUserModel(seed: Seed[] = []) {
       rows.push(created);
       return Promise.resolve(created);
     }),
-    // The rehash's compare-and-swap: the hash changes only if it is still the one in the filter.
-    updateOne: vi.fn((filter: { _id: unknown; password: string }, update: { password: string }) => {
-      const row = rows.find((stored) => stored._id === filter._id && stored.password === filter.password);
-      if (row) row.password = update.password;
-      return Promise.resolve({ matchedCount: row ? 1 : 0 });
+    findById: vi.fn((id: string, projection?: '+password') => {
+      const row = rows.find((stored) => stored._id === id) ?? null;
+      return Promise.resolve(row && (projection === '+password' ? { ...row } : withoutPassword(row)));
     }),
+    // The rehash's compare-and-swap (the hash changes only if it is still the one in the filter), and logout-all's $inc.
+    updateOne: vi.fn(
+      (
+        filter: { _id: unknown; password?: string },
+        update: { password?: string; $inc?: { tokenVersion: number } },
+      ) => {
+        const row = rows.find(
+          (stored) =>
+            stored._id === filter._id &&
+            (filter.password === undefined || stored.password === filter.password),
+        );
+        if (row && update.password !== undefined) row.password = update.password;
+        if (row && update.$inc) row.tokenVersion += update.$inc.tokenVersion;
+        return Promise.resolve({ matchedCount: row ? 1 : 0 });
+      },
+    ),
+    // The password change: new hash and next tokenVersion together, on an active account only.
+    findOneAndUpdate: vi.fn(
+      (
+        filter: { _id: string; state: true },
+        update: { password: string; $inc: { tokenVersion: number } },
+      ) => {
+        const row = rows.find((stored) => stored._id === filter._id && stored.state === filter.state);
+        if (row) {
+          row.password = update.password;
+          row.tokenVersion += update.$inc.tokenVersion;
+        }
+        return Promise.resolve(row ? withoutPassword(row) : null);
+      },
+    ),
   };
   return { rows, User };
 }
@@ -391,7 +419,7 @@ describe('createAuthService', () => {
       const [filter, update] = User.updateOne.mock.calls[0]!;
       expect(filter).toEqual({ _id: '1', password: HASH }); // compare-and-swap on the hash the login compared
       expect(update.password).toMatch(COST_10_HASH);
-      expect(bcrypt.compareSync(PASSWORD, update.password)).toBe(true);
+      expect(bcrypt.compareSync(PASSWORD, update.password!)).toBe(true);
       expect(rows[0]!.password).toBe(update.password);
     });
 
@@ -453,6 +481,81 @@ describe('createAuthService', () => {
           'password rehash failed; the next login retries',
         ),
       );
+    });
+  });
+
+  describe('logoutAll (ADR-033, AM-M5-4)', () => {
+    test("bumps the user's tokenVersion by one", async () => {
+      const { service, User, rows } = build([
+        { _id: '1', email: 'ada@example.com', password: HASH, state: true, tokenVersion: 2 },
+      ]);
+
+      await service.logoutAll('1');
+
+      expect(User.updateOne).toHaveBeenCalledExactlyOnceWith({ _id: '1' }, { $inc: { tokenVersion: 1 } });
+      expect(rows[0]!.tokenVersion).toBe(3);
+    });
+  });
+
+  describe('changePassword (§2.1 #25, F1 extended)', () => {
+    const account: Seed = {
+      _id: '1',
+      email: 'ada@example.com',
+      password: HASH,
+      state: true,
+      tokenVersion: 2,
+    };
+    const change = { currentPassword: PASSWORD, newPassword: 'a-brand-new-password' };
+
+    test('stores the new password at the configured cost, bumps tokenVersion, and signs a token at the new one', async () => {
+      const { service, sign, rows } = build([account]);
+
+      const result = await service.changePassword('1', change);
+
+      expect(result).toEqual({ token: 'token-for-1' });
+      expect(sign).toHaveBeenCalledExactlyOnceWith('1', 3);
+      expect(rows[0]!.tokenVersion).toBe(3);
+      expect(rows[0]!.password).toMatch(COST_10_HASH);
+      expect(bcrypt.compareSync('a-brand-new-password', rows[0]!.password!)).toBe(true);
+      expect(compare).toHaveBeenCalledExactlyOnceWith(PASSWORD, HASH);
+    });
+
+    // [case, stored account, current password sent, whether the stored hash is the one compared]
+    test.each<[string, Seed, string, boolean]>([
+      ['a wrong current password', account, 'not-the-password', true],
+      [
+        'an account with no password (Google-only)',
+        { ...account, password: undefined, google: true },
+        PASSWORD,
+        false,
+      ],
+      ["an account with the old ':D' placeholder", { ...account, password: ':D', google: true }, ':D', false],
+      ['an account deactivated meanwhile', { ...account, state: false }, PASSWORD, true],
+    ])(
+      '%s is the generic 401 after exactly one compare, and nothing changes',
+      async (_case, stored, current, storedHash) => {
+        const { service, sign, User, rows } = build([stored]);
+
+        await rejectsWithInvalidCredentials(
+          service.changePassword('1', { currentPassword: current, newPassword: 'a-brand-new-password' }),
+        );
+
+        expect(compare).toHaveBeenCalledTimes(1);
+        if (storedHash) expect(compare.mock.calls[0]![1]).toBe(stored.password);
+        else expect(compare.mock.calls[0]![1]).toMatch(COST_10_HASH); // the dummy
+        expect(User.findOneAndUpdate).not.toHaveBeenCalled();
+        expect(sign).not.toHaveBeenCalled();
+        expect(rows[0]).toMatchObject({ password: stored.password, tokenVersion: 2 });
+      },
+    );
+
+    test('an account gone between the check and the update is the generic 401', async () => {
+      const { service, User, sign } = build([account]);
+      User.findOneAndUpdate.mockResolvedValueOnce(null);
+
+      await rejectsWithInvalidCredentials(service.changePassword('1', change));
+
+      expect(sign).not.toHaveBeenCalled();
     });
   });
 });

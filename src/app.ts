@@ -83,6 +83,7 @@ export function createApp({ config, logger }: AppDeps): Express {
       tokens,
       googleClientId: config.auth.googleClientId,
       bcryptCost: config.auth.bcryptCost,
+      authenticate: auth,
     }),
   );
   app.use(
