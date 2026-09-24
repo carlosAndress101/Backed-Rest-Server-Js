@@ -9,6 +9,8 @@ This document has three parts: the **as-is** inventory (what the code is today),
 
 ## 1. As-is (audited)
 
+> §1.1–§1.7 are the **M0 audit baseline** (commit `2f18dce`), kept as the historical record. Each milestone's resulting state follows in §1.8+; the current state of the 3.0 line is **§1.10**.
+
 ### 1.1 Stack and runtime
 
 | Item | Value |
@@ -194,6 +196,69 @@ Boot: `app.js` awaits the DB connection, then `listen`, and exits 1 on failure. 
 
 **Next (M3):** replace each legacy area with a TS feature module under `src/modules/` (ADR-016), removing its `src/legacy.ts` entry, with zod DTOs and the 3.0.0 envelope.
 
+### 1.10 State after M3 (the 3.0 line on `next`, unreleased, 2026-09-24)
+
+**Stack:** as in §1.9, and now **TypeScript only**. The legacy JavaScript, the strangler seam (`src/legacy.ts`) and `express-validator` are gone (ADR-016 completed). The only JS file is the demo page's `public/js/auth.js`.
+
+**Layout** (the §2.2 target, as built):
+```
+src/
+├── server.ts  app.ts                  # boot · composition root (wires every module; no I/O)
+├── config/                            # zod env schema, fail fast
+├── core/
+│   ├── errors/                        # AppError family (+ RateLimitedError 429, PayloadTooLargeError 413), toAppError
+│   ├── http/                          # envelope, pageEnvelope, errorEnvelope, paginationQuerySchema
+│   ├── database/to-json.plugin.ts     # id; no _id/__v; hidden paths; uid alias (users, until 4.0.0)
+│   ├── security/{roles,jwt}.ts        # ROLES enum (ADR-007), x-token TokenService
+│   └── logger.ts
+├── middlewares/                       # authenticate, authorize (requireAdmin/requireSelfOrAdmin/requireRole), validate,
+│                                      # error-handler, not-found, request-logger
+├── database/connection.ts
+└── modules/
+    ├── auth/        auth.{schemas,service,controller,routes}.ts · google.client.ts · index.ts   (no model)
+    ├── users/       user.{model,schemas,service,controller,routes}.ts · index.ts
+    ├── categories/  category.* (the reference module)
+    ├── products/    product.*
+    ├── search/      search.{service,controller,routes}.ts · index.ts                            (no model)
+    └── media/       media.{schemas,service,controller,routes,upload}.ts · cloudinary.client.ts · index.ts
+tests/{setup,helpers,unit,unit/modules,integration/{modules,platform,security}}
+```
+
+**Pipeline** (`src/app.ts`):
+```
+[trust proxy] → pino-http (request id) → helmet → cors (allowlist) → express.json → static public/
+  → /api/{category,product,user,search,uploads,auth} → module router:
+       [authenticate] → [guard, imported by the routes file] → validate(part, zod DTO) → controller → service → model
+       media PUT: authenticate → authorizeCollection → validate(params) → fileParser (1 file, 5 MB, per-request temp folder
+                  removed synchronously on close) → requireImage (magic bytes) → controller
+       auth: one shared limiter (10 / 15 min / IP) → validate → controller
+  → notFound → errorHandler (toAppError → { error: { code, message, details? } })
+```
+
+**Composition** (`createApp`): the token service and the `authenticate` user lookup are built once. Each module receives only what it needs, and a sibling's model arrives as a narrow interface (`CategoryLookup`, `SearchableModel`, `ImageRecordModel`, `SignInUserModel`). No module imports another (§2.3 rule 4, lint-enforced).
+
+**Contract:** the 3.0.0 contract in [M3-modules §6](docs/design/M3-modules.md), recorded route by route in [API_PROGRESS.md](API_PROGRESS.md). This covers:
+- the envelope;
+- GET 200, POST 201, DELETE 204, validation 422 with `details`, missing or soft-deleted 404, duplicate 409, 429 `RATE_LIMITED` and 413 `PAYLOAD_TOO_LARGE`;
+- `id` on every resource;
+- the removed stub and debug routes.
+
+**Tests:** 746 in 46 files:
+- a contract test per module;
+- service unit tests with fakes (ADR-023);
+- the re-expressed M1 security suite and the M2 platform tests.
+
+`src/**` coverage is about 99 %.
+
+**Environment:** unchanged from §1.9.
+
+**Next:**
+- M4 (database) reconciles on the same model files: timestamps, indexes, the role enum, email normalisation, and dropping the 2.x `roles` collection.
+- M5 hardens authentication; M6 replaces the interim guards with `authorize(policy)`.
+- 3.0.0 is released from `next` after M6 (ADR-024, ADR-026).
+
+
+
 ---
 
 ## 2. To-be (target)
@@ -237,10 +302,10 @@ routes ──► controller ──► service ──► model (Mongoose) / exter
    └─ validate(schema)        └─ throws AppError; never touches req/res
 ```
 
-1. **Routes** declare path, middleware (`authenticate`, `authorize`, `validate`), and the controller. Nothing else.
+1. **Routes** declare path, middleware (`authenticate`, the guards, `validate`), and the controller. Nothing else. Stateless guards are imported here; `authenticate` is injected (AM-M3-8).
 2. **Controllers** translate HTTP ↔ service calls: read the validated DTO, call one service method, shape the response. No Mongoose, no business rules.
 3. **Services** own business rules and persistence calls. They receive dependencies (models, clients, config) through a factory: `createUsersService({ User, passwordHasher, config })`. They throw `AppError`s and never import Express.
-4. **Modules** never import another module's internals, only its service (via the composition root).
+4. **Modules** never import another module. A sibling's model reaches a module through the composition root, as a narrow interface (M3, lint-enforced).
 5. **Cross-cutting code** lives in `core/` and must not import from `modules/`.
 
 ---
@@ -252,7 +317,7 @@ Status: **Accepted** = Orchestrator decision, binding on agents. **Proposed** = 
 | ID | Decision | Status | Rationale |
 |---|---|---|---|
 | ADR-001 | **Security hotfix (M1) ships before any refactor**, as minimal in-pattern changes to the current JS code | Accepted | The repo is public and a deployment URL is referenced in `public/js/auth.js`. Critical auth bypass and crash vectors can't wait for a restructure. |
-| ADR-002 | **Migrate to TypeScript (strict)**, incrementally: `tsc` for typecheck/build, `tsx` for dev, `allowJs` during the transition (see ADR-016) | Accepted (owner delegated the decision 2026-09-23) | The mandate asks for type-safe interfaces. At ~1.5k LOC the migration is cheapest now; zod-inferred DTOs (ADR-006) and compile-checked contracts between parallel agents pay for it. |
+| ADR-002 | **Migrate to TypeScript (strict)**, incrementally: `tsc` for typecheck/build, `tsx` for dev, `allowJs` during the transition (see ADR-016) | Accepted (owner delegated the decision 2026-09-23); `allowJs` removed with the last legacy JS (M3/T3.8b, a8310e8) | The mandate asks for type-safe interfaces. At ~1.5k LOC the migration is cheapest now; zod-inferred DTOs (ADR-006) and compile-checked contracts between parallel agents pay for it. |
 | ADR-003 | **Upgrade to Express 5** in M2 | Accepted | Native promise-rejection forwarding removes a whole class of crash bugs (REL-01) with no `asyncHandler` wrapper. Deferred from M1 to keep the hotfix minimal. |
 | ADR-004 | **No repository layer.** Services use Mongoose models directly, injected via factories | Accepted | Mongoose already is the data mapper; wrapping it adds a layer with no second implementation. Testability comes from `mongodb-memory-server` + DI. Revisit only if a second datastore appears. |
 | ADR-005 | **DI by factory functions + one composition root** (`createApp`), no DI container library | Accepted | Explicit, zero-dependency, trivially testable. |
@@ -266,18 +331,18 @@ Status: **Accepted** = Orchestrator decision, binding on agents. **Proposed** = 
 | ADR-013 | **Tests are a gate in every milestone**, not a phase. Stack: Jest in M1 (existing), Vitest + supertest + mongodb-memory-server from M2 | Accepted | The refactor needs a safety net before it starts. |
 | ADR-014 | **Node 24 LTS** is the runtime baseline (`engines`, `.nvmrc`, Docker base image) | Accepted | Current LTS, already installed locally. |
 | ADR-015 | **API versioning by SemVer, not by URL.** The first release carrying breaking changes is `2.0.0`; no `/api/v1` prefix | Accepted | API consumers are unknown. A URL prefix would itself break every current client; CHANGELOG plus the API_PROGRESS ledger carry the contract. |
-| ADR-016 | **Strangler migration.** M2 builds the TS platform (`src/config`, `src/core`, `src/app.ts`, `src/server.ts`) and mounts the legacy JS routers unchanged; M3 replaces each legacy area with a TS feature module, and legacy files are deleted when their module lands | Accepted | Every file is converted once, never twice. The M1 regression suite stays green at every step, giving each commit a safety net. |
-| ADR-017 | **CommonJS output; `src/` → `dist/` build; legacy JS stays outside the build.** `src/legacy.ts` is the only TS→JS seam; legacy never requires `src/`. In M3, legacy reads TS-owned models from the Mongoose registry | Accepted 2026-09-23 (D2 review; details in [M2-foundation](docs/design/M2-foundation.md) §1.1) | Legacy `__dirname` paths keep working; one instance of every CJS package is shared by app, legacy and tests. ESM output is a separate decision after M3. |
+| ADR-016 | **Strangler migration.** M2 builds the TS platform (`src/config`, `src/core`, `src/app.ts`, `src/server.ts`) and mounts the legacy JS routers unchanged; M3 replaces each legacy area with a TS feature module, and legacy files are deleted when their module lands | Accepted; **completed in M3** (T3.8b, a8310e8: the seam and every legacy JS file deleted) | Every file is converted once, never twice. The M1 regression suite stays green at every step, giving each commit a safety net. |
+| ADR-017 | **CommonJS output; `src/` → `dist/` build; legacy JS stays outside the build.** `src/legacy.ts` is the only TS→JS seam; legacy never requires `src/`. In M3, legacy reads TS-owned models from the Mongoose registry | Accepted 2026-09-23 (D2 review; details in [M2-foundation](docs/design/M2-foundation.md) §1.1); `src/legacy.ts` deleted in M3 | Legacy `__dirname` paths keep working; one instance of every CJS package is shared by app, legacy and tests. ESM output is a separate decision after M3. |
 | ADR-018 | **TypeScript 6.0.3**, not 7.x, until typescript-eslint supports 7; the tsconfig stays 7-clean | Accepted 2026-09-23 (D2 review; details in [M2-foundation](docs/design/M2-foundation.md) §1.1) | `typescript-eslint@8.70.1` caps TypeScript at `<6.1.0`. Revisit in M10 (Renovate). |
 | ADR-019 | **Config:** one zod env schema, fail-fast at boot (exit 1, every bad variable listed); env names unchanged; empty = unset; `dotenv` → `node --env-file-if-exists`. Until M3, legacy JS reads only `SECRET_KEY`, `GOOGLE_CLIENT_ID`, `CLOUDINARY_URL` from `process.env` (lint allowlist). `TRUST_PROXY` (C9) is part of the schema | Accepted 2026-09-23 (D2 review; details in [M2-foundation](docs/design/M2-foundation.md) §1.1) | CFG-01 fixed for the platform in M2 and fully in M3. `GOOGLE_CLIENT_ID` is required, because an unset audience would accept any Google client's tokens. |
 | ADR-020 | **Logging wiring:** pino-http is the first middleware, `x-request-id` in/out, one line per request with the error cause. Legacy logs only via `req.log`; `console.*` is a lint error | Accepted 2026-09-23 (D2 review; details in [M2-foundation](docs/design/M2-foundation.md) §1.1) | LOG-01 fixed in M2 with no AsyncLocalStorage and no new legacy imports. |
 | ADR-021 | **Error bodies stay `{ msg }` in M2** (M1 C1/C2 byte-identical). `AppError`, `toAppError` and the envelope helpers ship in M2; the handler switches to `{ error: { code, message, details? } }` in M3 as part of **3.0.0** (ADR-024) | Accepted 2026-09-23 (D2 review; details in [M2-foundation](docs/design/M2-foundation.md) §1.1) | No two error shapes in one release. REL-02 fixed in M2; HTTP-01 in M3. |
 | ADR-022 | **CORS allowlist via `CORS_ORIGINS`**; unset or `*` keeps any-origin, with a `warn` at production boot. Kept as written (D2 Q3): auth is a header token, never a cookie, and consumers are unknown | Accepted 2026-09-23 (D2 review; details in [M2-foundation](docs/design/M2-foundation.md) §1.1) | SEC-10 allowlist available; the M9 production checklist sets it. |
-| ADR-023 | **No `vi.mock`** (it can't reach `require()` in legacy CJS): tests spy on the shared CommonJS instance via `tests/helpers/legacy.ts`. One process and one database per test file on a shared `mongod` | Accepted 2026-09-23 (D2 review; details in [M2-foundation](docs/design/M2-foundation.md) §1.1) | The M1 suite ports mechanically; files run in parallel safely. |
+| ADR-023 | **No `vi.mock`** (it can't reach `require()` in legacy CJS): tests spy on the shared instance the code uses (M2: via `tests/helpers/legacy.ts`; since M3: the injected clients, e.g. `tests/helpers/{auth,uploads}.ts`), or inject a fake through the factory. One process and one database per test file on a shared `mongod` | Accepted 2026-09-23 (D2 review; details in [M2-foundation](docs/design/M2-foundation.md) §1.1) | The M1 suite ports mechanically; files run in parallel safely. |
 | ADR-024 | **Release mapping (SemVer, ADR-015).** M1 ships as **2.0.0** (breaking security fixes, releasable alone). M2 ships as **2.1.0** (operational and additive; operator objects in filters now get 400 as a security fix). The M3–M6 contract changes (envelope, status codes, `id`, Bearer auth, RBAC) are batched into **3.0.0**. Deprecated aliases (`uid`, `x-token`) are removed in **4.0.0**. Releases are git tags on `master` | Accepted 2026-09-23 (Orchestrator) | Clients migrate once per major. Erratum: D2's "2.0.0" for the envelope switch reads 3.0.0, and D4's "`uid` until 3.0.0" reads 4.0.0. Version numbers come from this mapping, not from commit markers: a `!` on an M2 dependency-upgrade commit (`build(deps)!:` for Express 5 and Mongoose 9) marks an internal breaking change for developers, not an API break. Release tooling (M10) must start from the `v2.1.0` tag. |
 | ADR-025 | **Supply-chain age gate.** Keep pnpm 12's default `minimumReleaseAge` (24 h) and **never** add `minimumReleaseAgeExclude`. A dependency task pins only versions published at least 24 h earlier, or waits for the gate to clear, and proves it with a cold frozen install (empty store, state and cache) | Accepted 2026-09-24 (Orchestrator, from the T2.1 finding) | A fresh release is the classic window for a compromised package. The local verification cache hides violations, so the cold install is the only real proof. |
 | ADR-026 | **Release lines.** `master` carries the released 2.x line (2.1.0), and a hotfix is cut from it as 2.1.x. The 3.0 line accumulates on a long-lived **`next`** branch. Each milestone M3–M6 integrates on its own `mN/*` branch, cut from `next`, and merges back into `next` when accepted. `next` merges into `master` as **3.0.0** after M6 (ADR-024). Security fixes land on `master` first and are merged forward into `next` | Accepted 2026-09-24 (Orchestrator) | Clients see one breaking release. `master` stays deployable and patchable throughout the M3–M6 rewrite. |
-| ADR-027 | **Registry seam for migrated models.** The TS model is the sole `mongoose.model` registrant, behind an idempotent guard. The legacy `models/<x>.js` becomes a registry re-export. Cross-module models are resolved lazily or from the owning module | Accepted 2026-09-24 (D3 review; details in [M3-modules](docs/design/M3-modules.md) §1.1) | Removes `OverwriteModelError`/`MissingSchemaError` during the strangler (both reproduced). |
-| ADR-028 | **Interim `authenticate` (x-token) and `requireAdmin` / `requireSelfOrAdmin` / `requireRole` guards** with today's semantics | Accepted 2026-09-24 (D3 review; details in [M3-modules](docs/design/M3-modules.md) §1.1) | M5 swaps the transport, M6 replaces the guards with `authorize(policy)`, and the route wiring doesn't change again. |
-| ADR-029 | **zod DTOs and one `validate(part, schema)` middleware → 422 with `details`.** `express-validator` and `db-validators` are removed; existence checks become find-active-or-404 in services | Accepted 2026-09-24 (D3 review; details in [M3-modules](docs/design/M3-modules.md) §1.1) | Fixes VAL-01, VAL-02 and F3. Express 5 getter-only `query`/`params` are handled with `defineProperty`. |
-| ADR-030 | **Media is Cloudinary only.** `POST /api/uploads` is removed. `GET` 302-redirects **only to this app's own Cloudinary cloud** (AM-M3-1), otherwise 404. Magic-byte MIME sniffing; parser errors → 400; oversize → 413 JSON; C10/C11 kept | Accepted 2026-09-24 (D3 review; details in [M3-modules](docs/design/M3-modules.md) §1.1) | Fixes FUNC-01, HTTP-02, F4 and SEC-08 (MIME). The allowlist prevents an open redirect from legacy `image` values. |
+| ADR-027 | **Registry seam for migrated models.** The TS model is the sole `mongoose.model` registrant, behind an idempotent guard. The legacy `models/<x>.js` becomes a registry re-export. Cross-module models are resolved lazily or from the owning module | Accepted 2026-09-24 (D3 review; details in [M3-modules](docs/design/M3-modules.md) §1.1); implemented in M3 (T3.2–T3.7); the `models/*.js` re-exports left with the legacy JS (T3.8b), the TS models stay the sole registrants | Removes `OverwriteModelError`/`MissingSchemaError` during the strangler (both reproduced). |
+| ADR-028 | **Interim `authenticate` (x-token) and `requireAdmin` / `requireSelfOrAdmin` / `requireRole` guards** with today's semantics | Accepted 2026-09-24 (D3 review; details in [M3-modules](docs/design/M3-modules.md) §1.1); implemented in M3 (T3.1 255cd1e); the stateless guards are imported by each routes file (AM-M3-8) | M5 swaps the transport, M6 replaces the guards with `authorize(policy)`, and the route wiring doesn't change again. |
+| ADR-029 | **zod DTOs and one `validate(part, schema)` middleware → 422 with `details`.** `express-validator` and `db-validators` are removed; existence checks become find-active-or-404 in services | Accepted 2026-09-24 (D3 review; details in [M3-modules](docs/design/M3-modules.md) §1.1); implemented in M3 (T3.1 255cd1e + every module); `express-validator` removed (T3.8b) | Fixes VAL-01, VAL-02 and F3. Express 5 getter-only `query`/`params` are handled with `defineProperty`. |
+| ADR-030 | **Media is Cloudinary only.** `POST /api/uploads` is removed. `GET` 302-redirects **only to this app's own Cloudinary cloud** (AM-M3-1), otherwise 404. Magic-byte MIME sniffing; parser errors → 400; oversize → 413 JSON; C10/C11 kept | Accepted 2026-09-24 (D3 review; details in [M3-modules](docs/design/M3-modules.md) §1.1); implemented in M3 (T3.7 8f74d0c, T3.7R c1094a0) | Fixes FUNC-01, HTTP-02, F4 and SEC-08 (MIME). The allowlist prevents an open redirect from legacy `image` values. |
