@@ -7,7 +7,7 @@ import mongoose, { type mongo } from 'mongoose';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, inject, test } from 'vitest';
 
 import { createLogger } from '../../../src/core/logger';
-import { MIGRATIONS } from '../../../src/database/cli';
+import { MIGRATIONS } from '../../../src/cli';
 import { LEDGER, runMigrations, type Migration } from '../../../src/database/migrate';
 import { M001 } from '../../../src/database/migrations/M001-normalize-email';
 import { M002 } from '../../../src/database/migrations/M002-rebuild-name-indexes';

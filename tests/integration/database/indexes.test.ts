@@ -7,7 +7,7 @@ import mongoose, { type mongo } from 'mongoose';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, inject, test } from 'vitest';
 
 import { createLogger } from '../../../src/core/logger';
-import { MIGRATIONS } from '../../../src/database/cli';
+import { MIGRATIONS } from '../../../src/cli';
 import { runMigrations } from '../../../src/database/migrate';
 import { CategoryModel } from '../../../src/modules/categories';
 import { ProductModel } from '../../../src/modules/products';

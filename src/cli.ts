@@ -1,15 +1,16 @@
 // The database CLI (M4 design §5.2, §10.2): `migrate up|down|status [--dry-run]` and `seed`. Production runs it
-// compiled, as `node dist/database/cli.js …`, exactly like dist/server.js (P19).
+// compiled, as `node dist/cli.js …`, exactly like dist/server.js (P19). Like src/server.ts it is a composition root
+// (AM-M4-7): it may wire the modules' models into src/database, which imports no module.
 import mongoose, { type mongo } from 'mongoose';
 
-import { loadConfig } from '../config';
-import { createLogger, type Logger } from '../core/logger';
-import { connectDatabase, disconnectDatabase } from './connection';
-import { migrationStatus, runMigrations, type Direction, type Migration } from './migrate';
-import { M001 } from './migrations/M001-normalize-email';
-import { M002 } from './migrations/M002-rebuild-name-indexes';
-import { M003 } from './migrations/M003-backfill-created-at';
-import { M004 } from './migrations/M004-drop-roles-collection';
+import { loadConfig } from './config';
+import { createLogger, type Logger } from './core/logger';
+import { connectDatabase, disconnectDatabase } from './database/connection';
+import { migrationStatus, runMigrations, type Direction, type Migration } from './database/migrate';
+import { M001 } from './database/migrations/M001-normalize-email';
+import { M002 } from './database/migrations/M002-rebuild-name-indexes';
+import { M003 } from './database/migrations/M003-backfill-created-at';
+import { M004 } from './database/migrations/M004-drop-roles-collection';
 
 export const USAGE = 'Usage: cli.js migrate up|down [--dry-run] | cli.js migrate status | cli.js seed';
 
