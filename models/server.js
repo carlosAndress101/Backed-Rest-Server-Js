@@ -1,6 +1,7 @@
 const cors = require('cors');
 const path = require('path');
 const express = require('express');
+const helmet = require('helmet');
 const fileUpload = require('express-fileupload');
 const userRouter  = require('../routes/usuarios');
 const authRouter  = require('../routes/auth');
@@ -32,6 +33,25 @@ class Server {
     }
 
     middlewares() {
+
+        this.app.disable('x-powered-by');
+
+        // security headers; the CSP and COOP keep the demo page's Google
+        // sign-in and fonts working, CORP lets other origins embed images
+        this.app.use( helmet({
+            contentSecurityPolicy: {
+                directives: {
+                    scriptSrc: ["'self'", 'https://accounts.google.com/gsi/client'],
+                    styleSrc: ["'self'", "'unsafe-inline'", 'https://accounts.google.com/gsi/style', 'https://fonts.googleapis.com'],
+                    fontSrc: ["'self'", 'https://fonts.gstatic.com'],
+                    frameSrc: ['https://accounts.google.com/gsi/'],
+                    connectSrc: ["'self'", 'https://accounts.google.com/gsi/'],
+                }
+            },
+            crossOriginOpenerPolicy: { policy: 'same-origin-allow-popups' },
+            crossOriginResourcePolicy: { policy: 'cross-origin' },
+            referrerPolicy: { policy: 'strict-origin-when-cross-origin' },
+        }) );
 
         // CORS
         this.app.use( cors() );
