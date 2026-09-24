@@ -1,7 +1,7 @@
 const { Router } = require('express');
 const { check } = require('express-validator');
 const { validarCampos, validarJWT, esAdminRole, esAdminOrOwner, fileParser, fileValid } = require('../middlewares');
-const { fileUpload, updateImage, showImage, updateImageCloudinary } = require('../controllers/uploads');
+const { fileUpload, showImage, updateImageCloudinary } = require('../controllers/uploads');
 const { permittedCollections } = require('../helpers');
 
 const router = Router();
@@ -26,7 +26,6 @@ router.put("/:collection/:id", [
     fileParser,
     fileValid
 ], updateImageCloudinary);
-//], updateImage);
 
 router.get("/:collection/:id", [
     check('id','The id should be from mongo').isMongoId(),

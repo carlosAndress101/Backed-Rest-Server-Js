@@ -28,56 +28,6 @@ const fileUpload = async (req, res = response, next) => {
 };
 
 
-/**
- * http://localhost:4321/api/uploads/collection/id
- */
-const updateImage = async (req, res = response, next) => {
-
-    const {collection, id} = req.params;
-
-    let model ;
-
-    try {
-        switch (collection) {
-            case 'user':
-                model = await User.findById(id);
-                if ( !model ) {
-                    return res.status(400).json({ msg:`The user does not exist with id ${id}`})
-                }
-                break;
-        
-            case 'product':
-                model = await Product.findById(id);
-                if ( !model ) {
-                    return res.status(400).json({ msg:`The product does not exist with id ${id}`})
-                }
-                break;
-        
-            default:
-                return res.status(400).json({ msg:'I forgot to do this'})
-        }
-
-        //clean preview images
-        if( model.image){
-            //the image must be deleted from the server
-            const pathImage = path.join(__dirname, "../uploads", collection, model.image);
-            if(fs.existsSync(pathImage)){
-                fs.unlinkSync(pathImage);
-            }
-        }
-        
-
-        const fullName = await uploadFile(req.files, undefined, collection);
-        model.image = fullName;
-        await model.save();
-
-        res.json( model )
-    } catch (error) {
-        next(error);
-    }
-}
-
-
 const showImage = async (req, res = response, next) => {
 
     const { id, collection } = req.params;
@@ -186,7 +136,6 @@ const updateImageCloudinary = async (req, res = response, next) => {
 
 module.exports = {
   fileUpload,
-  updateImage,
   showImage,
   updateImageCloudinary
 };
