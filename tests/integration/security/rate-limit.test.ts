@@ -7,6 +7,7 @@ import { afterAll, beforeEach, describe, expect, test } from 'vitest';
 
 import { clearDatabase, startTestApp, stopTestApp } from '../../helpers/app';
 import { stubGoogleClient } from '../../helpers/auth';
+import { createUser, hashPassword } from '../../helpers/factories';
 
 const LIMIT = 10;
 const RATE_LIMITED = {
@@ -127,5 +128,97 @@ describe('SEC-06 rate limiting on the auth surface', () => {
     for (const res of [first, limited]) {
       expect(Object.keys(res.headers).filter((name) => name.startsWith('x-ratelimit'))).toEqual([]);
     }
+  });
+
+  // ADR-037 / P28: 10 login attempts per account per window, whatever IPs they come from. Behind a trusted proxy
+  // every request below is a different client, so the per-IP budget never answers; only the account's does.
+  describe('the per-account login budget', () => {
+    let proxied: Server;
+    let client = 0;
+    const from = (path: string) =>
+      request(proxied)
+        .post(path)
+        .set('X-Forwarded-For', `198.51.100.${(client = (client % 250) + 1)}`);
+    const loginAs = (email: string, password = 'whatever-123') =>
+      from('/api/auth/login').send({ email, password });
+
+    beforeEach(async () => {
+      proxied = await startTestApp({ TRUST_PROXY: '1' }); // a new app: fresh budgets
+    });
+
+    test('an account is 429 after 10 attempts from 10 different clients, with the same body as the IP budget', async () => {
+      const spent = await inOrder(Array.from({ length: LIMIT }, () => () => loginAs('ada@example.com')));
+
+      const res = await loginAs('ada@example.com');
+
+      expect(spent.map((r) => r.status)).toEqual(Array(LIMIT).fill(401));
+      expect(res.status).toBe(429);
+      expect(res.body).toEqual(RATE_LIMITED);
+    });
+
+    test.each([' ADA@EXAMPLE.COM ', 'Ada@Example.com', 'ada@EXAMPLE.com  '])(
+      'case and padding (%j) do not open a new budget',
+      async (variant) => {
+        await inOrder(Array.from({ length: LIMIT }, () => () => loginAs('ada@example.com')));
+
+        const res = await loginAs(variant);
+
+        expect(res.status).toBe(429);
+        expect(res.body).toEqual(RATE_LIMITED);
+      },
+    );
+
+    test('attempts that fail validation count too: the key is read before validate', async () => {
+      const malformed = await inOrder(
+        Array.from(
+          { length: LIMIT },
+          () => () => from('/api/auth/login').send({ email: ' Ada@Example.com ', password: '' }),
+        ),
+      );
+
+      const res = await loginAs('ada@example.com');
+
+      expect(malformed.map((r) => r.status)).toEqual(Array(LIMIT).fill(422));
+      expect(res.status).toBe(429);
+    });
+
+    test('once an account is limited, even its right password is 429, and other accounts are not', async () => {
+      await createUser({ email: 'ada@example.com', password: hashPassword('correct-horse-1') });
+      await inOrder(Array.from({ length: LIMIT }, () => () => loginAs('ada@example.com')));
+
+      expect((await loginAs('ada@example.com', 'correct-horse-1')).status).toBe(429);
+      expect((await loginAs('bob@example.com')).status).toBe(401);
+    });
+
+    test('a body with no email has no account: it never spends, nor meets, an account budget', async () => {
+      const responses = await inOrder(
+        Array.from(
+          { length: LIMIT * 2 },
+          (_, i) => () => from('/api/auth/login').send(i % 2 ? {} : { email: 42, password: 'x' }),
+        ),
+      );
+
+      expect(responses.map((r) => r.status)).toEqual(Array(LIMIT * 2).fill(422));
+    });
+
+    test('/google has no account budget: its account is only known once Google has verified the token', async () => {
+      const responses = await inOrder(
+        Array.from(
+          { length: LIMIT + 1 },
+          () => () => from('/api/auth/google').send({ id_token: 'fake-token' }),
+        ),
+      );
+
+      expect(responses.map((r) => r.status)).toEqual(Array(LIMIT + 1).fill(200));
+    });
+
+    test('it adds no rate-limit header: the IP budget is what the headers show', async () => {
+      await inOrder(Array.from({ length: LIMIT }, () => () => loginAs('ada@example.com')));
+
+      const limited = await loginAs('ada@example.com');
+
+      expect(limited.status).toBe(429);
+      expect(limited.headers['ratelimit']).toMatch(/^limit=10, remaining=9, reset=\d+$/); // this client's first
+    });
   });
 });
