@@ -56,13 +56,17 @@ export const createProduct = async (overrides: Record<string, unknown> = {}): Pr
 
 /**
  * Mints a JWT for a user (or any `{ id }`, even one that is not an ObjectId) without going through the
- * rate-limited login route: the core token service, with the test SECRET_KEY read on every call.
+ * rate-limited login route: the core token service, with the test SECRET_KEY read on every call. It signs the
+ * user's own tokenVersion (0 when the object has none), as login does (P21).
  */
-export const tokenFor = (user: { id: string }) =>
-  createTokenService(process.env.SECRET_KEY ?? '').sign(user.id);
+export const tokenFor = (user: { id: string; tokenVersion?: number }) =>
+  createTokenService(process.env.SECRET_KEY ?? '', { ttlSeconds: 4 * 60 * 60 }).sign(
+    user.id,
+    user.tokenVersion ?? 0,
+  );
 
-/** M1 still uses the custom `x-token` header (SEC-11 is a later milestone). */
-export const authHeader = (token: string) => ({ 'x-token': token });
+/** The M5 transport (ADR-032). x-token still works until 4.0.0; the tests that exercise it set it themselves. */
+export const authHeader = (token: string) => ({ Authorization: `Bearer ${token}` });
 
 /** Reads a stored record back; a missing one fails the test. */
 export const reload = <T>(model: Model<T>, id: string) => model.findById(id).orFail();

@@ -81,10 +81,6 @@ describe('P20 the password hash never leaves the database', () => {
       ['Google sign-in', await auth('/api/auth/google', { id_token: 'google-id-token' })],
       ['user list', await request(app).get('/api/user').set(as(adminToken))],
       [
-        'self update with a new password',
-        await request(app).put(`/api/user/${user.id}`).set(as(userToken)).send({ password: NEW_PASSWORD }),
-      ],
-      [
         'admin update',
         await request(app).put(`/api/user/${user.id}`).set(as(adminToken)).send({ role: 'USER_ROLE' }),
       ],
@@ -121,6 +117,19 @@ describe('P20 the password hash never leaves the database', () => {
           .set(as(userToken))
           .attach('file', PNG, 'me.png'),
       ],
+      // AM-M5-10: your own password changes only through PUT /api/auth/password; an administrator resets another's.
+      // Both bump tokenVersion, so they run after every row that still uses userToken.
+      [
+        'own password change',
+        await request(app)
+          .put('/api/auth/password')
+          .set(as(userToken))
+          .send({ currentPassword: USER_PASSWORD, newPassword: NEW_PASSWORD }),
+      ],
+      [
+        'admin password reset of another user',
+        await request(app).put(`/api/user/${user.id}`).set(as(adminToken)).send({ password: NEW_PASSWORD }),
+      ],
       ['user delete', await request(app).delete(`/api/user/${user.id}`).set(as(adminToken))],
     ];
 
@@ -131,6 +140,8 @@ describe('P20 the password hash never leaves the database', () => {
       'Google sign-in': 200,
       'user list': 200,
       'user search': 200,
+      'own password change': 200,
+      'admin password reset of another user': 200,
     });
     expect(responses.filter(([, res]) => res.status >= 500)).toEqual([]);
     for (const [, res] of responses) expectNoPassword(res.text);

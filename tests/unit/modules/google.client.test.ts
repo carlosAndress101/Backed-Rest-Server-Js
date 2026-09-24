@@ -14,7 +14,7 @@ const stubVerifyIdToken = () =>
   >;
 
 describe('GoogleClient', () => {
-  test("verifies the token for this app's client id and returns only the name, email and picture", async () => {
+  test("verifies the token for this app's client id and returns only the name, email, picture and email_verified", async () => {
     const verifyIdToken = stubVerifyIdToken().mockResolvedValue(
       ticket({
         iss: 'https://accounts.google.com',
@@ -39,7 +39,30 @@ describe('GoogleClient', () => {
       name: 'Grace Hopper',
       email: 'grace@example.com',
       picture: 'https://example.com/grace.png',
+      emailVerified: false,
     });
+  });
+
+  // ADR-036: only Google's own `true` counts as verified; a missing or non-boolean claim does not.
+  test.each([
+    ['true', true, true],
+    ['false', false, false],
+    ['absent', undefined, false],
+    ['the string "true"', 'true', false],
+  ])('email_verified %s is read as %s', async (_case, claim, verified) => {
+    stubVerifyIdToken().mockResolvedValue(
+      ticket({
+        iss: '',
+        sub: '',
+        aud: '',
+        iat: 0,
+        exp: 0,
+        email: 'a@example.com',
+        email_verified: claim as boolean,
+      }),
+    );
+
+    await expect(new GoogleClient(CLIENT_ID).verify('t')).resolves.toMatchObject({ emailVerified: verified });
   });
 
   test('rejects with the SDK error when the token does not verify', async () => {

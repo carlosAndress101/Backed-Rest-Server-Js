@@ -5,6 +5,8 @@ export interface GoogleProfile {
   name?: string;
   email?: string;
   picture?: string;
+  /** Google's email_verified claim, true only when Google says so (ADR-036). */
+  emailVerified: boolean;
 }
 
 /** What the auth service needs from Google. Tests replace it; nothing else talks to the SDK. */
@@ -29,6 +31,6 @@ export class GoogleClient implements GoogleVerifier {
     const payload = ticket.getPayload();
     if (!payload) throw new Error('The Google ID token has no payload');
     const { name, email, picture } = payload;
-    return { name, email, picture };
+    return { name, email, picture, emailVerified: payload.email_verified === true };
   }
 }

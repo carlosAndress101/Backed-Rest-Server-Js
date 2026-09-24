@@ -12,7 +12,7 @@ export default defineConfig({
     globalSetup: ['tests/setup/global-setup.ts'],
     env: {
       NODE_ENV: 'test',
-      SECRET_KEY: 'test-secret',
+      SECRET_KEY: 'test-secret-at-least-32-characters-long', // ADR-034: at least 32 characters
       GOOGLE_CLIENT_ID: 'test-client-id',
       CLOUDINARY_URL: 'cloudinary://key:secret@demo',
     },

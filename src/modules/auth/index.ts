@@ -1,4 +1,4 @@
-import type { Router } from 'express';
+import type { RequestHandler, Router } from 'express';
 
 import type { TokenService } from '../../core/security/jwt';
 import { createAuthController } from './auth.controller';
@@ -15,6 +15,10 @@ export interface AuthModuleDeps {
   tokens: TokenService;
   /** config.auth.googleClientId: the audience a Google ID token must carry. */
   googleClientId: string;
+  /** config.auth.bcryptCost (ADR-035). */
+  bcryptCost: number;
+  /** The authenticate src/app.ts builds: logout-all and the password change need the caller. */
+  authenticate: RequestHandler;
 }
 
 /** P15: client → service → controller → router. src/app.ts mounts the result at /api/auth. No model of its own. */
@@ -23,6 +27,7 @@ export function authModule(deps: AuthModuleDeps): Router {
     User: deps.User,
     tokens: deps.tokens,
     google: new GoogleClient(deps.googleClientId),
+    bcryptCost: deps.bcryptCost,
   });
-  return createAuthRouter({ controller: createAuthController(service) });
+  return createAuthRouter({ controller: createAuthController(service), authenticate: deps.authenticate });
 }

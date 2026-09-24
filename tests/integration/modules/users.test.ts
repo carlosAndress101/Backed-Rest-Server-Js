@@ -2,13 +2,14 @@
 import type { Server } from 'node:http';
 
 import bcrypt from 'bcrypt';
+import jwt from 'jsonwebtoken';
 import mongoose from 'mongoose';
 import request from 'supertest';
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'vitest';
 
 import { UserModel, type UserDocument } from '../../../src/modules/users';
 import { clearDatabase, startTestApp, stopTestApp } from '../../helpers/app';
-import { authHeader, createAdmin, createUser, tokenFor } from '../../helpers/factories';
+import { TEST_PASSWORD, authHeader, createAdmin, createUser, tokenFor } from '../../helpers/factories';
 
 const MISSING_ID = new mongoose.Types.ObjectId().toHexString();
 const BAD_ID = 'not-an-id';
@@ -188,17 +189,15 @@ describe('users module (§6 #4–#8)', () => {
   });
 
   describe('#6 PUT /api/user/:id (self or admin)', () => {
-    test('a user renames themself and changes their password: 200 env(user)', async () => {
+    test('a user renames themself: 200 env(user)', async () => {
       const res = await request(app)
         .put(`/api/user/${user.id}`)
         .set(authHeader(userToken))
-        .send({ name: ' Ada Lovelace ', password: PASSWORD });
+        .send({ name: ' Ada Lovelace ' });
 
       expect(res.status).toBe(200);
       expect(res.body.data).toMatchObject({ id: user.id, name: 'Ada Lovelace', role: 'USER_ROLE' });
       expectApiShape(res.body.data);
-      const stored = await UserModel.findById(user.id, '+password').lean(); // select: false (AM-M4-1)
-      expect(bcrypt.compareSync(PASSWORD, stored!.password)).toBe(true);
     });
 
     test('role and state from a non-admin are dropped, even an unknown role (C6)', async () => {
@@ -298,6 +297,99 @@ describe('users module (§6 #4–#8)', () => {
 
       expect(res.status).toBe(422);
       expect(res.body.error).toMatchObject({ code: 'VALIDATION_FAILED', details: [{ path: 'password' }] });
+    });
+  });
+
+  // AM-M5-10: a token alone never changes its own password (that needs PUT /api/auth/password and the current one);
+  // an administrator's reset of someone else's revokes every session of that user.
+  describe('#6 passwords on PUT /api/user/:id (AM-M5-10)', () => {
+    const OWN_PASSWORD = {
+      error: {
+        code: 'VALIDATION_FAILED',
+        message: 'Validation failed',
+        details: [{ path: 'password', message: 'change your own password with PUT /api/auth/password' }],
+      },
+    };
+    const stored = (id: string) => UserModel.findById(id, '+password +tokenVersion').lean().orFail();
+    const login = (email: string, password: string) =>
+      request(app).post('/api/auth/login').send({ email, password });
+
+    test.each([
+      ['a USER_ROLE caller', () => ({ target: user, token: userToken })],
+      ['an ADMIN_ROLE caller', () => ({ target: admin, token: adminToken })],
+    ])(
+      'a password for your own account is 422 for %s: hash, tokenVersion and the old password all unchanged',
+      async (_case, caller) => {
+        const { target, token } = caller();
+        const before = await stored(target.id);
+
+        for (const body of [{ password: PASSWORD }, { name: 'Renamed', password: PASSWORD }]) {
+          const res = await request(app).put(`/api/user/${target.id}`).set(authHeader(token)).send(body);
+
+          expect(res.status).toBe(422);
+          expect(res.body).toEqual(OWN_PASSWORD);
+        }
+        expect(await stored(target.id)).toEqual(before); // byte-identical hash, same name and tokenVersion
+        expect((await request(app).put(`/api/user/${target.id}`).set(authHeader(token))).status).toBe(200);
+        expect((await login(target.email, TEST_PASSWORD)).status).toBe(200);
+      },
+    );
+
+    test('an administrator cannot reach their own password through an uppercase spelling of their id', async () => {
+      const before = await stored(admin.id);
+
+      const res = await request(app)
+        .put(`/api/user/${admin.id.toUpperCase()}`)
+        .set(authHeader(adminToken))
+        .send({ password: PASSWORD });
+
+      expect(res.status).toBe(422);
+      expect(res.body).toEqual(OWN_PASSWORD);
+      expect(await stored(admin.id)).toEqual(before);
+    });
+
+    test("an administrator resets another user's password: 200, and every session of that user dies", async () => {
+      const loggedIn = (await login(user.email, TEST_PASSWORD)).body.data.token as string;
+      const before = await stored(user.id);
+
+      const res = await request(app)
+        .put(`/api/user/${user.id}`)
+        .set(authHeader(adminToken))
+        .send({ password: PASSWORD });
+
+      expect(res.status).toBe(200);
+      expectApiShape(res.body.data);
+      const after = await stored(user.id);
+      expect(after.tokenVersion).toBe(before.tokenVersion + 1);
+      expect(after.password.slice(0, 7)).toBe('$2b$10$'); // config.auth.bcryptCost (default 10)
+      expect(bcrypt.compareSync(PASSWORD, after.password)).toBe(true);
+      for (const token of [userToken, loggedIn]) {
+        expect((await request(app).put(`/api/user/${user.id}`).set(authHeader(token))).status).toBe(401);
+      }
+      expect((await login(user.email, TEST_PASSWORD)).status).toBe(401);
+      const fresh = await login(user.email, PASSWORD);
+      expect(fresh.status).toBe(200);
+      expect(jwt.decode(fresh.body.data.token as string)).toMatchObject({ tv: after.tokenVersion });
+      expect(
+        (
+          await request(app)
+            .put(`/api/user/${user.id}`)
+            .set(authHeader(fresh.body.data.token as string))
+        ).status,
+      ).toBe(200);
+    });
+
+    test('a reset to a 73-byte password is 422 (P26), and nothing changes', async () => {
+      const before = await stored(user.id);
+
+      const res = await request(app)
+        .put(`/api/user/${user.id}`)
+        .set(authHeader(adminToken))
+        .send({ password: 'a'.repeat(73) });
+
+      expect(res.status).toBe(422);
+      expect(res.body.error).toMatchObject({ code: 'VALIDATION_FAILED', details: [{ path: 'password' }] });
+      expect(await stored(user.id)).toEqual(before);
     });
   });
 

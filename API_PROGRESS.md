@@ -1,21 +1,21 @@
 # API Progress
 
-> Baseline: commit `2f18dce` · Updated 2026-09-24 (M3 and M4 closed on `next`: the 3.0 line, unreleased; `master` is 2.1.0 and still serves the 2.x contract)
+> Baseline: commit `2f18dce` · Updated 2026-09-24 (M3, M4 and M5 closed on `next`: the 3.0 line, unreleased; `master` is 2.1.0 and still serves the 2.x contract)
 > Status legend: 🔴 blocking defect · 🟠 works with defects · 🟢 target met · ⚪ to remove · ✂️ removed
 > Debt IDs link to [TECH_DEBT.md](TECH_DEBT.md). Contract source of truth: [docs/design/M3-modules.md](docs/design/M3-modules.md) §6.
 
-## Route inventory (after M3, 3.0 line)
+## Route inventory (after M5, 3.0 line)
 
-Every route is a TypeScript feature module (`src/modules/<feature>`). "Auth" = what is **enforced**. Every success body is `{ data }` or, for lists, `{ data, meta: { total, limit, offset } }`. Every error body is `{ error: { code, message, details? } }`.
+Every route is a TypeScript feature module (`src/modules/<feature>`). "Auth" = what is **enforced**; "JWT" is `Authorization: Bearer <token>` (`x-token` is still accepted, deprecated, until 4.0.0). Every success body is `{ data }` or, for lists, `{ data, meta: { total, limit, offset } }`. Every error body is `{ error: { code, message, details? } }`.
 
 | # | Method | Path | Auth | Request DTO (zod, 422 on failure) | Success | Issues | Status | Target |
 |---|---|---|---|---|---|---|---|---|
 | 1 | GET | `/hello` | — | — | ✂️ 404 | — | ✂️ | Removed (CQ-02); `/health` in M9 |
-| 2 | POST | `/api/auth/login` | none; rate-limited 10 / 15 min / IP (shared with #3) | `{ email, password }` | 200 `{ data: { token, user } }` | PERF-01, SEC-11 | 🟠 | M5 (Bearer, async bcrypt) |
-| 3 | POST | `/api/auth/google` | none; rate-limited (shared with #2) | `{ id_token }` | 200 `{ data: { token, user } }` | SEC-12 | 🟠 | M5 (`email_verified`, no placeholder password) |
+| 2 | POST | `/api/auth/login` | none; rate-limited 10 / 15 min / IP (shared with #3) **and** 10 / 15 min / account | `{ email, password }` | 200 `{ data: { token, user } }` | SEC-17 (targeted lockout, accepted) | 🟢 | — |
+| 3 | POST | `/api/auth/google` | none; rate-limited (shared with #2) | `{ id_token }`; Google `email_verified` required | 200 `{ data: { token, user } }` | — | 🟢 | — |
 | 4 | GET | `/api/user` | JWT + admin | `?limit` 1–50 (default 5), `?offset` ≥ 0 | 200 page | — | 🟢 | — |
 | 5 | POST | `/api/user` | none (public sign-up); always `USER_ROLE` | `{ name, email, password ≥ 8 }` | **201** `{ data: user }` | — | 🟢 | — |
-| 6 | PUT | `/api/user/:id` | JWT + owner-or-admin | `{ name?, password?, role?, state? }`; `role`/`state` applied for admins only (`role` ∈ ROLES) | 200 `{ data: user }` | — | 🟢 | M6 `authorize(policy)` (AM-M3-7: an admin can reactivate a soft-deleted user) |
+| 6 | PUT | `/api/user/:id` | JWT + owner-or-admin | `{ name?, password?, role?, state? }`; `role`/`state` applied for admins only (`role` ∈ ROLES); `password` only as an admin reset of **another** user (revokes their tokens), else 422 (AM-M5-10) | 200 `{ data: user }` | — | 🟢 | M6 `authorize(policy)` (AM-M3-7: an admin can reactivate a soft-deleted user) |
 | 7 | DELETE | `/api/user/:id` | JWT + `ADMIN_ROLE`\|`VENTAS_ROLE` | `:id` | **204** | SEC-13 | 🟠 | M6 |
 | 8 | PATCH | `/api/user` | — | — | ✂️ 404 | — | ✂️ | Removed (CQ-02) |
 | 9 | GET | `/api/category` | none | pagination | 200 page | — | 🟢 | — |
@@ -33,8 +33,10 @@ Every route is a TypeScript feature module (`src/modules/<feature>`). "Auth" = w
 | 21 | PUT | `/api/uploads/:collection/:id` | JWT + owner-or-admin (`product`: admin) | `:collection` ∈ {user, product}, `:id`; one PNG/JPEG/GIF ≤ 5 MB (magic bytes) | 200 `{ data: record }` | TEST-04 (test-only) | 🟢 | — |
 | 22 | GET | `/api/uploads/:collection/:id` | none | `:collection`, `:id` | **302** to this app's own Cloudinary asset; otherwise 404 (AM-M3-1) | — | 🟢 | — |
 | 23 | GET | `/` (static `public/`) | none | — | 200 | CQ-07 (dead demo URL) | 🟠 | M8 decide |
+| 24 | POST | `/api/auth/logout-all` | JWT | — | **204** | — | 🟢 | — |
+| 25 | PUT | `/api/auth/password` | JWT | `{ currentPassword, newPassword }` (8 characters to 72 bytes) | 200 `{ data: { token } }` (a fresh token; every earlier one is revoked) | — | 🟢 | — |
 
-**Totals:** 23 entry points · 🔴 0 · 🟠 5 (was 20) · 🟢 15 (was 0) · ✂️ 3 removed (was ⚪ 3)
+**Totals:** 25 entry points · 🔴 0 · 🟠 3 (after M3: 5) · 🟢 19 (after M3: 15) · ✂️ 3 removed
 
 ## Planned contract changes (breaking-change ledger)
 
@@ -68,4 +70,10 @@ Every change clients can observe is listed here before it ships, and in CHANGELO
 | M4 | **Limits:** user `name` ≤ 120, `email` ≤ 254, category/product `name` ≤ 120, product `description` ≤ 2000, `price` ≥ 0; anything else is **422** | #5, #6, #11, #12, #16, #17 |
 | M4 | **Reusable names:** a name that only a soft-deleted category or product holds can be used again: **201** (M3 answered 409). Active duplicates stay 409, whatever the case | #11, #16 |
 | M4 | **Operational:** `pnpm migrate up` must complete **before** the M4 code serves traffic (M4 design §7.1 step 0); `pnpm seed` bootstraps the first admin from `SEED_ADMIN_EMAIL`/`SEED_ADMIN_PASSWORD` | — |
-| M5 | `Authorization: Bearer <token>`; `x-token` deprecated (still accepted, `Deprecation` header) | all authenticated |
+| M5 | **Tokens:** every token issued before M5 is refused (401) on deploy; tokens now carry `iss`, `aud` and `tv`, HS256 only. Sign in again | all authenticated |
+| M5 | **Transport:** `Authorization: Bearer <token>` (scheme case-insensitive). `x-token` is read only when there is no `Authorization` header, and its responses carry `Deprecation: true`; a malformed `Authorization` is 401 with no fallback. `x-token` is removed in 4.0.0 | all authenticated |
+| M5 | **Passwords:** 8 characters to 72 UTF-8 bytes; longer is **422** (was silently truncated) | #5, #6, #25 |
+| M5 | **Google:** an unverified address, or an address that belongs to a password account, is the generic **401** (2.x signed the caller into that account) | #3 |
+| M5 | **Own password:** `PUT /api/user/:id` with a `password` for your own account is **422**, for every role; use `PUT /api/auth/password`. An admin reset of another user's password signs that user out everywhere (AM-M5-10) | #6 |
+| M5 | **Added:** `POST /api/auth/logout-all` (204) and `PUT /api/auth/password` (200 `{ data: { token } }`); login is also limited per account (429 `RATE_LIMITED`) | #2, #24, #25 |
+| M5 | **Operational:** `SECRET_KEY` must be at least 32 characters or the boot fails; every session ends at the deploy; `pnpm migrate up` runs M005/M006 (M5 design §10.1) | — |

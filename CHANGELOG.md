@@ -8,6 +8,33 @@ Client-visible contract changes are always listed under **Breaking** and mirrore
 
 The 3.0 line accumulates on the `next` branch: M3–M6 ship together as **3.0.0** (ADR-024, ADR-026). `master` stays on 2.x for hotfixes.
 
+### M5: Authentication hardening (on `next`)
+
+#### Breaking
+- **Every token issued before M5 stops working** on deploy, over both transports: tokens now carry `iss`, `aud` and a `tv` (token version) claim and are verified as HS256 only. The client gets the ordinary 401 and signs in again (`POST /api/auth/login` or `/google`).
+- **`Authorization: Bearer <token>` is the transport.** `x-token` is still accepted, but only when the request has no `Authorization` header at all. Such responses carry `Deprecation: true` (RFC 9745), and `x-token` is removed in 4.0.0. A malformed `Authorization` header is 401; it never falls back to `x-token`. The scheme is case-insensitive.
+- **`SECRET_KEY` must be at least 32 characters**, or the process refuses to boot.
+- **Passwords are 8 characters to 72 bytes (UTF-8)** at sign-up, on every password change and in the seed. A longer one is 422; before, bcrypt silently ignored everything past byte 72.
+- **A Google sign-in whose email belongs to an existing password account is refused** (the generic 401), where 2.x signed the caller into that account. An address Google has not verified (`email_verified`) is refused the same way.
+- **`PUT /api/user/:id` no longer changes your own password**, whatever your role: a `password` for your own account is 422, and you use `PUT /api/auth/password` instead. An administrator can still reset **another** user's password there, and doing so signs that user out everywhere.
+
+#### Added
+- `POST /api/auth/logout-all` (204): every token of the caller stops working, the one used for the request included.
+- `PUT /api/auth/password` with `{ currentPassword, newPassword }` (200 `{ data: { token } }`): it checks the current password (the same generic 401 as a failed login), revokes every earlier token and returns a fresh one.
+- `JWT_TTL` (seconds, or `<n>s|m|h|d`; default `4h`) and `BCRYPT_COST` (10–14; default 10).
+
+#### Changed
+- Password hashing is asynchronous and uses `BCRYPT_COST`. A stored hash of another cost is rehashed in the background after that account's next successful login, without delaying the response.
+- A first Google sign-in creates an account with no password at all (no placeholder); M006 removes the old placeholder from existing Google-only accounts.
+
+#### Security
+- `/api/auth/login` is also limited **per account**: 10 attempts per 15 minutes on the same email, whatever the client IP, with case and padding normalized. The per-IP budget shared with `/google` is unchanged.
+- A token is refused once its `tv` no longer matches the account's `tokenVersion` (logout-all, a password change, an administrator reset), with the same 401 as any other invalid token.
+- Every credential failure on login and on the password change still costs one bcrypt compare at the configured cost, Google-only accounts included (F1).
+
+#### Operational
+- **Before deploying M5:** set `SECRET_KEY` to at least 32 characters (rotating it costs nothing extra, since every session ends anyway), warn clients that everyone must sign in again, then run `pnpm build && pnpm migrate up` (M005 backfills `tokenVersion`, M006 drops the placeholder password). See the runbook in [M5-auth](docs/design/M5-auth.md) §10.1.
+
 ### M4: Database (on `next`)
 
 #### Added

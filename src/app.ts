@@ -61,7 +61,7 @@ export function createApp({ config, logger }: AppDeps): Express {
   app.use(express.json());
   app.use(express.static(PUBLIC_DIR));
 
-  const tokens = createTokenService(config.auth.jwtSecret);
+  const tokens = createTokenService(config.auth.jwtSecret, { ttlSeconds: config.auth.jwtTtlSeconds });
   // The users module owns User (ADR-027). A uid that is not an ObjectId is no user, so authenticate answers 401,
   // never the 400 of a CastError.
   const users: UserLookup = {
@@ -75,8 +75,17 @@ export function createApp({ config, logger }: AppDeps): Express {
     '/api/search',
     searchModule({ User: UserModel, Category: CategoryModel, Product: ProductModel, authenticate: auth }),
   );
-  app.use('/api/user', usersModule({ authenticate: auth }));
-  app.use('/api/auth', authModule({ User: UserModel, tokens, googleClientId: config.auth.googleClientId }));
+  app.use('/api/user', usersModule({ authenticate: auth, bcryptCost: config.auth.bcryptCost }));
+  app.use(
+    '/api/auth',
+    authModule({
+      User: UserModel,
+      tokens,
+      googleClientId: config.auth.googleClientId,
+      bcryptCost: config.auth.bcryptCost,
+      authenticate: auth,
+    }),
+  );
   app.use(
     '/api/uploads',
     mediaModule({

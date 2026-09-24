@@ -11,10 +11,12 @@ export { UserModel, type User, type UserDocument } from './user.model';
 
 export interface UsersModuleDeps {
   authenticate: RequestHandler;
+  /** config.auth.bcryptCost (ADR-035). */
+  bcryptCost: number;
 }
 
 /** P15: model → service → controller → router. src/app.ts mounts the result at /api/user. */
 export function usersModule(deps: UsersModuleDeps): Router {
-  const service = createUsersService({ User: UserModel });
+  const service = createUsersService({ User: UserModel, bcryptCost: deps.bcryptCost });
   return createUsersRouter({ controller: createUsersController(service), authenticate: deps.authenticate });
 }

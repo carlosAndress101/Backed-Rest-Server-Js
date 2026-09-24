@@ -11,6 +11,8 @@ import { M001 } from './database/migrations/M001-normalize-email';
 import { M002 } from './database/migrations/M002-rebuild-name-indexes';
 import { M003 } from './database/migrations/M003-backfill-created-at';
 import { M004 } from './database/migrations/M004-drop-roles-collection';
+import { M005 } from './database/migrations/M005-backfill-token-version';
+import { M006 } from './database/migrations/M006-drop-google-placeholder-password';
 import { seedFirstAdmin, type SeedResult } from './database/seed';
 import { UserModel } from './modules/users';
 
@@ -33,8 +35,8 @@ export interface CliDeps {
   readonly seed: (log: Logger) => Promise<number>;
 }
 
-/** The migrations `migrate` runs, in id order (M4 design §5.3). M004 is the one destructive step and runs last. */
-export const MIGRATIONS: readonly Migration[] = [M001, M002, M003, M004];
+/** The migrations `migrate` runs, in id order (M4 design §5.3, M5 §4). M004 (the one destructive step) runs before M5's additive M005/M006. */
+export const MIGRATIONS: readonly Migration[] = [M001, M002, M003, M004, M005, M006];
 
 /** 0 once the instance has an active admin, created now or before; 1 when the seed could not give it one. */
 export const seedExitCode = (result: SeedResult): number =>
@@ -90,7 +92,14 @@ export async function main(args: readonly string[]): Promise<number> {
   try {
     // AM-M4-7: this composition root hands the users module's model to the seed.
     const seed = async (seedLog: Logger) =>
-      seedExitCode(await seedFirstAdmin({ User: UserModel, config: config.seed, log: seedLog }));
+      seedExitCode(
+        await seedFirstAdmin({
+          User: UserModel,
+          config: config.seed,
+          bcryptCost: config.auth.bcryptCost,
+          log: seedLog,
+        }),
+      );
     return await runCommand(command, { db: mongoose.connection.db!, log, migrations: MIGRATIONS, seed });
   } catch (err) {
     log.error({ err }, 'command failed'); // a migration that threw is not recorded, so the next run retries it
