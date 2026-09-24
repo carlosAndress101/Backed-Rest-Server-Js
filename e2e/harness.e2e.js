@@ -6,18 +6,27 @@ const request = require('supertest');
 
 const { buildApp, closeServers, expectStatus } = require('./helpers/db');
 
-/** Asks another process to listen on 127.0.0.1:<port>; resolves to 'listening' or the error code. */
+const IN_USE = 3;
+
+/**
+ * Asks another process to listen on 127.0.0.1:<port> and resolves to 'listening' or
+ * 'EADDRINUSE'. The child answers through its exit code: stdout written right before
+ * process.exit() can be lost on a pipe.
+ */
 const bindFromAnotherProcess = (port) =>
   new Promise((resolve, reject) => {
     const child = spawn(process.execPath, [
       '-e',
-      `require('net').createServer().once('error', (e) => { console.log(e.code); process.exit(0); })
-         .listen(${port}, '127.0.0.1', () => { console.log('listening'); process.exit(0); });`,
+      `const server = require('net').createServer();
+       server.once('error', (e) => { process.exitCode = e.code === 'EADDRINUSE' ? ${IN_USE} : 1; });
+       server.listen(${port}, '127.0.0.1', () => server.close());`,
     ]);
-    let out = '';
-    child.stdout.on('data', (chunk) => (out += chunk));
     child.on('error', reject);
-    child.on('exit', () => resolve(out.trim()));
+    child.on('exit', (code) => {
+      if (code === 0) resolve('listening');
+      else if (code === IN_USE) resolve('EADDRINUSE');
+      else reject(new Error(`bind probe exited with ${code}`));
+    });
   });
 
 // TEST-02 (T1.8): SuperTest given a bare app listens on the dual-stack wildcard (::)
