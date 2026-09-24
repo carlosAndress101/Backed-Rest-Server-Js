@@ -37,7 +37,7 @@ export function createUsersRouter(deps: UserRouteDeps): Router {
   router.delete(
     '/:id',
     authenticate,
-    authorize({ roles: ['ADMIN_ROLE', 'VENTAS_ROLE'] }), // as legacy hasRole; ADR-040 revisits this (T6.1 commit 2)
+    authorize({ roles: ['ADMIN_ROLE'] }), // ADR-040: VENTAS_ROLE is dropped from user deletion
     validate('params', userIdParams),
     controller.remove,
   );

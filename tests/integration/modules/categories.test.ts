@@ -219,8 +219,9 @@ describe('categories module (§6 #9–#13)', () => {
     });
   });
 
-  describe('#12 PUT /api/category/:id (admin)', () => {
-    test('is 200 env(category): renamed, uppercased, and owned by the editor', async () => {
+  describe('#12 PUT /api/category/:id (admin or VENTAS_ROLE)', () => {
+    // ADR-041/AM-M6-2: the fix. Before M6, every editor (admin included) silently became the new owner.
+    test('is 200 env(category): renamed, uppercased, and the creator is unchanged', async () => {
       const category = await createCategory({ name: 'COFFEE', user });
 
       const res = await request(app)
@@ -233,10 +234,10 @@ describe('categories module (§6 #9–#13)', () => {
         id: category.id,
         name: 'ESPRESSO',
         state: true,
-        user: { name: 'Admin User' },
+        user: { name: 'Test User' },
       });
       expectApiShape(res.body.data);
-      expect(String((await CategoryModel.findById(category.id).lean())?.user)).toBe(admin.id);
+      expect(String((await CategoryModel.findById(category.id).lean())?.user)).toBe(user.id);
     });
 
     test('without a token it is 401', async () => {
@@ -247,7 +248,7 @@ describe('categories module (§6 #9–#13)', () => {
       expect(res.status).toBe(401);
     });
 
-    test('a non-admin is 403, before the id and body are validated', async () => {
+    test('a non-privileged role is 403, before the id and body are validated (AM-M6-2: a pure role policy)', async () => {
       const res = await request(app).put(`/api/category/${BAD_ID}`).set(authHeader(userToken)).send({});
 
       expect(res.status).toBe(403);
@@ -315,7 +316,7 @@ describe('categories module (§6 #9–#13)', () => {
     });
   });
 
-  describe('#13 DELETE /api/category/:id (admin)', () => {
+  describe('#13 DELETE /api/category/:id (admin or VENTAS_ROLE)', () => {
     test('is 204 with no body, and only soft-deletes', async () => {
       const category = await createCategory({ name: 'COFFEE' });
 

@@ -2,6 +2,7 @@ import { Router, type RequestHandler } from 'express';
 
 import { authorize } from '../../middlewares/authorize';
 import { validate } from '../../middlewares/validate';
+import { CATALOG_ROLES } from '../../core/security/roles';
 import type { CategoriesController } from './category.controller';
 import {
   categoryIdParams,
@@ -18,6 +19,9 @@ export interface CategoryRouteDeps {
 /**
  * Paths, middleware and handlers only. The order matches the legacy chain: auth → authz → validate → controller.
  * The policy holds no state, so it is declared here, next to the paths it protects (ADR-038).
+ *
+ * AM-M6-2: categories are a shared taxonomy other users' products reference, so PUT/DELETE are a pure role
+ * policy (CATALOG_ROLES) — no ownership, no `deferToService`. POST stays open to every authenticated role.
  */
 export function createCategoriesRouter(deps: CategoryRouteDeps): Router {
   const { controller, authenticate } = deps;
@@ -29,7 +33,7 @@ export function createCategoriesRouter(deps: CategoryRouteDeps): Router {
   router.put(
     '/:id',
     authenticate,
-    authorize({ roles: ['ADMIN_ROLE'] }),
+    authorize({ roles: CATALOG_ROLES }),
     validate('params', categoryIdParams),
     validate('body', updateCategoryBody),
     controller.update,
@@ -37,7 +41,7 @@ export function createCategoriesRouter(deps: CategoryRouteDeps): Router {
   router.delete(
     '/:id',
     authenticate,
-    authorize({ roles: ['ADMIN_ROLE'] }),
+    authorize({ roles: CATALOG_ROLES }),
     validate('params', categoryIdParams),
     controller.remove,
   );
