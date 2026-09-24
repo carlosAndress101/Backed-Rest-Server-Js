@@ -1,0 +1,70 @@
+// SEC-08 (ADR-030): an upload is an image by its magic bytes, never by its name or its Content-Type; and the
+// parser's own quirks (C10, HTTP-02).
+import { EventEmitter } from 'node:events';
+import { PassThrough } from 'node:stream';
+
+import type { Request, Response } from 'express';
+import { describe, expect, test, vi } from 'vitest';
+
+import { fileParser, isSupportedImage, MAX_FILE_BYTES } from '../../../src/modules/media/media.upload';
+import { listTempFiles, waitForNoTempLeak } from '../../helpers/uploads';
+
+describe('isSupportedImage', () => {
+  test.each([
+    ['PNG', '89504e470d0a1a0a'],
+    ['JPEG (JFIF)', 'ffd8ffe000104a46'],
+    ['JPEG (Exif)', 'ffd8ffe1'],
+    ['GIF87a', '474946383761'],
+    ['GIF89a', '474946383961'],
+  ])('accepts %s', (_type, hex) => {
+    expect(isSupportedImage(Buffer.from(hex, 'hex'))).toBe(true);
+  });
+
+  test.each([
+    ['an empty file', ''],
+    ['a truncated PNG signature', '895049'],
+    ['a truncated JPEG signature', 'ffd8'],
+    ['WebP', '52494646'],
+    ['BMP', '424d'],
+    ['PDF', '25504446'],
+    ['SVG', '3c737667'],
+    ['HTML', '3c21646f'],
+    ['a PHP script', '3c3f7068'],
+    ['ZIP', '504b0304'],
+    ['a PNG signature one byte in', '0089504e47'],
+  ])('rejects %s', (_type, hex) => {
+    expect(isSupportedImage(Buffer.from(hex, 'hex'))).toBe(false);
+  });
+});
+
+test('the size limit is 5 MB', () => {
+  expect(MAX_FILE_BYTES).toBe(5 * 1024 * 1024);
+});
+
+describe('fileParser', () => {
+  test('a body cut off mid-file settles the request once, though express-fileupload reports it twice', async () => {
+    const before = listTempFiles();
+    const body = Buffer.from(
+      '--b\r\nContent-Disposition: form-data; name="file"; filename="a.jpg"\r\nContent-Type: image/jpeg\r\n\r\nffd8ff',
+    );
+    const req = Object.assign(new PassThrough(), {
+      method: 'PUT',
+      headers: { 'content-type': 'multipart/form-data; boundary=b', 'content-length': String(body.length) },
+      log: { warn: vi.fn() },
+    });
+    const res = new EventEmitter();
+    const next = vi.fn();
+
+    fileParser(req as unknown as Request, res as unknown as Response, next);
+    req.end(body);
+
+    // The file stream fails first (next() with no file), then the form ("Unexpected end of form"):
+    // only the first may reach Express, or the second hits the final handler after the response.
+    await vi.waitFor(() => expect(next).toHaveBeenCalled());
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(next).toHaveBeenCalledTimes(1);
+
+    res.emit('close');
+    expect(await waitForNoTempLeak(before)).toEqual([]);
+  });
+});

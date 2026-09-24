@@ -15,6 +15,7 @@ import { errorHandler } from './middlewares/error-handler';
 import { notFound } from './middlewares/not-found';
 import { requestLogger } from './middlewares/request-logger';
 import { CategoryModel, categoriesModule } from './modules/categories';
+import { mediaModule } from './modules/media';
 import { ProductModel, productsModule } from './modules/products';
 import { searchModule } from './modules/search';
 import { UserModel, usersModule } from './modules/users';
@@ -76,6 +77,14 @@ export function createApp({ config, logger }: AppDeps): Express {
     searchModule({ User: UserModel, Category: CategoryModel, Product: ProductModel, authenticate: auth }),
   );
   app.use('/api/user', usersModule({ authenticate: auth }));
+  app.use(
+    '/api/uploads',
+    mediaModule({
+      models: (name) => (name === 'User' ? UserModel : ProductModel),
+      authenticate: auth,
+      cloudinaryUrl: config.media.cloudinaryUrl,
+    }),
+  );
   mountLegacyRoutes(app); // the routes no module owns yet
 
   app.use(notFound);

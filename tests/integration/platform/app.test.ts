@@ -2,17 +2,17 @@ import type { Server } from 'node:http';
 import os from 'node:os';
 import path from 'node:path';
 
-import { v2 as cloudinary } from 'cloudinary';
 import mongoose from 'mongoose';
 import request from 'supertest';
 import { afterAll, beforeAll, beforeEach, describe, expect, test, vi } from 'vitest';
 
 import { clearLogs, loggedText, startTestApp, stopTestApp } from '../../helpers/app';
+import { stubMediaClient } from '../../helpers/uploads';
 import { logRecords, requestSeenByApp, signIn, type SignedIn } from './support';
 
 const UUID_V4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 const NEW_ASSET = 'https://res.cloudinary.com/demo/image/upload/v1/platform-asset.png';
-const PNG = Buffer.from('not really a png: the upload route checks only the extension');
+const PNG = Buffer.from('89504e470d0a1a0a0000000d49484452', 'hex'); // the media module sniffs the magic bytes
 
 describe('createApp', () => {
   let server: Server;
@@ -172,13 +172,13 @@ describe('createApp', () => {
 
   describe('request id', () => {
     test('a valid inbound x-request-id is echoed', async () => {
-      const res = await request(server).get('/hello').set('x-request-id', 'client-id_1.2:3');
+      const res = await request(server).get('/').set('x-request-id', 'client-id_1.2:3');
 
       expect(res.headers['x-request-id']).toBe('client-id_1.2:3');
     });
 
     test('a UUID v4 is generated when the header is absent', async () => {
-      const res = await request(server).get('/hello');
+      const res = await request(server).get('/');
 
       expect(res.headers['x-request-id']).toMatch(UUID_V4);
     });
@@ -186,7 +186,7 @@ describe('createApp', () => {
     test.each(['has spaces', 'x'.repeat(129), 'line\\nbreak', ''])(
       'an unsafe inbound id (case %#) is replaced by a UUID v4',
       async (inbound) => {
-        const res = await request(server).get('/hello').set('x-request-id', inbound);
+        const res = await request(server).get('/').set('x-request-id', inbound);
 
         expect(res.headers['x-request-id']).toMatch(UUID_V4);
       },
@@ -195,7 +195,7 @@ describe('createApp', () => {
 
   describe('security headers and CORS', () => {
     test('there is no x-powered-by header', async () => {
-      const res = await request(server).get('/hello');
+      const res = await request(server).get('/');
 
       expect(res.headers).not.toHaveProperty('x-powered-by');
     });
@@ -215,7 +215,7 @@ describe('createApp', () => {
     });
 
     test('CORS allows any origin by default', async () => {
-      const res = await request(server).get('/hello').set('Origin', 'https://anyone.example');
+      const res = await request(server).get('/').set('Origin', 'https://anyone.example');
 
       expect(res.headers['access-control-allow-origin']).toBe('*');
     });
@@ -223,8 +223,8 @@ describe('createApp', () => {
     test('with CORS_ORIGINS, an allowlisted origin is echoed and any other gets no CORS header', async () => {
       const allowlisted = await startTestApp({ CORS_ORIGINS: 'https://shop.example, https://admin.example' });
 
-      const allowed = await request(allowlisted).get('/hello').set('Origin', 'https://admin.example');
-      const other = await request(allowlisted).get('/hello').set('Origin', 'https://evil.example');
+      const allowed = await request(allowlisted).get('/').set('Origin', 'https://admin.example');
+      const other = await request(allowlisted).get('/').set('Origin', 'https://evil.example');
 
       expect(allowed.headers['access-control-allow-origin']).toBe('https://admin.example');
       expect(other.headers).not.toHaveProperty('access-control-allow-origin');
@@ -232,11 +232,11 @@ describe('createApp', () => {
   });
 
   describe('the legacy mount', () => {
-    test('GET /hello answers {name:"caan"}', async () => {
+    test('GET /hello is removed: 404 (CQ-02, §6 #1)', async () => {
       const res = await request(server).get('/hello');
 
-      expect(res.status).toBe(200);
-      expect(res.body).toEqual({ name: 'caan' });
+      expect(res.status).toBe(404);
+      expect(res.body).toEqual({ error: { code: 'NOT_FOUND', message: 'Route not found' } });
     });
 
     test('GET / serves the demo page from public/', async () => {
@@ -273,45 +273,36 @@ describe('createApp', () => {
       expect(res.body.data).toMatchObject({ uid: user.id, name: 'Platform User' });
       expect(req.body).toEqual({});
     });
+  });
 
-    // PUT /api/uploads/:collection/:id sends the file to Cloudinary (stubbed) and never writes under uploads/,
-    // which tests/integration/security/uploads.test.ts owns and resets while other files run (TEST-03).
-    describe('PUT /api/uploads/user/:id (C10 router-level parser)', () => {
-      let upload: ReturnType<typeof vi.spyOn>;
+  // The media module (T3.7) runs the multipart parser itself, after auth. Its Cloudinary client is stubbed, so
+  // nothing is written outside the request's own temp folder (TEST-03).
+  describe('PUT /api/uploads/user/:id (C10 route-level parser)', () => {
+    let upload: ReturnType<typeof stubMediaClient>['upload'];
 
-      beforeEach(() => {
-        upload = vi
-          .spyOn(cloudinary.uploader, 'upload')
-          .mockResolvedValue({ secure_url: NEW_ASSET } as never);
-        vi.spyOn(cloudinary.uploader, 'destroy').mockResolvedValue({ result: 'ok' });
-      });
+    beforeEach(() => {
+      ({ upload } = stubMediaClient(NEW_ASSET));
+    });
 
-      const replaceImage = () =>
-        request(server).put(`/api/uploads/user/${user.id}`).set('x-token', user.token);
+    const replaceImage = () => request(server).put(`/api/uploads/user/${user.id}`).set('x-token', user.token);
 
-      test('a file-only upload reaches the controller with req.body = {} (a plain object)', async () => {
-        const { req, res } = await requestSeenByApp(server, () =>
-          replaceImage().attach('file', PNG, 'avatar.png'),
-        );
+    test('a file-only upload reaches the media controller from its per-request temp folder', async () => {
+      const res = await replaceImage().attach('file', PNG, 'avatar.png');
 
-        expect(res.status).toBe(200);
-        expect(res.body).toMatchObject({ uid: user.id, image: NEW_ASSET });
-        expect(upload).toHaveBeenCalledWith(expect.stringContaining(path.join(os.tmpdir(), 'upload-')));
-        expect(req.body).toEqual({});
-        expect(Object.getPrototypeOf(req.body)).toBe(Object.prototype);
-      });
+      expect(res.status).toBe(200);
+      expect(res.body.data).toMatchObject({ uid: user.id, image: NEW_ASSET });
+      expect(upload).toHaveBeenCalledWith(expect.stringContaining(path.join(os.tmpdir(), 'upload-')));
+    });
 
-      test('the fields of a file + fields upload land on a plain object', async () => {
-        const { req, res } = await requestSeenByApp(server, () =>
-          replaceImage().field('note', 'hello').attach('file', PNG, 'avatar.png'),
-        );
+    test('the fields of a file + fields upload never reach the record', async () => {
+      const res = await replaceImage()
+        .field('name', 'Renamed Through Multipart')
+        .field('image', 'https://evil.example/x.png')
+        .attach('file', PNG, 'avatar.png');
 
-        expect(res.status).toBe(200);
-        expect(res.body).toMatchObject({ uid: user.id, image: NEW_ASSET });
-        expect(upload).toHaveBeenCalledWith(expect.stringContaining(path.join(os.tmpdir(), 'upload-')));
-        expect(req.body).toEqual({ note: 'hello' });
-        expect(Object.getPrototypeOf(req.body)).toBe(Object.prototype);
-      });
+      expect(res.status).toBe(200);
+      expect(res.body.data).toMatchObject({ uid: user.id, name: 'Platform User', image: NEW_ASSET });
+      expect(upload).toHaveBeenCalledWith(expect.stringContaining(path.join(os.tmpdir(), 'upload-')));
     });
   });
 });

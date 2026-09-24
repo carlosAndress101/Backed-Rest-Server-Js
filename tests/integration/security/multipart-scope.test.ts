@@ -2,14 +2,15 @@ import fs from 'node:fs';
 import type { Server } from 'node:http';
 import path from 'node:path';
 
+import mongoose from 'mongoose';
 import request, { type Test } from 'supertest';
 import { afterAll, beforeAll, beforeEach, describe, expect, test, vi } from 'vitest';
 
 import { clearDatabase, startTestApp, stopTestApp } from '../../helpers/app';
 import { expectStatus } from '../../helpers/assert';
-import { authHeader, createAdmin, createUser, tokenFor } from '../../helpers/factories';
-import { legacyModels, stubCloudinary } from '../../helpers/legacy';
-import { listTempFiles, newTempFiles, waitForNoTempLeak } from '../../helpers/uploads';
+import { authHeader, createAdmin, createProduct, createUser, tokenFor } from '../../helpers/factories';
+import { legacyModels } from '../../helpers/legacy';
+import { listTempFiles, newTempFiles, stubMediaClient, waitForNoTempLeak } from '../../helpers/uploads';
 
 const { User } = legacyModels();
 
@@ -41,24 +42,21 @@ const tempWrites = () =>
 describe('SEC-08 / C10 multipart bodies are parsed only by the upload routes, after auth', () => {
   let app: Server;
   let before: Set<string>;
-  let upload: ReturnType<typeof stubCloudinary>['upload'];
-  let destroy: ReturnType<typeof stubCloudinary>['destroy'];
+  let upload: ReturnType<typeof stubMediaClient>['upload'];
 
   beforeAll(async () => {
     app = await startTestApp();
   });
 
-  // Every request here is either rejected or goes to the mocked Cloudinary, so
-  // nothing is written under uploads/ (uploads.e2e.js owns that tree).
+  // Every request here is either rejected or goes to the stubbed Cloudinary client, so
+  // nothing is written outside the per-request temp folder (ADR-030, TEST-03).
   afterAll(async () => {
     await stopTestApp();
   });
 
   beforeEach(async () => {
     await clearDatabase();
-    ({ upload, destroy } = stubCloudinary());
-    upload.mockResolvedValue({ secure_url: SECURE_URL });
-    destroy.mockResolvedValue({ result: 'ok' });
+    ({ upload } = stubMediaClient(SECURE_URL));
     vi.spyOn(fs, 'createWriteStream');
     before = listTempFiles();
   });
@@ -68,11 +66,17 @@ describe('SEC-08 / C10 multipart bodies are parsed only by the upload routes, af
     const cases: Array<
       [string, number, () => Promise<[method: 'post' | 'put', url: string, token?: string]>]
     > = [
-      ['POST /api/uploads without a token', 401, async () => ['post', '/api/uploads']],
+      // ADR-030: POST /api/uploads is removed, so no parser runs for it at all.
+      ['POST /api/uploads without a token', 404, async () => ['post', '/api/uploads']],
       [
         'POST /api/uploads with a USER token',
-        403,
+        404,
         async () => ['post', '/api/uploads', await tokenFor(await createUser())],
+      ],
+      [
+        'PUT /api/uploads/user/:id without a token',
+        401,
+        async () => ['put', `/api/uploads/user/${(await createUser()).id}`],
       ],
       [
         'PUT /api/uploads/user/:id for another user',
@@ -83,13 +87,31 @@ describe('SEC-08 / C10 multipart bodies are parsed only by the upload routes, af
         },
       ],
       [
+        'PUT /api/uploads/product/:id with a USER token',
+        403,
+        async () => [
+          'put',
+          `/api/uploads/product/${(await createProduct()).id}`,
+          await tokenFor(await createUser()),
+        ],
+      ],
+      [
+        "PUT /api/uploads/product/:id whose _id is the caller's own user id (T1.2 anti-chain)",
+        403,
+        async () => {
+          const user = await createUser();
+          await createProduct({ _id: user._id });
+          return ['put', `/api/uploads/product/${user.id}`, await tokenFor(user)];
+        },
+      ],
+      [
         'PUT /api/uploads/user/:id with an invalid id',
-        400,
+        422,
         async () => ['put', '/api/uploads/user/not-a-mongo-id', await tokenFor(await createAdmin())],
       ],
       [
         'PUT /api/uploads/:collection/:id with a collection that is not allowed',
-        400,
+        422,
         async () => {
           const admin = await createAdmin();
           return ['put', `/api/uploads/role/${admin.id}`, await tokenFor(admin)];
@@ -159,25 +181,26 @@ describe('SEC-08 / C10 multipart bodies are parsed only by the upload routes, af
 
   describe('every temp file the parser writes is removed', () => {
     let adminToken: string;
+    let target: string;
 
     beforeEach(async () => {
       adminToken = await tokenFor(await createAdmin());
+      target = `/api/uploads/user/${(await createUser()).id}`;
     });
 
-    test('after a fileValid rejection (the file is not in the "file" field)', async () => {
-      const res = await attach(request(app).post('/api/uploads').set(authHeader(adminToken)), 'other');
+    test('after a no-file rejection (the file is not in the "file" field)', async () => {
+      const res = await attach(request(app).put(target).set(authHeader(adminToken)), 'other');
 
       expect(res.statusCode).toBe(400);
       expect(tempWrites()).toHaveLength(1);
       expect(await waitForNoTempLeak(before)).toEqual([]);
     });
 
-    test('after an extension rejection', async () => {
-      const res = await attach(
-        request(app).post('/api/uploads').set(authHeader(adminToken)),
-        'file',
-        'evil.txt',
-      );
+    test('after a MIME rejection (the bytes are not an image)', async () => {
+      const res = await request(app)
+        .put(target)
+        .set(authHeader(adminToken))
+        .attach('file', Buffer.from('not an image'), 'evil.jpg');
 
       expect(res.statusCode).toBe(400);
       expect(tempWrites()).toHaveLength(1);
@@ -186,7 +209,7 @@ describe('SEC-08 / C10 multipart bodies are parsed only by the upload routes, af
 
     test('after a 413 for a file larger than 5 MB', async () => {
       const res = await request(app)
-        .post('/api/uploads')
+        .put(target)
         .set(authHeader(adminToken))
         .attach('file', Buffer.alloc(5 * 1024 * 1024 + 1024, 1), 'too-big.jpg');
 
@@ -208,6 +231,19 @@ describe('SEC-08 / C10 multipart bodies are parsed only by the upload routes, af
 
       expectStatus(res, 200);
       expect(upload).toHaveBeenCalledTimes(1);
+      expect(tempWrites()).toHaveLength(1);
+      expect(await waitForNoTempLeak(before)).toEqual([]);
+    });
+
+    test('after a 404 (the record does not exist; the parser ran first)', async () => {
+      const res = await attach(
+        request(app)
+          .put(`/api/uploads/user/${new mongoose.Types.ObjectId().toHexString()}`)
+          .set(authHeader(adminToken)),
+      );
+
+      expect(res.statusCode).toBe(404);
+      expect(upload).not.toHaveBeenCalled();
       expect(tempWrites()).toHaveLength(1);
       expect(await waitForNoTempLeak(before)).toEqual([]);
     });
@@ -237,10 +273,10 @@ describe('SEC-08 / C10 multipart bodies are parsed only by the upload routes, af
         ),
       ]);
 
-      const res = await sendRaw(request(app).post('/api/uploads').set(authHeader(adminToken)), body);
+      const res = await sendRaw(request(app).put(target).set(authHeader(adminToken)), body);
 
-      expect(res.statusCode).toBeGreaterThanOrEqual(400);
-      expect(res.headers['content-type']).toMatch(/json/);
+      expect(res.statusCode).toBe(400); // HTTP-02
+      expect(res.body).toEqual({ error: { code: 'BAD_REQUEST', message: 'Malformed multipart body' } });
       expect(tempWrites()).toHaveLength(1);
       expect(await waitForNoTempLeak(before)).toEqual([]);
     });
@@ -248,13 +284,13 @@ describe('SEC-08 / C10 multipart bodies are parsed only by the upload routes, af
     test('after a body that ends in the middle of the file', async () => {
       const body = Buffer.concat([filePartHead('file', 'photo.jpg'), JPEG]);
 
-      const res = await sendRaw(request(app).post('/api/uploads').set(authHeader(adminToken)), body);
+      const res = await sendRaw(request(app).put(target).set(authHeader(adminToken)), body);
 
-      expect(res.statusCode).toBeGreaterThanOrEqual(400);
+      expect(res.statusCode).toBe(400); // HTTP-02
       expect(await waitForNoTempLeak(before)).toEqual([]);
 
       // the process still serves the next request
-      expect((await request(app).get('/api/uploads/user/not-a-mongo-id')).statusCode).toBe(400);
+      expect((await request(app).get('/api/uploads/user/not-a-mongo-id')).statusCode).toBe(422);
     });
   });
 });
