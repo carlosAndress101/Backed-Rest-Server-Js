@@ -24,11 +24,13 @@ const userSchema = new Schema(
     },
     // LOG-02 (AM-M3-2): no message on this path may carry the value. A cast failure would otherwise put a non-string
     // password into err.message and err.stack, which REDACT_PATHS does not cover.
-    // AM-M4-1: `select: false` lands in T4.3, in the same commit as the auth `+password` read.
+    // AM-M4-1 / P20: never read unless a query asks for '+password' (only the login does), so no find, populate or
+    // .lean() read can carry the hash, whatever serializes it.
     password: {
       type: String,
       required: [true, 'The password is required'],
       cast: 'The password must be a string',
+      select: false,
     },
     // AM-M4-4: no pattern validator (Google avatar URLs are https://lh3.googleusercontent.com/…), just a cap.
     image: { type: String, trim: true, maxlength: [2048, 'The image must be at most 2048 characters'] },

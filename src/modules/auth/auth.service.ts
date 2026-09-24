@@ -5,11 +5,15 @@ import type { TokenService } from '../../core/security/jwt';
 import type { GoogleDto, LoginDto } from './auth.schemas';
 import type { GoogleProfile, GoogleVerifier } from './google.client';
 
-/** A stored user, as far as sign-in reads it. */
+/** A stored user, as far as sign-in reads it. The password is not part of it (select: false, AM-M4-1). */
 export interface SignInUser {
   _id: unknown;
-  password: string;
   state?: boolean | null;
+}
+
+/** The one read that needs the password hash: the login's, with '+password'. */
+export interface SignInUserWithPassword extends SignInUser {
+  password: string;
 }
 
 /** The account a first Google sign-in creates. The ':D' placeholder password is SEC-12's (M5). */
@@ -24,6 +28,10 @@ export interface GoogleSignUp {
 /** The slice of the users module's model sign-in needs. src/app.ts injects UserModel (§2.3 rule 4). */
 export interface SignInUserModel {
   findOne(filter: { email: string | undefined }): PromiseLike<SignInUser | null>;
+  findOne(
+    filter: { email: string | undefined },
+    projection: '+password',
+  ): PromiseLike<SignInUserWithPassword | null>;
   create(doc: GoogleSignUp): PromiseLike<SignInUser>;
 }
 
@@ -66,7 +74,8 @@ export function createAuthService(deps: {
 
   return {
     async login({ email, password }) {
-      const user = await User.findOne({ email });
+      // AM-M4-1: the hash is select: false, so the one read that compares it asks for it.
+      const user = await User.findOne({ email }, '+password');
 
       // The password, the user and its state fail with the same answer; an account without a password hash is
       // compared against the dummy one and never matches.
