@@ -1,4 +1,5 @@
 const cors = require('cors');
+const os = require('os');
 const path = require('path');
 const express = require('express');
 const helmet = require('helmet');
@@ -63,11 +64,13 @@ class Server {
         //public path
         this.app.use(express.static(path.join(__dirname, '../public')))
 
-        //Upload files
+        //Upload files, max 5 MB (larger requests are aborted with 413)
         this.app.use(fileUpload({
             useTempFiles : true,
-            tempFileDir : '/tmp/',
+            tempFileDir : os.tmpdir(),
             createParentPath : true,
+            limits : { fileSize: 5 * 1024 * 1024 },
+            abortOnLimit : true,
         }));
     }
 
