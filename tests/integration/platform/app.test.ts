@@ -270,6 +270,27 @@ describe('createApp', () => {
 
   // The media module (T3.7) runs the multipart parser itself, after auth. Its Cloudinary client is stubbed, so
   // nothing is written outside the request's own temp folder (TEST-03).
+  // AM-M5-9: JWT_TTL reaches the token service through createApp (config.auth.jwtTtlSeconds, ADR-034).
+  describe('JWT_TTL', () => {
+    /** exp - iat of a token, read from its payload. */
+    const lifetime = (token: string) => {
+      const { iat, exp } = JSON.parse(Buffer.from(token.split('.')[1]!, 'base64url').toString()) as {
+        iat: number;
+        exp: number;
+      };
+      return exp - iat;
+    };
+
+    test('sets the lifetime of the tokens the login issues: 4h by default, 90s when JWT_TTL=90s', async () => {
+      const shortLived = await startTestApp({ JWT_TTL: '90s' });
+
+      const { token } = await signIn(shortLived);
+
+      expect(lifetime(user.token)).toBe(4 * 60 * 60); // the default app of this file
+      expect(lifetime(token)).toBe(90);
+    });
+  });
+
   describe('PUT /api/uploads/user/:id (C10 route-level parser)', () => {
     let upload: ReturnType<typeof stubMediaClient>['upload'];
 

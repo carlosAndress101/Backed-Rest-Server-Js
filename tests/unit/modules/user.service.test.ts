@@ -92,6 +92,8 @@ function fakeUserModel(seed: Row[] = []) {
   return { rows, User: fake as unknown as Model<User> };
 }
 
+const COST = 10; // config.auth.bcryptCost in these tests
+
 describe('createUsersService', () => {
   describe('list', () => {
     test('returns one page of the active users and the active total', async () => {
@@ -102,7 +104,7 @@ describe('createUsersService', () => {
         row({ _id: '4' }),
       ]);
 
-      const page = await createUsersService({ User }).list({ limit: 2, offset: 1 });
+      const page = await createUsersService({ User, bcryptCost: COST }).list({ limit: 2, offset: 1 });
 
       expect(page.total).toBe(3);
       expect(page.items.map((item) => item._id)).toEqual(['3', '4']);
@@ -113,7 +115,7 @@ describe('createUsersService', () => {
     test('stores a bcrypt hash of the password, never the password', async () => {
       const { User, rows } = fakeUserModel();
 
-      await createUsersService({ User }).create({
+      await createUsersService({ User, bcryptCost: COST }).create({
         name: 'Grace',
         email: 'grace@example.com',
         password: PASSWORD,
@@ -122,6 +124,17 @@ describe('createUsersService', () => {
       expect(rows).toHaveLength(1);
       expect(rows[0]!.password).not.toBe(PASSWORD);
       expect(await bcrypt.compare(PASSWORD, rows[0]!.password)).toBe(true);
+    });
+
+    // ADR-035: the cost comes from config.auth.bcryptCost, never a constant (PERF-01).
+    test('hashes at the configured cost, on create and on update', async () => {
+      const { User, rows } = fakeUserModel([row({ _id: '1', name: 'Ada' })]);
+      const service = createUsersService({ User, bcryptCost: 11 });
+
+      await service.create({ name: 'Grace', email: 'grace@example.com', password: PASSWORD });
+      await service.update('1', { password: PASSWORD }, SELF);
+
+      expect(rows.map((stored) => stored.password.slice(0, 7))).toEqual(['$2b$11$', '$2b$11$']);
     });
 
     test('is always USER_ROLE, even if a role slips past the DTO (SEC-02)', async () => {
@@ -133,7 +146,7 @@ describe('createUsersService', () => {
         role: 'ADMIN_ROLE',
       } as CreateUserDto;
 
-      await createUsersService({ User }).create(dto);
+      await createUsersService({ User, bcryptCost: COST }).create(dto);
 
       expect(rows[0]).toMatchObject({ role: 'USER_ROLE' });
     });
@@ -142,7 +155,11 @@ describe('createUsersService', () => {
       const { User, rows } = fakeUserModel([row({ _id: '1', email: 'taken@example.com', state: false })]);
 
       await expect(
-        createUsersService({ User }).create({ name: 'C', email: 'taken@example.com', password: PASSWORD }),
+        createUsersService({ User, bcryptCost: COST }).create({
+          name: 'C',
+          email: 'taken@example.com',
+          password: PASSWORD,
+        }),
       ).rejects.toEqual(new ConflictError('Email already registered'));
       expect(rows).toHaveLength(1);
     });
@@ -152,7 +169,11 @@ describe('createUsersService', () => {
     test('anyone may change name and password; the password is stored hashed', async () => {
       const { User, rows } = fakeUserModel([row({ _id: '1', name: 'Ada' })]);
 
-      await createUsersService({ User }).update('1', { name: 'Ada L', password: PASSWORD }, SELF);
+      await createUsersService({ User, bcryptCost: COST }).update(
+        '1',
+        { name: 'Ada L', password: PASSWORD },
+        SELF,
+      );
 
       expect(rows[0]!.name).toBe('Ada L');
       expect(await bcrypt.compare(PASSWORD, rows[0]!.password)).toBe(true);
@@ -161,7 +182,11 @@ describe('createUsersService', () => {
     test('role and state from a non-admin are dropped, even an unknown role (C6)', async () => {
       const { User, rows } = fakeUserModel([row({ _id: '1' })]);
 
-      await createUsersService({ User }).update('1', { role: 'NOT_A_ROLE', state: false }, SELF);
+      await createUsersService({ User, bcryptCost: COST }).update(
+        '1',
+        { role: 'NOT_A_ROLE', state: false },
+        SELF,
+      );
 
       expect(rows[0]).toMatchObject({ role: 'USER_ROLE', state: true });
     });
@@ -169,7 +194,11 @@ describe('createUsersService', () => {
     test('an administrator sets role and state', async () => {
       const { User, rows } = fakeUserModel([row({ _id: '1' })]);
 
-      await createUsersService({ User }).update('1', { role: 'VENTAS_ROLE', state: false }, ADMIN);
+      await createUsersService({ User, bcryptCost: COST }).update(
+        '1',
+        { role: 'VENTAS_ROLE', state: false },
+        ADMIN,
+      );
 
       expect(rows[0]).toMatchObject({ role: 'VENTAS_ROLE', state: false });
     });
@@ -178,7 +207,11 @@ describe('createUsersService', () => {
       const { User, rows } = fakeUserModel([row({ _id: '1', name: 'Ada' })]);
 
       await expect(
-        createUsersService({ User }).update('1', { role: 'SUPER_ROLE', name: 'Changed' }, ADMIN),
+        createUsersService({ User, bcryptCost: COST }).update(
+          '1',
+          { role: 'SUPER_ROLE', name: 'Changed' },
+          ADMIN,
+        ),
       ).rejects.toEqual(
         new ValidationError([{ path: 'role', message: 'must be one of ADMIN_ROLE, USER_ROLE, VENTAS_ROLE' }]),
       );
@@ -189,7 +222,7 @@ describe('createUsersService', () => {
       const { User, rows } = fakeUserModel([row({ _id: '1', email: 'a@example.com', image: 'a.png' })]);
       const dto = { email: 'x@evil.example', google: true, image: 'x.png', _id: '2' } as UpdateUserDto;
 
-      await createUsersService({ User }).update('1', dto, ADMIN);
+      await createUsersService({ User, bcryptCost: COST }).update('1', dto, ADMIN);
 
       expect(rows[0]).toEqual(row({ _id: '1', email: 'a@example.com', image: 'a.png' }));
     });
@@ -197,7 +230,7 @@ describe('createUsersService', () => {
     test('an administrator reaches a soft-deleted user, so state can be turned back on', async () => {
       const { User, rows } = fakeUserModel([row({ _id: '1', state: false })]);
 
-      await createUsersService({ User }).update('1', { state: true }, ADMIN);
+      await createUsersService({ User, bcryptCost: COST }).update('1', { state: true }, ADMIN);
 
       expect(rows[0]!.state).toBe(true);
     });
@@ -208,9 +241,9 @@ describe('createUsersService', () => {
     ])('%s is a NotFoundError', async (_case, id, actor) => {
       const { User } = fakeUserModel([row({ _id: '2', state: false })]);
 
-      await expect(createUsersService({ User }).update(id, { name: 'X' }, actor)).rejects.toEqual(
-        new NotFoundError('User not found'),
-      );
+      await expect(
+        createUsersService({ User, bcryptCost: COST }).update(id, { name: 'X' }, actor),
+      ).rejects.toEqual(new NotFoundError('User not found'));
     });
   });
 
@@ -218,7 +251,7 @@ describe('createUsersService', () => {
     test('sets state to false and keeps the record', async () => {
       const { User, rows } = fakeUserModel([row({ _id: '1' })]);
 
-      await createUsersService({ User }).softDelete('1');
+      await createUsersService({ User, bcryptCost: COST }).softDelete('1');
 
       expect(rows).toEqual([row({ _id: '1', state: false })]);
     });
@@ -229,7 +262,7 @@ describe('createUsersService', () => {
     ])('a %s user is a NotFoundError', async (_case, id) => {
       const { User } = fakeUserModel([row({ _id: '2', state: false })]);
 
-      await expect(createUsersService({ User }).softDelete(id)).rejects.toEqual(
+      await expect(createUsersService({ User, bcryptCost: COST }).softDelete(id)).rejects.toEqual(
         new NotFoundError('User not found'),
       );
     });

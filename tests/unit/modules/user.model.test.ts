@@ -53,7 +53,8 @@ describe('UserModel', () => {
     expect(schema.path('email').options.unique).toBeUndefined();
     expect(schema.path('password').options).toMatchObject({
       type: String,
-      required: [true, 'The password is required'],
+      required: [expect.any(Function), 'The password is required'], // ADR-036: not of a Google-only account
+      select: false,
     });
     expect(schema.path('image').options).toMatchObject({
       type: String,
@@ -152,6 +153,25 @@ describe('UserModel', () => {
       () => undefined,
       (rejection: unknown) => rejection as mongoose.Error.ValidationError,
     );
+
+    expect(error?.errors.password?.message).toBe('The password is required');
+  });
+
+  // ADR-036 (SEC-12): a Google-only account has no password at all, and needs none; any other account must have one.
+  test('a Google-only account validates with no password, and stores none', async () => {
+    const doc = new UserModel({ name: 'Grace', email: 'grace@example.com', google: true });
+
+    await expect(doc.validate()).resolves.toBeUndefined();
+    expect(doc.toObject()).not.toHaveProperty('password');
+  });
+
+  test('an account that is not a Google one still requires a password', async () => {
+    const error = await new UserModel({ name: 'Ada', email: 'ada@example.com', google: false })
+      .validate()
+      .then(
+        () => undefined,
+        (rejection: unknown) => rejection as mongoose.Error.ValidationError,
+      );
 
     expect(error?.errors.password?.message).toBe('The password is required');
   });
