@@ -12,7 +12,7 @@ const esAdminRole = (req = request, res = response, next) => {
 
 
     if(role !== "ADMIN_ROLE"){
-        return res.status(400).json({
+        return res.status(403).json({
             msg:`${ name } is not an administrator - You cannot do this`
         })
     }
@@ -30,7 +30,7 @@ const hasRole = ( ...roles ) => {
         }
 
         if( !roles.includes( req.user.role)){
-            return res.status(401).json({
+            return res.status(403).json({
                 msg:`The service required one of these roles ${ roles }`
             })
         }
