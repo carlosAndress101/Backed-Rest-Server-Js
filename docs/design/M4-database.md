@@ -2,7 +2,9 @@
 
 > Milestone **M4 (Database Improvements)** · Design only — no code in this document is executed by the M4 design task.
 > Owner: CarlosH / SH1FT3R · Prepared by the DATABASE AGENT · 2026-09-23
-> Governing ADRs: **ADR-002** (TypeScript strict), **ADR-004** (no repository layer), **ADR-005** (DI factories + one composition root), **ADR-006** (zod DTOs), **ADR-007** (roles are a code enum; `Role` collection removed), **ADR-008** (Cloudinary-only media), **ADR-013/016** (tests are a gate; strangler migration), **ADR-014** (Node 24), **ADR-015** (SemVer versioning, `uid` alias until 3.0.0).
+> Governing ADRs: **ADR-002** (TypeScript strict), **ADR-004** (no repository layer), **ADR-005** (DI factories + one composition root), **ADR-006** (zod DTOs), **ADR-007** (roles are a code enum; `Role` collection removed), **ADR-008** (Cloudinary-only media), **ADR-013/016** (tests are a gate; strangler migration), **ADR-014** (Node 24), **ADR-015** (SemVer versioning), **ADR-024** (release mapping: the `uid` alias lives **until 4.0.0**), **ADR-025** (supply-chain age gate: no new dependency), **ADR-027** (registry seam: the TS model is the sole guarded registrant).
+>
+> **Reconciled with M3 as built (2026-09-25, ARCHITECT, D4R).** This document was written on 2026-09-23, before M3 existed. The D4 body (§0–§8, Appendices A–B) is kept as the accepted record; **§9–§14 below are the as-built reconciliation, the corrections, the 3.0.0 contract impact, the task breakdown, the risks and the open questions, and they override the D4 text they name** (as M3's §10 overrides its own body). Start from §9.
 > Debt closed or advanced: **DB-01, DB-02, PERF-02, PERF-03** (M4) · **SEC-14** is an M2 prerequisite restated here · **SEC-04** image shape and **C1** duplicate-key → 409 are respected.
 
 ---
@@ -792,3 +794,150 @@ Scripts to add (M4 implementation): `"migrate": "tsx src/database/cli.ts migrate
 4. **`tokenVersion` stays hidden** from JSON.
 5. **The seed runs only via the explicit `pnpm seed` command**, never on boot.
 6. **Migration lock** for multi-instance deploys is deferred to M9; M4 assumes a single app instance during migration.
+
+---
+
+# Part II — Reconciliation with M3 as built (D4R, ARCHITECT, 2026-09-25)
+
+> Everything below is written against **`next` @ `98ea113`** (M3 merged, 746 tests, TypeScript only, the legacy seam gone). Where a statement here names a D4 section, it **overrides** it. Evidence was measured in a scratchpad clone (mongod **8.2.6** via `mongodb-memory-server@11.3.0`); the prototype results are cited inline as **[P#]**.
+
+## 9. As-built delta after M3
+
+M3 built the models, the plugin and the harness that D4 assumed it would only *describe*. The table below is every D4 statement M3 made stale, with the fix. Files are the real paths.
+
+| # | D4 said | As built in M3 (evidence) | Fix for M4 |
+|---|---|---|---|
+| D-1 | Header: "`uid` alias until **3.0.0** (ADR-015)". | ADR-024 maps `uid` removal to **4.0.0**; `to-json.plugin.ts:9` and D4 §4.3 already say 4.0.0. | **Fixed inline** in the header. `uid` (users only) stays until 4.0.0. |
+| D-2 | §4.1 presents the `toJSON` plugin as an M4 deliverable ("Plugin — `src/core/database/to-json.plugin.ts`"). | The plugin **already exists** (`src/core/database/to-json.plugin.ts`, authored in M3/D3), signature `toJsonPlugin(schema, { hidden?, uidAlias? })`, already `versionKey:false` + `virtuals:false`, already emits `id`, drops `_id`/`__v`/hidden, and adds `uid` when asked. | **M4 does not create or rewrite the plugin.** M4's only plugin-related change is adding `'tokenVersion'` to the **user** model's `hidden` list once that field exists: `toJsonPlugin(userSchema, { hidden: ['password', 'tokenVersion'], uidAlias: true })`. Do not touch the plugin body. |
+| D-3 | §2.1–§2.3 model snippets register with `export const UserModel = model('User', userSchema)`. | M3 registers behind the **ADR-027 guard**: `export const UserModel: Model<User> = (mongoose.models.User as Model<User> \| undefined) ?? mongoose.model<User>('User', userSchema)` (`user.model.ts:29`, and the same for Category/Product). The guard stays after T3.8b (Vitest/tsx load a file twice). | **M4 changes only the schema body, the `schema.index(...)` calls and the plugin options. It keeps the guarded sole-registrant block verbatim.** The `Model<T>` return-type annotation stays. |
+| D-4 | §2.0: "Field-level `unique`/`index`: **None**." | M3 ships field-level `unique: true` on `user.email` (`user.model.ts:10`), `category.name` and `product.name`. With `autoIndex` on (see D-10) these already build `email_1`/`name_1` plain unique indexes in dev/test. | Correct end state; M4 **removes the field-level `unique: true`** and declares the indexes explicitly (D4 §2.0/§3.1). The change of `name_1`→`name_active_unique` and the email rebuild are what migrations **M002**/**M001** do on existing data. |
+| D-5 | §2.1 user schema has no `cast` message. | M3 sets `password: { …, cast: 'The password must be a string' }` for LOG-02/AM-M3-2 (`user.model.ts:13-17`); `tests/unit/modules/user.model.test.ts` and an AM-M3-2 test assert a rejected password never leaks into the error. | **M4 preserves the `cast` message** and the LOG-02 guarantee. `password` gains `select: false` on top of it (D-9). |
+| D-6 | §2.x uses `required: true`. | M3 uses custom messages: `required: [true, 'The name is required']`, `'The email is required'`, `'The password is required'`. | **M4 keeps the custom `required` messages** (they are part of the validation surface the model tests assert). |
+| D-7 | §2.0: "Leave Mongoose's `__v` in the database, remove it in `toJSON`." | Inconsistent in M3: `category`/`product` set `{ versionKey: false }` (no `__v` stored); `user` has no options object, so `__v` **is** stored (`user.model.ts:8`, `category.model.ts:12`, `product.model.ts:18`). `user.model.test.ts` asserts `__v` in the user paths. | **Decision (§10.6): standardize on `versionKey: false` for all three** (the schema options become `{ versionKey: false, timestamps: true }`). No consumer uses OCC; the plugin drops `__v` from JSON regardless, so the API is identical. This makes the three schemas uniform. See the Question if the Orchestrator prefers D4's keep-`__v`. |
+| D-8 | §2.4 / §1: "delete the `Role` schema, the `roles` collection and the validator" as M4 work; "any remaining reference to the `roles` collection is a bug by the time M4 starts." | **Already done in M3** (T3.8b): `models/role.js` is gone, `ROLES` in `src/core/security/roles.ts` is the source of truth (ADR-007), and there is no `roles` code reference. | **M4's only Role work is the DATA migration M004** that drops the leftover **2.x `roles` collection** in *existing* databases. The code-deletion half of §2.4 is a no-op. |
+| D-9 | §2.1: `password: { select: false }`, with the note "Any service that authenticates must `.select('+password')`." | M3's `auth.service.login` reads `user.password` from a plain `User.findOne({ email })` with **no projection** (`auth.service.ts`), and `SignInUserModel.findOne` returns a `SignInUser` **including** `password`. The seed (D4 §6) also reads nothing that needs password, but any auth path does. | **`select: false` is a cross-module change, not a model-only one.** M4 must, in the same wave: add `.select('+password')` (or `+password`) to the auth login lookup and to the `SignInUserModel` projection, and prove login still works. This is owned by the SECURITY task (T4.3), not the mechanical schema task. See the Question about deferring `select:false` to M5. |
+| D-10 | §3.1: "Production must run with `autoIndex: false` (M2/M9)." | **False as built.** `src/database/connection.ts` never sets `autoIndex`; it is Mongoose's default (**true**) in every environment (`grep autoIndex src` → none). | **M4 corrects this** (§10.1): `connectDatabase(uri, { autoIndex })` with `autoIndex: config.env !== 'production'`. Dev/test build indexes from the schema; production builds them through the migrations, so a deploy never triggers an unbudgeted build. |
+| D-11 | §8 harness: `tests/helpers/db.ts`, one memory server **per worker**, `tests/integration/models/*.spec.ts`, `*.spec.ts` naming, `createApp()`-only. | M3 harness: `tests/helpers/app.ts` (`startTestApp`/`stopTestApp`/`clearDatabase`) + `tests/helpers/factories.ts`; **one mongod per run** via `tests/setup/global-setup.ts` (`project.provide('mongoUri', …)`), a **unique DB per file** (`app.ts:15`); files are `*.test.ts`; forks pool, `isolate: true`, `restoreMocks: true`. Model tests live in `tests/unit/modules/*.model.test.ts`. | **M4 test files are `*.test.ts`** and use the M3 harness. Extend `tests/unit/modules/{user,category,product}.model.test.ts`; add `tests/integration/database/{indexes,migrations,seed}.test.ts` and `tests/integration/modules/*.model.test.ts` for the DB-backed model behaviour (they connect through the harness, not `createApp` alone). No new `db.ts`. |
+| D-12 | §8 test #6 / §3.2: search returns `{ results: [] }`; the query "returns" raw `find`. | M3 search returns the **envelope**: the controller wraps the service result as `{ data: [...] }` (search), and **list** endpoints use `pageEnvelope` `{ data, meta: { total, limit, offset } }`. Collections are the singular allowlist `['user','category','product']` (`search.service.ts:20`), escaped, `.limit(20)`, `state:true`. | **M4 keeps the M3 shape.** Test #6 asserts `{ data: [] }` (not `{ results: [] }`). The §3.2 search-index decision (no index) is sound and unchanged; the query already lives in `search.service.ts` — M4 adds no index and no `.collation()` there. |
+| D-13 | Appendix A: `"migrate": "tsx src/database/cli.ts migrate"`, `"seed": "tsx …"`. | `tsx` is a **devDependency** (`package.json:57`); production runs compiled TS: `start` is `node --enable-source-maps --env-file-if-exists=.env dist/server.js`. `tsconfig.build.json` compiles `src`→`dist` (`rootDir: src`), so `src/database/cli.ts` → `dist/database/cli.js`. | **Production migrate/seed run compiled** (§10.2): `"migrate": "node --enable-source-maps --env-file-if-exists=.env dist/database/cli.js"`, `"seed": "… dist/database/cli.js seed"`. Optional dev conveniences may use `tsx` (`"migrate:dev": "tsx …"`). **No new dependency** (ADR-025 → nothing to pin). |
+| D-14 | §6 seed reads flat config: `config.SEED_ADMIN_EMAIL`, `config.SEED_ADMIN_PASSWORD`. | M3 config is **nested and frozen** (`src/config/index.ts`): `config.auth.jwtSecret`, `config.media.cloudinaryUrl`, `config.mongoUri`, `config.trustProxy`, `config.cors.origins`. `envSchema` (`src/config/env.ts`) has no seed vars. | **M4 adds a nested block** `config.seed: { adminEmail?: string; adminPassword?: string }` and the env vars `SEED_ADMIN_EMAIL` / `SEED_ADMIN_PASSWORD` (optional strings) to `envSchema` and `.example.env`. The seed reads `config.seed.adminEmail`. |
+| D-15 | §5.2 runner imports `type { Logger } from 'pino'`. | `src/core/logger.ts` re-exports pino's `Logger` (`export type { Logger }`) and owns `REDACT_PATHS`. | Compatible; **prefer importing `Logger` from `src/core/logger`** for one source of truth. The CLI builds a logger with `createLogger(config)` and obtains the native `Db` from `mongoose.connection.db` after `connectDatabase`. |
+| D-16 | §8 "The ported M1 security suite (formerly Jest `e2e/`) remains the regression gate … `createApp()` and real MongoDB." | The M1 suite is fully ported to Vitest under `tests/integration/security/*.test.ts` (T2.6/M3); there is no Jest/`e2e/`. | Cosmetic; M4 test-plan wording uses the current paths. The regression gate is the whole `pnpm test` (746 on `next`). |
+
+## 10. Corrections (design errors found, with evidence)
+
+Appendix B's six resolutions are **kept**; I found no defect in them. The corrections below are new, from measuring M3 as built.
+
+### 10.1 `autoIndex` is not off in production (D-10) — corrected
+`connection.ts` must gate index auto-building: production relies on the migrations, dev/test on the schema. Concretely:
+```ts
+export async function connectDatabase(uri: string, options: { autoIndex?: boolean } = {}): Promise<typeof mongoose> {
+  return mongoose.connect(uri, { serverSelectionTimeoutMS: 10_000, autoIndex: options.autoIndex ?? true });
+}
+```
+`src/server.ts` passes `{ autoIndex: config.env !== 'production' }`; `tests/helpers/app.ts` keeps the default (`true`) so a fresh in-memory DB gets the schema indexes. **Consequence:** a brand-new production database has **no** collection indexes until `pnpm migrate up` runs — this is added to the deploy runbook (§7.3) and the rollout risk (§13).
+
+### 10.2 Runtime for migrate/seed (D-13) — corrected
+Production commands run `node dist/database/cli.js` (compiled), never `tsx`. The CLI is `dist/database/cli.js` after `pnpm build`. `--env-file-if-exists=.env` matches `start`. This is the "prefer what the repo already uses" instruction and keeps `tsx` a dev-only tool. **No package is added** (ADR-025).
+
+### 10.3 Duplicate **message** consistency under normalization — corrected
+The M3 services pre-check uniqueness with an **exact-match, case-sensitive** query and rely on the unique index as the race backstop:
+- users: `if (await User.exists({ email: dto.email })) throw new ConflictError('Email already registered')` (`user.service.ts:40`);
+- categories/products: `exists({ name, state: true })` → `ConflictError('X already exists')`.
+
+Once M4 normalizes (`email` `lowercase`, `name` `uppercase`) and adds the **collated** partial-unique name index, a **case-variant** duplicate slips past the pre-check and is caught by the DB as `11000`, which `toAppError` maps to `ConflictError` with the **generic** message `'Resource already exists'` (`to-app-error.ts`: `code === 11000 → ConflictError(undefined)`), not the specific one. Both are 409, so C7/C1 hold — but the message differs.
+
+**Fix (owned by T4.3):** make the pre-check case-insensitive so the specific message wins in the common case, with the index as the true race backstop:
+- **email:** normalize in the DTO — `email: z.email().trim().toLowerCase()` (a zod transform) in **both** `createUserBody` (users) and `loginBody` (auth) — so the service's `exists({ email })` and the login `findOne({ email })` are consistent, and the stored value matches. Schema `lowercase: true` stays as defense in depth.
+- **name:** the service passes the term through the same normalization the schema applies (`name.trim().toUpperCase()`) before `exists({ name, state: true })`, **and** the pre-check adds `.collation({ locale: 'en', strength: 2 })` so it matches the index (D4 §3.1 note). Measured: without the collation the pre-check misses case variants; the index still refuses them **[P2]**.
+
+### 10.4 `select: false` breaks auth unless coordinated (D-9) — corrected
+`password: { select: false }` means `User.findOne({ email })` no longer returns `password`, so `auth.service.login`'s `bcrypt.compareSync(password, user.password)` would compare against `undefined` and **every login would fail**. M4 must, in T4.3: change the auth lookup to `.select('+password')` (or add `+password` to the `SignInUserModel` projection type), keep the F1 constant-time guarantee (the dummy-hash path is unaffected), and add a test that a correct password still returns a token. The seed's create path is unaffected (it sets `password`); its `findOne({ email }).lean()` existence checks read no password. **See the Question** on whether to defer `select:false` to M5 (auth is reworked there anyway).
+
+### 10.5 Email normalization changes the **login** contract — recorded, not a defect
+Because stored emails become lowercase (M001) and both DTOs lowercase the input (§10.3), **login and sign-up become case-insensitive on email** (`Foo@X.com` logs in the `foo@x.com` account). M3's auth review explicitly noted "an uppercase email → 401 … M4 normalises". This is a deliberate 3.0.0 improvement; it is recorded in §11 (contract impact) and the CHANGELOG, and re-proved by a security test (T4.3).
+
+### 10.6 `versionKey` standardized (D-7) — decision
+All three schemas take `{ versionKey: false, timestamps: true }`. This removes the M3 inconsistency (user stored `__v`, the others did not) at no API cost. `tests/unit/modules/user.model.test.ts` currently asserts `__v` in the user paths and the absence of timestamps — T4.2 updates it to the new shape (mapped drift, §11).
+
+### 10.7 Confirmed sound in D4 (no change needed), verified in the prototype
+- Partial-unique + collation + unique **compose** and build on mongod 8.2.6; a soft-deleted name is reusable, an active case-variant collides **[P1, P2, P3]**.
+- Case-variant email → `11000`, stored normalized **[P4]**.
+- `$toDate` on `_id` backfills `createdAt` exactly to `_id.getTimestamp()` **[P5]** (M003).
+- `sanitizeFilter` (global, on) does **not** reject the service-built `$or` substring query — it returns the expected rows **[P6]** (SEC-14 holds).
+- A unique index build over **pre-existing active duplicates** is refused with `11000` **[P7]** — which is exactly why M001/M002 abort on a data pre-check before `createIndex` (§13).
+
+## 11. 3.0.0 contract impact of M4
+
+M4 rides the same 3.0.0 release as M3 (ADR-024/026); it does not cut its own version. Contract deltas **added by M4** (product `state` and `id`/no-`_id` were **M3**, not M4 — this corrects D4 §4.4 items 1–2):
+
+| Change | Endpoints | Note |
+|---|---|---|
+| `createdAt` / `updatedAt` appear on every resource | all list/get/create/update responses | additive; `Date` (ISO string in JSON). |
+| `email` returned **lowercased + trimmed** | user create/get/list, auth login user | DB-02; existing mixed-case emails are normalized by M001. |
+| Login & sign-up become **case-insensitive on email** | `POST /api/auth/login`, `POST /api/auth/google`, `POST /api/user` | §10.5; a deliberate improvement. |
+| Duplicate email is now **case-insensitive → 409** | `POST /api/user` | M3 could store `Foo@x`/`foo@x` twice; M4's unique index makes them collide (C7). |
+| `price` rejects negatives (`min: 0`) → **422** on the DTO / `ValidationError` at the schema | `POST/PUT /api/product` | DB-02; the DTO already bounds it (M3), the schema is the backstop. |
+| `name`/`email`/`description`/`image` gain length caps and the `image` schema validator | user/category/product writes | oversize or a non-{filename,Cloudinary-URL} `image` → 422/`ValidationError`. |
+| `tokenVersion` added to the user document, **hidden** from JSON | — | M5 uses it; invisible in 3.0.0. |
+
+**API_PROGRESS ledger rows (M3 format), append under "Planned contract changes":**
+- `all` — responses now include `createdAt`/`updatedAt` (M4, DB-02).
+- `user` — `email` is stored and returned lowercased/trimmed; duplicate email is case-insensitive → 409 (M4, DB-02).
+- `auth` — login/Google match email case-insensitively (M4).
+- `product` — `price` must be ≥ 0 (422) (M4, DB-02).
+
+**CHANGELOG (3.0.0, `next`) rows — under Changed:** timestamps on every resource; email normalized and matched case-insensitively; product `price ≥ 0`. Under Added: `tokenVersion` (hidden, M5 prep); first-admin seed (`pnpm seed`); DB migration runner (`pnpm migrate`). Under Removed (data): the 2.x `roles` collection (M004). (`_id`→`id`, product `state`, envelope, status codes were **M3** and are already listed there.)
+
+**C1–C11 / SEC suite — nothing breaks (verified against as-built):**
+- **C1** duplicate-key `11000` → 409: preserved (`to-app-error.ts`); the new partial-unique indexes only add *more* 11000 sources, all mapped to 409 **[P2, P4]**.
+- **C7 / duplicate → 409:** the case-insensitive email/name duplicate → 409 (message via §10.3); soft-deleted name is reusable (partial index) **[P1, P3]**.
+- **C8 / search:** substring semantics, escaping, 20-cap and `state:true` unchanged; `sanitizeFilter`+`$or` still returns rows **[P6]**; envelope shape kept (D-12).
+- **SEC-14:** `strictQuery`/`sanitizeFilter` stay global; M4 adds no raw-object filter.
+- **F1 (auth timing):** the `select('+password')` change keeps one bcrypt compare per path and the dummy-hash branch (§10.4); a T4.3 timing test re-proves it.
+- **LOG-02 / redaction:** `password` stays `cast`-guarded and redacted; `SEED_ADMIN_PASSWORD` is added to the seed's no-log rule and, if ever attached to a log object, to `REDACT_PATHS` (T4.3).
+
+## 12. Task breakdown (parallel wave, M3 format)
+
+Integration branch **`m4/database`**, cut from `next` @ `98ea113`. Shared contracts continue the P-series from M3 (**P16+**). Each task branches from `m4/database` after the merge it depends on; the Orchestrator merges each task and resolves any `src/app.ts`/`src/config`/`connection.ts` one-line contention.
+
+**Shared contracts (P16–P20):**
+- **P16** — Models keep the ADR-027 guarded sole-registrant block and the `Model<T>` annotation; only the schema body, `schema.index(...)` and plugin options change (D-3).
+- **P17** — Index names and options are **exactly** §3.1 (the single source of truth); no field-level `unique`/`index`; every index traces to a real query (ARCHITECTURE §2.1).
+- **P18** — The migration runner is idempotent: a migration that throws records nothing and retries; every `up` starts with an **abort-on-data-check**; every `down` states its reversibility (§5.3).
+- **P19** — Production migrate/seed run compiled (`node dist/database/cli.js`); no new dependency (ADR-025); `autoIndex` off in production (§10.1).
+- **P20** — Secrets (`password`, `SEED_ADMIN_PASSWORD`) are never logged; `password` is `select:false` and every authenticating read uses `+password` (§10.4).
+
+| Task | Agent | Files allowed | Forbidden | Required | Acceptance | Commits |
+|---|---|---|---|---|---|---|
+| **T4.1 core DB plumbing** | BACKEND | `src/database/migrate.ts` (new), `src/database/cli.ts` (new), `src/database/connection.ts`, `src/config/env.ts`, `src/config/index.ts`, `src/server.ts` (pass `autoIndex`), `.example.env`, `package.json` (scripts only), `tests/unit/database/migrate.test.ts` (new) | any `*.model.ts`, any service, the migration/seed **files** (T4.4) | The ~50-line runner (§5.2) using `mongoose.connection.db` and `createLogger`; the CLI `migrate up\|down\|status [--dry-run] \| seed`; `connectDatabase(uri,{autoIndex})` with prod=false (§10.1); nested `config.seed` + `SEED_ADMIN_*` env (§10.2/D-14); compiled scripts (D-13). | typecheck/lint/format/build green; runner unit tests (apply-once, dry-run no-op, retry-after-throw, ledger); `pnpm build` emits `dist/database/cli.js`; cold frozen install unchanged (ADR-025); full suite still green. | `feat(db): migration runner + CLI (in-repo, no dep)`; `feat(config): seed env + autoIndex off in production` |
+| **T4.2 schemas + indexes (GATE)** | DATABASE AGENT | `src/modules/{users,categories,products}/*.model.ts`, `src/core/database/to-json.plugin.ts` (**only** add `'tokenVersion'` to the user hidden list — no body change), `tests/unit/modules/{user,category,product}.model.test.ts`, `tests/integration/modules/{user,category,product}.model.test.ts` (new) | services, controllers, routes, `app.ts`, migrations, the plugin **body** | Apply §2.1–§2.3 to each schema body (timestamps, caps, `enum: ROLES`, `min:0`, `lowercase/uppercase/trim`, `image` validator, `tokenVersion`), **remove field-level `unique`**, add explicit `schema.index(...)` per §3.1, `{ versionKey:false, timestamps:true }` (§10.6); **keep** the ADR-027 guard (P16), the `cast` message (D-5) and `required` messages (D-6); update the model unit tests to the new shape (mapped drift). | `Model.init()`/`syncIndexes()` then `getIndexes()` equals §3.1 exactly; active case-variant dup → 11000, soft-delete reuse ok, email case dup → 11000 (model integration tests); toJSON hides `password`+`tokenVersion`, exposes `id`/`uid` (user) and `state` (all); no `OverwriteModelError`; full suite green; layer lint clean. | `feat(db): timestamps, enum, caps, image guard on schemas`; `feat(db): explicit index catalogue (§3.1); drop field-level unique` |
+| **T4.3 normalization, uniqueness & secret safety** | SECURITY & QA | `src/modules/users/user.schemas.ts` (email transform), `src/modules/auth/auth.schemas.ts` (email transform), `src/modules/auth/auth.service.ts` (`+password`), `src/modules/{categories,products}/*.service.ts` (collated/normalized dup pre-check), `src/modules/users/user.service.ts` (normalized email pre-check), `src/database/seed.ts` **redaction only if present**, `src/core/logger.ts` (add `SEED_ADMIN_PASSWORD` redaction path), `tests/integration/security/*.test.ts` (email-dup, login-ci, password-not-leaked, seed-secret) | model schema bodies (T4.2), the runner (T4.1), migration files (T4.4) | §10.3 (case-insensitive pre-checks with the collation/normalization), §10.4 (`select:'+password'` in auth; login still works; F1 timing preserved), §10.5 (login case-insensitive, recorded + tested), P20 (secret never logged). | case-variant email dup → 409 with `'Email already registered'`; login with a different-case email succeeds; a wrong password still 401 with one bcrypt compare (timing flat); `password` never in any response or log; `SEED_ADMIN_PASSWORD` never logged; full suite green. | `fix(users,auth): normalize email; case-insensitive uniqueness (DB-02)`; `fix(auth): read password with +password under select:false`; `test(security): email normalization, uniqueness, secret redaction` |
+| **T4.4 migrations + seed** | BACKEND | `src/database/migrations/M001..M004*.ts` (new), `src/database/seed.ts` (new), `src/database/cli.ts` (wire the list + seed), `tests/integration/database/{migrations,seed,indexes}.test.ts` (new), `docs/*` runbook only if asked | model schemas (T4.2), services (T4.3) | §5.3 M001–M004 (each `up` aborts on its data check; each `down` per §5.3/§7.4), §6 seed (create-only, idempotent, refuses weak/existing-admin, nested config), §7 checklist reflected in the runbook and the index test. | migrations apply once + record, second run no-op, `--dry-run` writes nothing; M001 aborts on case-dup emails, M002 on dup active names, M004 on unknown role and drops `roles`; M003 backfill == `_id.getTimestamp()` **[P5]**; `down` reverses per §7.4; seed tests per D4 §8 #8; `getIndexes()` == §3.1 after a fresh `migrate up`; full suite green. | `feat(db): M001–M004 migrations (up/down, abort-on-check)`; `feat(db): first-admin seed (create-only, idempotent)` |
+| **T4.5 final review** | ARCHITECT | — (read-only) | — | Adversarial review vs this design + P16–P20; C1–C11/SEC re-attempt; index catalogue vs §3.1; migration up/down + abort paths; seed idempotency + secret safety; cold frozen install; contract-impact ledger. | ACCEPT/RETURN per task; findings + reproduction; docs-for-close list. | — |
+
+**Dependency sequence:** `T4.1` → **`T4.2` (GATE — reviewed before T4.3/T4.4 start, as T3.2 was)** → { `T4.3`, `T4.4` } in parallel → `T4.5`. T4.3 needs T4.2's normalized schema; T4.4 needs T4.1's runner and T4.2's final index defs. The Orchestrator applies the one-line `server.ts`/`config`/`connection.ts` edits at merge.
+
+**Revert units.** Each commit above is an independent revert unit. T4.1/T4.2/T4.3 are code reverts (schema/index/service). T4.4's migrations are **data** revert units via `down` (run `pnpm migrate down` before reverting the code that defines them; §13). Reverting the whole M4 merge on `next` (ADR-026) is the milestone-level rollback and leaves `master`/2.x untouched.
+
+## 13. Risks and rollback (per task and for data)
+
+| Risk | Task | Likelihood | Mitigation / rollback |
+|---|---|---|---|
+| **Index build fails on existing active duplicates** (a partial-unique `name` or the `email` index) — refused with `11000` **[P7]**. | T4.4 (M001/M002) | Medium on real 2.x data | Each `up` runs the §7.2 abort-on-data-check **before** any `createIndex`, printing the offending ids; fix the data, re-run. The migration records nothing on abort (P18), so retry is safe. |
+| **`select:false` breaks every login** if the auth read is not updated. | T4.3 | High if missed | §10.4: `+password` in the auth lookup + a login test in the same task; T4.2 (schema) and T4.3 (auth) both land before T4.5. Question: defer `select:false` to M5. |
+| **Fresh production DB has no indexes** until `migrate up` runs (autoIndex off, §10.1). | T4.1 | Medium | Runbook: `pnpm build && pnpm migrate up` is part of the deploy; the `IXSCAN` verification (§7.3) gates "done". A missing index degrades to a COLLSCAN (slow), not incorrect. |
+| **Email normalization is lossy** (casing cannot be restored by `down`). | T4.4 (M001) | — | M001.down rebuilds the index but warns casing is not restored; the only exact revert is the `mongodump` archive (§7.1/§7.4). Owner approves the window (§7.1). |
+| **M002.down** recreates the legacy all-states `name_1` unique index, which **fails if soft-deleted duplicate names now exist** (allowed by the partial index). | T4.4 (M002) | Medium after use | `down` aborts with the offending ids; resolve or restore from backup. Documented in §5.3/§7.4. |
+| **M004 drops `roles`** (destructive). | T4.4 (M004) | Low | Runs last, after the §7.3 code-reference gate; `down` recreates the three constant docs; no app data is in `roles`. |
+| **Duplicate 409 message** is generic on the case-variant race path. | T4.3 | Low | §10.3 makes the pre-check case-insensitive so the specific message wins; the generic 409 only appears on a true concurrent race, which is still a correct 409 (C7). |
+| **Contract drift** from timestamps/normalization breaking existing tests. | T4.2/T4.3 | Expected | Mapped in §11; the model unit tests are updated in T4.2, the auth/users tests in T4.3; T4.5 confirms no C1–C11/SEC assertion is dropped (the M3 method). |
+| **New dependency slips in** (e.g. `migrate-mongo`, or `tsx` promoted to prod). | all | Low | P19 + ADR-025: the runner is in-repo, migrate/seed run `node dist/...`; T4.5 checks `git diff -- package.json pnpm-lock.yaml` is empty and a cold frozen install is green. |
+
+**Emergency rollback (data):** stop the app, `mongorestore --drop` the pre-M4 archive, redeploy the previous image, investigate offline (§7.4). For a code-only problem after a clean migration, revert the M4 merge on `next`; the data changes (normalized email, timestamps, indexes) are forward-compatible with M3 code (M3 ignores the extra fields), so a code revert alone does not require a data down-migration unless the indexes must go too.
+
+## 14. Questions for the Orchestrator
+
+1. **`select: false` on `password` now, or defer to M5?** It is defense-in-depth (the plugin already hides `password`), but it forces an auth-service change this milestone (§10.4). M5 reworks auth (Bearer, async bcrypt) and would absorb it naturally. Recommendation: **keep it in M4** (it closes a real `.lean()`/projection leak class now) with the T4.3 coordination; defer only if M4 must not touch `src/modules/auth`.
+2. **`versionKey: false` on all three schemas (§10.6)**, standardizing away the M3 inconsistency, or keep D4's "leave `__v` in the DB"? Recommendation: `versionKey: false` (uniform, no API impact); no code uses OCC.
+3. **Login case-insensitivity (§10.5)** is a deliberate 3.0.0 improvement folded into M4. Confirm it should ship in 3.0.0 rather than be held.
