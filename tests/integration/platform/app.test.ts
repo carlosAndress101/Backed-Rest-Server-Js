@@ -231,7 +231,7 @@ describe('createApp', () => {
     });
   });
 
-  describe('the legacy mount', () => {
+  describe('the 2.x surface: the demo page, removed routes and request bodies', () => {
     test('GET /hello is removed: 404 (CQ-02, §6 #1)', async () => {
       const res = await request(server).get('/hello');
 

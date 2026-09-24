@@ -6,9 +6,9 @@ import request from 'supertest';
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'vitest';
 
 import { CategoryModel } from '../../../src/modules/categories';
+import type { UserDocument } from '../../../src/modules/users';
 import { clearDatabase, startTestApp, stopTestApp } from '../../helpers/app';
 import { authHeader, createAdmin, createCategory, createUser, tokenFor } from '../../helpers/factories';
-import type { LegacyDoc } from '../../helpers/legacy';
 
 const MISSING_ID = new mongoose.Types.ObjectId().toHexString();
 const BAD_ID = 'not-an-id';
@@ -31,9 +31,9 @@ const invalidId = {
 
 describe('categories module (§6 #9–#13)', () => {
   let app: Server;
-  let admin: LegacyDoc;
+  let admin: UserDocument;
   let adminToken: string;
-  let user: LegacyDoc;
+  let user: UserDocument;
   let userToken: string;
 
   beforeAll(async () => {

@@ -3,12 +3,10 @@ import mongoose from 'mongoose';
 import { describe, expect, test, vi } from 'vitest';
 
 import { CategoryModel } from '../../../src/modules/categories';
-import { legacyModels } from '../../helpers/legacy';
 
 describe('CategoryModel', () => {
-  test('is the one registered Category, and legacy code reads that same model (ADR-027)', () => {
+  test('is the one registered Category (ADR-027)', () => {
     expect(mongoose.model('Category')).toBe(CategoryModel);
-    expect(legacyModels().Category).toBe(CategoryModel); // models/index.js → the models/category.js re-export
   });
 
   test('a second import of the model file reuses the registration instead of throwing OverwriteModelError', async () => {

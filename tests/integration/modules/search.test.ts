@@ -4,6 +4,7 @@ import type { Server } from 'node:http';
 import request from 'supertest';
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'vitest';
 
+import type { UserDocument } from '../../../src/modules/users';
 import { clearDatabase, startTestApp, stopTestApp } from '../../helpers/app';
 import {
   authHeader,
@@ -13,7 +14,6 @@ import {
   createUser,
   tokenFor,
 } from '../../helpers/factories';
-import type { LegacyDoc } from '../../helpers/legacy';
 
 const PERMITTED = 'user,category,product';
 
@@ -24,9 +24,9 @@ const get = (app: Server, path: string, token?: string) => {
 
 describe('search module (§6 #19)', () => {
   let app: Server;
-  let admin: LegacyDoc;
+  let admin: UserDocument;
   let adminToken: string;
-  let user: LegacyDoc;
+  let user: UserDocument;
   let userToken: string;
 
   beforeAll(async () => {

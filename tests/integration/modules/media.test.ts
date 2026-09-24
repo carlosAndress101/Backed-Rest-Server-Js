@@ -7,13 +7,12 @@ import mongoose from 'mongoose';
 import request, { type Test } from 'supertest';
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'vitest';
 
+import { ProductModel as Product } from '../../../src/modules/products';
+import { UserModel as User, type UserDocument } from '../../../src/modules/users';
 import { clearDatabase, startTestApp, stopTestApp } from '../../helpers/app';
 import { expectStatus } from '../../helpers/assert';
 import { authHeader, createAdmin, createProduct, createUser, tokenFor } from '../../helpers/factories';
-import { legacyModels, type LegacyDoc } from '../../helpers/legacy';
 import { listTempFiles, newTempFiles, stubMediaClient, waitForNoTempLeak } from '../../helpers/uploads';
-
-const { User, Product } = legacyModels();
 
 // The test env's CLOUDINARY_URL is cloudinary://key:secret@demo, so the app's own cloud is "demo".
 const NEW_URL = 'https://res.cloudinary.com/demo/image/upload/v1700000000/new-image.png';
@@ -40,7 +39,7 @@ const invalidParam = (param: string) =>
 describe('media module (§6 #20–#22)', () => {
   let app: Server;
   let upload: ReturnType<typeof stubMediaClient>['upload'];
-  let owner: LegacyDoc;
+  let owner: UserDocument;
   let ownerToken: string;
   let adminToken: string;
 
@@ -83,7 +82,7 @@ describe('media module (§6 #20–#22)', () => {
       expectStatus(res, 200);
       expect(res.body.data).toMatchObject({ name: owner.name, email: owner.email, image: NEW_URL });
       expect(res.body.data).not.toHaveProperty('password');
-      expect((await User.findById(owner.id)).image).toBe(NEW_URL);
+      expect((await User.findById(owner.id))!.image).toBe(NEW_URL);
       expect(upload).toHaveBeenCalledTimes(1);
       expect(upload).toHaveBeenCalledWith(expect.stringContaining(path.join(os.tmpdir(), 'upload-')));
     });
@@ -106,7 +105,7 @@ describe('media module (§6 #20–#22)', () => {
 
       expectStatus(res, 200);
       expect(res.body.data).toMatchObject({ name: product.name, image: NEW_URL });
-      expect((await Product.findById(product.id)).image).toBe(NEW_URL);
+      expect((await Product.findById(product.id))!.image).toBe(NEW_URL);
     });
 
     test.each([
@@ -139,7 +138,7 @@ describe('media module (§6 #20–#22)', () => {
 
         expect(res.status).toBe(403);
         expect(res.body.error.code).toBe('FORBIDDEN');
-        expect((await User.findById(owner.id)).image).toBeUndefined();
+        expect((await User.findById(owner.id))!.image).toBeUndefined();
         expect(upload).not.toHaveBeenCalled();
       });
 
@@ -166,7 +165,7 @@ describe('media module (§6 #20–#22)', () => {
         );
 
         expect(res.status).toBe(403);
-        expect((await Product.findById(product.id)).image).toBeUndefined();
+        expect((await Product.findById(product.id))!.image).toBeUndefined();
         expect(upload).not.toHaveBeenCalled();
       });
     });

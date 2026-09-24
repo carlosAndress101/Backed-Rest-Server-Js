@@ -6,10 +6,9 @@ import mongoose from 'mongoose';
 import request from 'supertest';
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'vitest';
 
-import { UserModel } from '../../../src/modules/users';
+import { UserModel, type UserDocument } from '../../../src/modules/users';
 import { clearDatabase, startTestApp, stopTestApp } from '../../helpers/app';
 import { authHeader, createAdmin, createUser, tokenFor } from '../../helpers/factories';
-import { generarJWT, type LegacyDoc } from '../../helpers/legacy';
 
 const MISSING_ID = new mongoose.Types.ObjectId().toHexString();
 const BAD_ID = 'not-an-id';
@@ -35,9 +34,9 @@ const invalidId = {
 
 describe('users module (§6 #4–#8)', () => {
   let app: Server;
-  let admin: LegacyDoc;
+  let admin: UserDocument;
   let adminToken: string;
-  let user: LegacyDoc;
+  let user: UserDocument;
   let userToken: string;
 
   beforeAll(async () => {
@@ -373,7 +372,7 @@ describe('users module (§6 #4–#8)', () => {
       async (uid) => {
         const res = await request(app)
           .get('/api/user')
-          .set(authHeader(await generarJWT(uid)));
+          .set(authHeader(await tokenFor({ id: uid })));
 
         expect(res.status).toBe(401);
         expect(res.body).toEqual({ error: { code: 'UNAUTHORIZED', message: 'Invalid token' } });

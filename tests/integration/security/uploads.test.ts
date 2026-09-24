@@ -3,13 +3,12 @@ import type { Server } from 'node:http';
 import request, { type Test } from 'supertest';
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'vitest';
 
+import type { ProductDocument } from '../../../src/modules/products';
+import { UserModel as User } from '../../../src/modules/users';
 import { clearDatabase, startTestApp, stopTestApp } from '../../helpers/app';
 import { expectStatus } from '../../helpers/assert';
 import { authHeader, createAdmin, createProduct, createUser, tokenFor } from '../../helpers/factories';
-import { legacyModels, type LegacyDoc } from '../../helpers/legacy';
 import { listTempFiles, stubMediaClient, waitForNoTempLeak } from '../../helpers/uploads';
-
-const { User } = legacyModels();
 
 const JPEG = Buffer.from('ffd8ffe000104a46494600010100000100010000ffd9', 'hex');
 const SECURE_URL = 'https://res.cloudinary.com/demo/image/upload/v1/uploaded.png';
@@ -79,7 +78,7 @@ describe('media write policy and file serving', () => {
       expect(res.statusCode).toBe(403);
 
       const untouched = await User.findById(owner.id);
-      expect(untouched.image).toBeUndefined();
+      expect(untouched!.image).toBeUndefined();
     });
 
     test('for the owner it is 200 and stores the Cloudinary URL', async () => {
@@ -91,7 +90,7 @@ describe('media write policy and file serving', () => {
       expectStatus(res, 200);
 
       const updated = await User.findById(owner.id);
-      expect(updated.image).toBe(SECURE_URL);
+      expect(updated!.image).toBe(SECURE_URL);
     });
 
     test('for an admin it is 200', async () => {
@@ -106,7 +105,7 @@ describe('media write policy and file serving', () => {
   });
 
   describe('C7 PUT /api/uploads/product/:id is admin-only', () => {
-    let product: LegacyDoc;
+    let product: ProductDocument;
 
     beforeEach(async () => {
       product = await createProduct();

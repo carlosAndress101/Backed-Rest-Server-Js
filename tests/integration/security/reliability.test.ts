@@ -4,15 +4,15 @@ import mongoose from 'mongoose';
 import request from 'supertest';
 import { afterAll, beforeAll, beforeEach, describe, expect, test, vi } from 'vitest';
 
+import { CategoryModel as Category } from '../../../src/modules/categories';
+import { ProductModel as Product } from '../../../src/modules/products';
+import type { UserDocument } from '../../../src/modules/users';
 import { clearDatabase, startTestApp, stopTestApp } from '../../helpers/app';
 import { authHeader, createCategory, createUser, tokenFor } from '../../helpers/factories';
-import { legacyModels, type LegacyDoc } from '../../helpers/legacy';
-
-const { Category, Product } = legacyModels();
 
 describe('crash safety and HTTP error handling', () => {
   let app: Server;
-  let admin: LegacyDoc;
+  let admin: UserDocument;
   let adminToken: string;
 
   beforeAll(async () => {

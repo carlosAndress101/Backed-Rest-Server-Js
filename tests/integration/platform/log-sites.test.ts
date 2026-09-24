@@ -1,5 +1,5 @@
-// LOG-01 / ADR-020: the legacy sites of the M2 ledger (§4.8) log through req.log, bound to the request id,
-// and nothing reaches the console.
+// LOG-01 / ADR-020: the log sites of the M2 ledger (§4.8), now in the modules, log through req.log, bound to the
+// request id, and nothing reaches the console.
 import fs from 'node:fs';
 import type { Server } from 'node:http';
 import os from 'node:os';
@@ -21,7 +21,7 @@ const OLD_ASSET = 'https://res.cloudinary.com/demo/image/upload/v1/old-asset.png
 /** The log records written for one request. */
 const recordsOf = (reqId: string) => logRecords(loggedText()).filter((record) => record.reqId === reqId);
 
-describe('LOG-01: legacy code logs through req.log, never the console', () => {
+describe('LOG-01: the M2 ledger sites log through req.log, never the console', () => {
   let server: Server;
   let admin: SignedIn;
   let consoleCalls: () => number;

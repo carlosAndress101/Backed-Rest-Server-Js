@@ -4,12 +4,10 @@ import bcrypt from 'bcrypt';
 import request from 'supertest';
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'vitest';
 
+import { UserModel as User, type UserDocument } from '../../../src/modules/users';
 import { clearDatabase, startTestApp, stopTestApp } from '../../helpers/app';
 import { expectStatus } from '../../helpers/assert';
-import { authHeader, createUser, reload, seedRoles, tokenFor } from '../../helpers/factories';
-import { legacyModels, type LegacyDoc } from '../../helpers/legacy';
-
-const { User } = legacyModels();
+import { authHeader, createUser, reload, tokenFor } from '../../helpers/factories';
 
 const USER_LIMIT = 10;
 
@@ -39,15 +37,11 @@ describe('user write policy and access control', () => {
 
       const stored = await User.findOne({ email: 'fresh@example.com' });
       expect(stored).not.toBeNull();
-      expect(stored.role).toBe('USER_ROLE');
+      expect(stored!.role).toBe('USER_ROLE');
     });
   });
 
   describe('SEC-02 POST /api/user ignores a client-supplied role', () => {
-    beforeEach(async () => {
-      await seedRoles('ADMIN_ROLE', 'USER_ROLE');
-    });
-
     test('a sign-up asking for ADMIN_ROLE is stored as USER_ROLE', async () => {
       const res = await request(app).post('/api/user').send({
         name: 'Wannabe Admin',
@@ -60,17 +54,16 @@ describe('user write policy and access control', () => {
       expect(res.body.data.role).toBe('USER_ROLE');
 
       const stored = await User.findOne({ email: 'wannabe@example.com' });
-      expect(stored.role).toBe('USER_ROLE');
+      expect(stored!.role).toBe('USER_ROLE');
     });
   });
 
   describe('SEC-01 PUT /api/user/:id requires auth and ownership', () => {
-    let victim: LegacyDoc;
-    let attacker: LegacyDoc;
+    let victim: UserDocument;
+    let attacker: UserDocument;
     let rolesToken: string;
 
     beforeEach(async () => {
-      await seedRoles('ADMIN_ROLE', 'USER_ROLE');
       victim = await createUser({ name: 'Victim', email: 'victim@example.com' });
       attacker = await createUser({ name: 'Attacker', email: 'attacker@example.com' });
       rolesToken = await tokenFor(attacker);
@@ -109,10 +102,6 @@ describe('user write policy and access control', () => {
   });
 
   describe('C6 owner self-update only changes the allowed fields', () => {
-    beforeEach(async () => {
-      await seedRoles('ADMIN_ROLE', 'USER_ROLE');
-    });
-
     test('name and password change; email, role, state, image, google and _id are dropped', async () => {
       const owner = await createUser({ name: 'Owner', email: 'owner@example.com', image: 'original.png' });
       const other = await createUser({ email: 'other@example.com' });
@@ -144,11 +133,7 @@ describe('user write policy and access control', () => {
   });
 
   describe('C6 an admin may change role and state', () => {
-    beforeEach(async () => {
-      await seedRoles('ADMIN_ROLE', 'USER_ROLE');
-    });
-
-    test('an admin PUT can set role to an existing Role and toggle state', async () => {
+    test('an admin PUT can set role to one of ROLES and toggle state', async () => {
       const admin = await createUser({ role: 'ADMIN_ROLE', email: 'admin@example.com' });
       const target = await createUser({ email: 'target@example.com' });
       const token = await tokenFor(admin);
