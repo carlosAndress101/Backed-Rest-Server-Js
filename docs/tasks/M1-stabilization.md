@@ -1,7 +1,7 @@
 # M1: Stabilization & Security Hotfix · Delegation Briefs
 
 > Issued by the Orchestrator · 2026-09-23 · Governing ADRs: ADR-001, ADR-012, ADR-013, ADR-014
-> ⚠️ Public repo: don't push this file or TECH_DEBT.md until the hotfix is deployed.
+> ⚠️ Public repo: push this file and TECH_DEBT.md only together with, or after, the M1 fix reaching `master`. There is no live deployment (owner, 2026-09-23: no longer on Zeabur).
 
 ## Ground rules for every agent
 
@@ -147,7 +147,7 @@ master ──► m1/stabilization (integration, includes M0 docs)
 
 ## T1.7: Deploy Hardening Follow-up
 - **Agent:** SECURITY & QA AGENT · **Worktree:** `worktrees/m1-t1.7-deploy-hardening` · **Branch:** `m1/t1.7-deploy-hardening` (from integration **after T1.2/T1.3/T1.4 merged**) · **Debt:** SEC-15 (new), SEC-08 (residual: pre-controller temp files), REL-04 (new), CQ-02 (`updateImage` only)
-- **Origin:** the T1.2 report's Risks 1–4 and Q1–Q3. Without C9, the C5 limiter behind the production proxy puts every client in one bucket, which lets anyone lock all users out of login. That blocks the deploy.
+- **Origin:** the T1.2 report's Risks 1–4 and Q1–Q3. Without C9, behind any reverse proxy the C5 limiter puts every client in one bucket, which lets anyone lock all users out of login. There is no live deployment today (no longer on Zeabur), but C9 must exist before any proxied deploy (M9).
 - **Objective:** Implements contracts C9–C11 and removes the unrouted `updateImage`.
 - **Files allowed:** `models/server.js` (only the `fileUpload` mount and the `trust proxy` setting), `routes/uploads.js`, `controllers/uploads.js`, `middlewares/file-valid.js`, `middlewares/index.js`, `helpers/upload-file.js`, `e2e/**` (new test files, plus edits to `e2e/uploads.e2e.js` and `e2e/helpers/db.js` where the contracts require them).
 - **Files forbidden:** everything else, including `app.js`, `database/**`, the other routes and controllers, `package.json`, `pnpm-lock.yaml`, `jest-e2e.json`, all `*.md`.
@@ -177,4 +177,4 @@ master ──► m1/stabilization (integration, includes M0 docs)
 
 ## T1.6: Milestone close (Orchestrator)
 - Merge, update CHANGELOG (**Breaking** section from the API_PROGRESS ledger), mark the TECH_DEBT statuses, update the API_PROGRESS statuses, move ROADMAP to M2.
-- Owner actions after deploy (if production is live): list users with `role: ADMIN_ROLE` and users whose `image` isn't a plain filename or a Cloudinary URL, then review both lists with the Orchestrator.
+- Owner action, **only if the old production database (from the Zeabur deployment) still exists and will be reused**: list users with `role: ADMIN_ROLE` and users whose `image` isn't a plain filename or a Cloudinary URL, then review both lists with the Orchestrator. Otherwise there is nothing to check: the app has no live deployment (owner, 2026-09-23).

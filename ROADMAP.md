@@ -8,10 +8,10 @@ Complexity scale: **S** (≤1 agent-day) · **M** (2–3) · **L** (4–6) · **
 | # | Milestone | Complexity | Depends on | Status |
 |---|---|---|---|---|
 | M0 | Audit & Baseline | S | — | ✅ Accepted 2026-09-23 |
-| M1 | Stabilization & Security Hotfix | M | M0 | 🔄 In progress: T1.1 ✅ accepted; T1.2–T1.4 running ([briefs](docs/tasks/M1-stabilization.md)) |
+| M1 | Stabilization & Security Hotfix | M | M0 | 🔄 In progress: T1.1–T1.4 ✅ accepted and merged (64/64 e2e); T1.7 follow-up running, then T1.5 review ([briefs](docs/tasks/M1-stabilization.md)) |
 | M2 | Foundation: tooling, TypeScript, config, logging, errors, Express 5 | L | M1 | 📝 Design in progress (ARCHITECT) |
 | M3 | Feature-First Refactor + Validation/DTOs | L | M2 | Planned |
-| M4 | Database Improvements | M | M3 | Planned |
+| M4 | Database Improvements | M | M3 | 📝 Design accepted ([M4-database](docs/design/M4-database.md)) |
 | M5 | Authentication Hardening | M | M4 | Planned |
 | M6 | Authorization (RBAC + ownership) | M | M5 | Planned |
 | M7 | Testing Hardening | M | M6 | Planned |
@@ -19,7 +19,7 @@ Complexity scale: **S** (≤1 agent-day) · **M** (2–3) · **L** (4–6) · **
 | M9 | Docker & Production Readiness | M | M2, M4 | Planned |
 | M10 | CI/CD | M | M9 (basic CI lands in M2) | Planned |
 
-Why this order differs from the default template: **security first** (ADR-001) because Critical, unauthenticated exploits exist in a public repo with a referenced deployment. **Foundation before refactor**, so the refactor lands on typed config, errors, and tests. **Database before auth**, because auth hardening needs `tokenVersion` and normalised emails. **Validation is folded into the refactor**, because every validation chain moves anyway, and doing it twice would violate DRY.
+Why this order differs from the default template: **security first** (ADR-001) because Critical, unauthenticated exploits exist in a public repo. The deployment it referenced (Zeabur) is gone (owner, 2026-09-23), but anyone can still run the public code. **Foundation before refactor**, so the refactor lands on typed config, errors, and tests. **Database before auth**, because auth hardening needs `tokenVersion` and normalised emails. **Validation is folded into the refactor**, because every validation chain moves anyway, and doing it twice would violate DRY.
 
 ---
 
@@ -38,8 +38,8 @@ Why this order differs from the default template: **security first** (ADR-001) b
   - Crash safety: every async handler error-safe; global JSON 404 and 500 handlers; duplicate key → 409; regex input escaped and results capped; DB connection awaited before `listen`, fail fast on error.
   - Hardening: `helmet`, `x-powered-by` off, multipart size limits, temp file cleanup.
   - A security regression suite (Jest + supertest + mongodb-memory-server) proving each fix.
-- **Risks:** The fixes are breaking for any client that relies on the open endpoints (see API_PROGRESS ledger). If production is live, rogue admin accounts or tampered `image` values may already exist and need a data check after deploy. The first `mongodb-memory-server` run downloads a `mongod` binary, which requires network.
-- **Complexity:** M · **Dependencies:** M0 sign-off, owner answers on consumers and deployment.
+- **Risks:** The fixes are breaking for any client that relies on the open endpoints (see API_PROGRESS ledger). There is no live deployment (owner, 2026-09-23). If the old production database is reused, it may hold rogue admin accounts or tampered `image` values and needs the T1.6 data check first. The first `mongodb-memory-server` run downloads a `mongod` binary, which requires network.
+- **Complexity:** M · **Dependencies:** M0 sign-off. Owner answers: no live deployment; consumers unknown, so every change is logged as breaking (ADR-015).
 
 ## M2: Foundation
 - **Goal:** A typed, testable, observable platform for the refactor to land on.
@@ -56,7 +56,7 @@ Why this order differs from the default template: **security first** (ADR-001) b
 ## M4: Database Improvements
 - **Goal:** Schema integrity and query performance.
 - **Deliverables:** timestamps on all schemas. Email lowercase/trim plus a unique index, with a duplicate report and migration. Role enum (ADR-007) with the `Role` collection dependency removed. `price ≥ 0`. Partial unique indexes on `name` where `state: true`. Indexes on `state`, `category`, `user`. Text index (or anchored prefix search) replacing unanchored regex. A shared `toJSON` plugin (`id`, no `__v`, no secrets). A migration runner with up/down and an idempotent seed that bootstraps the first admin from env. A `tokenVersion` field for M5.
-- **Risks:** Index builds fail on existing duplicates in live data. **Mitigation:** dry-run report, backup, and owner approval before running against production.
+- **Risks:** Index builds fail on existing duplicates in any reused database. **Mitigation:** dry-run report, backup, and owner approval before running against a real database.
 - **Complexity:** M · **Dependencies:** M3.
 
 ## M5: Authentication Hardening
@@ -86,7 +86,7 @@ Why this order differs from the default template: **security first** (ADR-001) b
 ## M9: Docker & Production Readiness
 - **Goal:** A deployable, operable, stateless service.
 - **Deliverables:** a multi-stage Dockerfile (Node 24 alpine, non-root, prod deps only); docker-compose with API and Mongo for local dev; `/health` (liveness) and `/ready` (DB ping); graceful shutdown on SIGTERM; `trust proxy` config; stdout JSON logs; a production config checklist.
-- **Risks:** Docker isn't installed on the dev machine, so Docker Desktop, OrbStack, or Colima is needed. The deployment target (Zeabur?) is unconfirmed.
+- **Risks:** Docker isn't installed on the dev machine, so Docker Desktop, OrbStack, or Colima is needed. There is no deployment target: the Zeabur deployment is retired (owner, 2026-09-23). M9 ships a platform-agnostic container plus `TRUST_PROXY` guidance, and the target is chosen then.
 - **Complexity:** M · **Dependencies:** M2, M4.
 
 ## M10: CI/CD

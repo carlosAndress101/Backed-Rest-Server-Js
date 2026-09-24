@@ -1,7 +1,7 @@
 # Technical Debt Register
 
 > Baseline: commit `2f18dce` · Audited 2026-09-23 · Milestone 0
-> ⚠️ **Disclosure notice:** this repository is **public**. Don't push this file until the M1 hotfix is deployed wherever this code runs. It describes exploitable issues; exploit payloads are deliberately left out.
+> ⚠️ **Disclosure notice:** this repository is **public**. There is no live deployment (owner, 2026-09-23: the app is no longer deployed on Zeabur), but the vulnerable code is still on public `master`. Push this file only together with, or after, the M1 fix reaches `master`. It describes exploitable issues; exploit payloads are deliberately left out.
 
 **Severity**
 - **Critical:** exploitable now, unauthenticated or near-unauthenticated, with full compromise or outage.
@@ -55,7 +55,7 @@
 | DB-01 | Database / Onboarding | Creating a user requires a matching `Role` document, but no seed exists. On a fresh DB, sign-up always fails. | `helpers/db-validators.js:3-9` | M1 (sign-up no longer takes role) → M4 (ADR-007) | M1 part fixed (M1/T1.2, 00fe9b1); Role → enum M4 open |
 | CFG-01 | Config | No centralised or validated config. `process.env` is read ad hoc in 5 files, and a missing `SECRET_KEY` only surfaces at the first login. `.example.env` lists names only. `GOOGLE_SECRET_ID` is unused. | see ARCHITECTURE §1.6 | M2 | open |
 | LOG-01 | Observability | No logging. `console.log` only, with no levels, no request logs or ids. `req.files` metadata is logged on every Cloudinary upload, and full stacks on every invalid token. | `controllers/uploads.js:143`, `middlewares/validar-jwt.js:41` | M2 | open |
-| SEC-15 | Security / Availability | **Proxy trust not configured.** Behind the production PaaS ingress, `req.ip` is the proxy's address, so the C5 auth limiter puts every client in one bucket: 10 auth requests per 15 min for everyone, and anyone can lock all users out of login. Found in the T1.2 review. | `models/server.js` | M1 (T1.7, C9) → M2 (config) | in-progress (M1/T1.7) |
+| SEC-15 | Security / Availability | **Proxy trust not configured.** Behind any reverse proxy (PaaS ingress, load balancer, nginx), `req.ip` is the proxy's address, so the C5 auth limiter puts every client in one bucket: 10 auth requests per 15 min for everyone, and anyone can lock all users out of login. It blocks any proxied deploy; there is no live deployment today. Found in the T1.2 review. | `models/server.js` | M1 (T1.7, C9) → M2 (config) | in-progress (M1/T1.7) |
 
 ## Medium
 
@@ -88,4 +88,4 @@
 | CQ-04 | Hygiene | `cloudinary.config(process.env.CLOUDINARY_URL)` is a no-op getter call. `uploader.destroy` isn't awaited, so failures are silent. | `controllers/uploads.js:4,140` | M1 | fixed (M1/T1.2, 00fe9b1) |
 | CQ-05 | Hygiene | `deleteUser` returns the pre-update document and echoes the authenticated user object. | `controllers/usuarios.js:66-79` | M3 | open |
 | CQ-06 | Hygiene | `googleSignin` error message typos; `Google` errors swallowed without a log. | `controllers/auth.js:68,82` | M5 | open |
-| CQ-07 | Hygiene | `public/` demo page ships with a hardcoded client id and production URL; its ownership (keep as dev tool or remove) is undecided. | `public/` | M8 | open |
+| CQ-07 | Hygiene | `public/` demo page ships with a hardcoded client id and production URL. That URL (`hookcoffee.zeabur.app`) is **dead**: the app is no longer deployed there (owner, 2026-09-23), so the page's Google sign-in fails anywhere except localhost. Its ownership (keep as dev tool or remove) is undecided. | `public/` | M8 | open |
