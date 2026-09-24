@@ -1072,7 +1072,7 @@ The helper table below covers **every export of `e2e/helpers/db.js` at the merge
 
 | `e2e/helpers/db.js` export | New home |
 |---|---|
-| `connectDatabase` + `buildApp` (T1.8: `buildApp()` now resolves to a served `127.0.0.1` server) | `startTestApp(overrides?)` in `tests/helpers/app.ts` (T2.5); `serve`, `closeServers` and `expectStatus` from T1.8 map to `startTestApp`, `stopTestApp` and a local `expectStatus` in `tests/helpers/app.ts` |
+| `connectDatabase` + `buildApp` (T1.8: `buildApp()` now resolves to a served `127.0.0.1` server) | `startTestApp(overrides?)` in `tests/helpers/app.ts` (T2.5); `serve` and `closeServers` from T1.8 map to `startTestApp` and `stopTestApp` (T2.5); `expectStatus` moves to `tests/helpers/assert.ts` (T2.6, same signature and behaviour) |
 | `clearDatabase` | `tests/helpers/app.ts` (T2.5) |
 | `BCRYPT_ROUNDS`, `TEST_PASSWORD`, `hashPassword`, `uniqueSuffix`, `createUser`, `createAdmin`, `seedRoles`, `createCategory`, `createProduct`, `tokenFor`, `authHeader`, `reload` | `tests/helpers/factories.ts` (T2.6, same signatures and defaults) |
 | `User`, `Role`, `Category`, `Product` | `legacyModels()` in `tests/helpers/legacy.ts` (T2.6) |
