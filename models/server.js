@@ -1,9 +1,7 @@
 const cors = require('cors');
-const os = require('os');
 const path = require('path');
 const express = require('express');
 const helmet = require('helmet');
-const fileUpload = require('express-fileupload');
 const userRouter  = require('../routes/usuarios');
 const authRouter  = require('../routes/auth');
 const categoryRouter  = require('../routes/category');
@@ -74,14 +72,7 @@ class Server {
         //public path
         this.app.use(express.static(path.join(__dirname, '../public')))
 
-        //Upload files, max 5 MB (larger requests are aborted with 413)
-        this.app.use(fileUpload({
-            useTempFiles : true,
-            tempFileDir : os.tmpdir(),
-            createParentPath : true,
-            limits : { fileSize: 5 * 1024 * 1024 },
-            abortOnLimit : true,
-        }));
+        // multipart bodies are parsed only by the upload routes (fileParser)
     }
 
     //routes

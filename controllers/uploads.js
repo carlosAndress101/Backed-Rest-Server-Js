@@ -10,15 +10,6 @@ const { uploadFile } = require("../helpers");
 const {User, Product} = require('../models');
 
 
-// express-fileupload never removes its temp files; a moved file is already gone
-const removeTempFiles = (files) => {
-  Object.values(files).flat().forEach(({ tempFilePath }) => {
-    if (tempFilePath) {
-      fs.rm(tempFilePath, { force: true }, err => err && console.error(err));
-    }
-  });
-};
-
 const fileUpload = async (req, res = response, next) => {
   
   try {
@@ -33,8 +24,6 @@ const fileUpload = async (req, res = response, next) => {
       return res.status(400).json({ msg: error });
     }
     next(error);
-  } finally {
-    removeTempFiles(req.files);
   }
 };
 
@@ -183,8 +172,6 @@ const updateImageCloudinary = async (req, res = response, next) => {
         res.json( model )
     } catch (error) {
         next(error);
-    } finally {
-        removeTempFiles(req.files);
     }
 }
 
