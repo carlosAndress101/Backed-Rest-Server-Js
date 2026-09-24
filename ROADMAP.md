@@ -1,7 +1,7 @@
 # Roadmap
 
 > Owner: CarlosH / SH1FT3R · Orchestrated multi-agent delivery (Claude Code · OpenCode · Nodeterm · RTK)
-> Updated 2026-09-24 · Current milestone: **M4 next** (M3 accepted 2026-09-24 on `next`, the unreleased 3.0 line; `master` = 2.1.0)
+> Updated 2026-09-24 · Current milestone: **M5 next** (M3 and M4 accepted 2026-09-24 on `next`, the unreleased 3.0 line; `master` = 2.1.0)
 
 Complexity scale: **S** (≤1 agent-day) · **M** (2–3) · **L** (4–6) · **XL** (>6). Tests are a quality gate in **every** milestone (ADR-013); M7 closes the remaining gaps.
 
@@ -11,7 +11,7 @@ Complexity scale: **S** (≤1 agent-day) · **M** (2–3) · **L** (4–6) · **
 | M1 | Stabilization & Security Hotfix | M | M0 | ✅ Accepted 2026-09-24 (T1.5 review: ACCEPT after T1.2R), release **2.0.0** ([briefs](docs/tasks/M1-stabilization.md)) |
 | M2 | Foundation: tooling, TypeScript, config, logging, errors, Express 5 | L | M1 | ✅ Accepted 2026-09-24 (T2.8 review: ACCEPT), release **2.1.0** ([design](docs/design/M2-foundation.md)) |
 | M3 | Feature-First Refactor + Validation/DTOs | L | M2 | ✅ Accepted 2026-09-24 (T3.9 review: ACCEPT), merged into `next`; ships in **3.0.0** after M6 ([design](docs/design/M3-modules.md)) |
-| M4 | Database Improvements | M | M3 | 📝 Design accepted ([M4-database](docs/design/M4-database.md)) |
+| M4 | Database Improvements | M | M3 | ✅ Accepted 2026-09-24 (T4.5 review: ACCEPT), merged into `next`; ships in **3.0.0** ([design](docs/design/M4-database.md)) |
 | M5 | Authentication Hardening | M | M4 | Planned |
 | M6 | Authorization (RBAC + ownership) | M | M5 | Planned |
 | M7 | Testing Hardening | M | M6 | Planned |
@@ -56,7 +56,14 @@ Why this order differs from the default template: **security first** (ADR-001) b
 - **Risks:** API contract drift across parallel agents, mitigated by the reference module plus a contract table in API_PROGRESS. Client breakage, mitigated by the breaking-change ledger and CHANGELOG.
 - **Complexity:** L · **Dependencies:** M2.
 
-## M4: Database Improvements
+## M4: Database Improvements ✅ (accepted 2026-09-24, on `next`)
+- **Outcome:**
+  - timestamps, explicit indexes (partial unique names, a lowercased unique email), the role enum, caps mirrored in the DTOs;
+  - migrations M001–M004 with abort-on-check and `down`;
+  - a first-admin seed and a CLI at `src/cli.ts`;
+  - `autoIndex` off in production, and `select: false` on the password.
+
+  926 tests. Deploy-order gate: migrate before serving (§7.1 step 0). No new dependency.
 - **Goal:** Schema integrity and query performance.
 - **Deliverables:** timestamps on all schemas. Email lowercase/trim plus a unique index, with a duplicate report and migration. Role enum (ADR-007) with the `Role` collection dependency removed. `price ≥ 0`. Partial unique indexes on `name` where `state: true`. Indexes on `state`, `category`, `user`. Text index (or anchored prefix search) replacing unanchored regex. A shared `toJSON` plugin (`id`, no `__v`, no secrets). A migration runner with up/down and an idempotent seed that bootstraps the first admin from env. A `tokenVersion` field for M5.
 - **Risks:** Index builds fail on existing duplicates in any reused database. **Mitigation:** dry-run report, backup, and owner approval before running against a real database.

@@ -9,7 +9,7 @@ This document has three parts: the **as-is** inventory (what the code is today),
 
 ## 1. As-is (audited)
 
-> §1.1–§1.7 are the **M0 audit baseline** (commit `2f18dce`), kept as the historical record. Each milestone's resulting state follows in §1.8+; the current state of the 3.0 line is **§1.10**.
+> §1.1–§1.7 are the **M0 audit baseline** (commit `2f18dce`), kept as the historical record. Each milestone's resulting state follows in §1.8+; the current state of the 3.0 line is **§1.11**.
 
 ### 1.1 Stack and runtime
 
@@ -259,6 +259,34 @@ tests/{setup,helpers,unit,unit/modules,integration/{modules,platform,security}}
 
 
 
+### 1.11 State after M4 (the 3.0 line on `next`, unreleased, 2026-09-24)
+
+**Data model** (design [M4-database](docs/design/M4-database.md), Part II and §15):
+- **Every schema** has `{ versionKey: false, timestamps: true }`, trimmed and capped strings, and fixed validator messages (no `{VALUE}`, LOG-02).
+- **users:** a lowercased email with a plain unique index `email_1`; `role` is `enum: ROLES`; `password` is `select: false` (authenticating reads ask for `+password`); a hidden `tokenVersion`.
+- **categories and products:** an uppercased `name` with the partial, collated unique index `name_active_unique`, so only active names collide and a soft-deleted name is reusable; `price ≥ 0`.
+- **The index catalogue** is §3.1 exactly: `email_1`, `state_1`, `user_1`, `category_1` and `name_active_unique`, and nothing speculative.
+
+**Migrations and seed:**
+- `src/database/migrate.ts` is an in-repo runner with a `migrations` ledger, `--dry-run` and retry-after-throw; there is no new dependency.
+- `src/database/migrations/M001…M004`:
+  - M001 normalizes emails;
+  - M002 rebuilds the name indexes;
+  - M003 backfills timestamps from `_id`;
+  - M004 drops the 2.x `roles` collection.
+
+  Each `up` aborts on its data check before writing.
+- `src/database/seed.ts` is a create-only first-admin seed with an injected model.
+- The CLI is `src/cli.ts`, a composition root like `server.ts` (ADR-031); it builds to `dist/cli.js` and runs as `pnpm migrate …` and `pnpm seed`.
+
+**Boot:** `autoIndex` is off in production (the migrations build indexes) and on in dev/test. **Deploy order:** `pnpm migrate up` completes before the M4 code serves traffic (§7.1 step 0; an M9 boot guard, OPS-05).
+
+**Tests:** 926. This adds DB-backed model, migration, index and seed tests, plus the normalization and secret-leak security suites.
+
+**Next:** M5, authentication hardening: Bearer tokens, `tokenVersion` revocation, async bcrypt and a password policy (SEC-11, SEC-12, SEC-16, PERF-01).
+
+
+
 ---
 
 ## 2. To-be (target)
@@ -346,3 +374,4 @@ Status: **Accepted** = Orchestrator decision, binding on agents. **Proposed** = 
 | ADR-028 | **Interim `authenticate` (x-token) and `requireAdmin` / `requireSelfOrAdmin` / `requireRole` guards** with today's semantics | Accepted 2026-09-24 (D3 review; details in [M3-modules](docs/design/M3-modules.md) §1.1); implemented in M3 (T3.1 255cd1e); the stateless guards are imported by each routes file (AM-M3-8) | M5 swaps the transport, M6 replaces the guards with `authorize(policy)`, and the route wiring doesn't change again. |
 | ADR-029 | **zod DTOs and one `validate(part, schema)` middleware → 422 with `details`.** `express-validator` and `db-validators` are removed; existence checks become find-active-or-404 in services | Accepted 2026-09-24 (D3 review; details in [M3-modules](docs/design/M3-modules.md) §1.1); implemented in M3 (T3.1 255cd1e + every module); `express-validator` removed (T3.8b) | Fixes VAL-01, VAL-02 and F3. Express 5 getter-only `query`/`params` are handled with `defineProperty`. |
 | ADR-030 | **Media is Cloudinary only.** `POST /api/uploads` is removed. `GET` 302-redirects **only to this app's own Cloudinary cloud** (AM-M3-1), otherwise 404. Magic-byte MIME sniffing; parser errors → 400; oversize → 413 JSON; C10/C11 kept | Accepted 2026-09-24 (D3 review; details in [M3-modules](docs/design/M3-modules.md) §1.1); implemented in M3 (T3.7 8f74d0c, T3.7R c1094a0) | Fixes FUNC-01, HTTP-02, F4 and SEC-08 (MIME). The allowlist prevents an open redirect from legacy `image` values. |
+| ADR-031 | **Schema-owned data changes run through an in-repo migration runner, and the CLI is a second composition root.** Migrations live in `src/database/migrations/`, are recorded in a `migrations` ledger, and each `up` aborts on a data check before writing. `autoIndex` is off in production, so only the migrations build indexes. `src/cli.ts` (like `src/server.ts`) wires models into the seed; `src/database/**` imports no module. | Accepted 2026-09-24 (M4: D4R §9–§15, AM-M4-7; implemented T4.1/T4.4) | No new dependency (ADR-025); a production index build only happens after its data check; the layer rules stay intact. |

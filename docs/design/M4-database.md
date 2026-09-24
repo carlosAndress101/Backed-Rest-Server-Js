@@ -31,7 +31,7 @@
 | Connection | `src/database/connection.ts` (from M2) |
 | Migration runner + migrations | `src/database/migrate.ts` · `src/database/migrations/M001-*.ts` … |
 | Seed | `src/database/seed.ts` |
-| CLI | `src/database/cli.ts` (`migrate up|down|status`, `seed`) |
+| CLI | `src/cli.ts` (`migrate up|down|status`, `seed`), a composition root beside `server.ts` (AM-M4-7; built as `dist/cli.js`) |
 
 `Role` is removed entirely (ADR-007): no `role.model.ts`, no `roles` module, no `esRoleValido` helper. Any remaining reference to the `roles` collection is a bug by the time M4 starts.
 
@@ -654,6 +654,7 @@ Guarantees: **create-only** (no `upsert`, no `$set`), so an existing user's pass
 
 ### 7.1 Before touching data
 
+0. **Deploy-order gate (T4.3 R1, T4.5 F1). Hard rule:** the M4 application code must **not serve traffic** until `pnpm migrate up` has completed, and `pnpm migrate status` shows all four migrations applied. Under the new code, a 2.x mixed-case email lets a case-variant sign-up create a second account, and the original account's login answers 401, until M001 has normalized the data. So: freeze writes → `pnpm build && pnpm migrate up` → `pnpm migrate status` → only then deploy or route traffic to the M4 code. Never deploy the new image first and migrate second. M9 adds a production boot guard that refuses to serve until M001 is recorded in the ledger (OPS-05).
 1. **Owner approves the window.** M4 is a one-way step for email casing (see rollback); schedule a maintenance window and freeze writes.
 2. **Backup** (verify it restores):
    ```bash
@@ -714,6 +715,8 @@ db.products.aggregate([
 Expected results: checks 1–3 must be empty before the run (otherwise fix the data and re-run); check 4 is a review list (null/blank the bad values or move them to Cloudinary); check 5 decides whether orphan rows are deleted or re-parented.
 
 ### 7.3 Run, then verify
+
+> Respect the §7.1 step 0 deploy-order gate: these commands run **before** the M4 code serves any traffic.
 
 ```bash
 pnpm build                  # migrate and seed run the compiled CLI: node dist/cli.js (P19)
@@ -963,3 +966,18 @@ Integration branch **`m4/database`**, cut from `next` @ `98ea113`. Shared contra
 | AM-M4-4 | Orchestrator review of §2.1/§2.3: the `image` schema validator | **Design defect; drop the validator.** `IMAGE_PATTERN` accepts only a bare filename or a Cloudinary URL, but Google sign-in stores `image: picture` (a `https://lh3.googleusercontent.com/…` URL, `auth.service.ts`), so the first Google sign-in of every new user would fail validation, and every 2.x Google user's document would fail a `save()`. Its original purpose (SEC-04 local-disk path traversal) left with M3 (no disk serving), and the AM-M3-1 redirect allowlist already guards the only read. `image` keeps `trim: true` and gains `maxlength: 2048`; no pattern. |
 | AM-M4-5 | §11: schema caps without DTO caps | **Every client-visible schema constraint has a matching DTO rule**, so a client gets **422** (not the C1 400 backstop for a Mongoose `ValidationError`). DTO mirrors: user `name` ≤ 120, `email` ≤ 254 (trimmed + lowercased, §10.3); category/product `name` ≤ 120; product `description` ≤ 2000; `price ≥ 0` (exists). Owned by **T4.3**. |
 | AM-M4-6 | §12 sequence; §14 Q4 | **T4.1 and T4.2 run in parallel** (disjoint files: plumbing vs model bodies). **T4.2 is a review gate** (ARCHITECT, "T4.2G"), exactly as T3.2 was, before T4.3/T4.4 start. |
+
+### 15.1 Rulings and as-built corrections during the build (AM-M4-7…9)
+
+| ID | Trigger | Ruling / correction |
+|---|---|---|
+| AM-M4-7 | T4.1 Q1: the layer rules forbid `src/database` from importing a module | The CLI is a composition root at **`src/cli.ts`** (built as `dist/cli.js`), beside `server.ts`. It injects `UserModel` into `seedFirstAdmin`, and `src/database/**` imports no module. The lint COMPOSITION regex includes `cli` (T4.4R). Every `src/database/cli.ts` / `dist/database/cli.js` in the Part II text (§5.2, §10.2, D-13, P19, and the §12 Files-allowed cells) and in Appendix A now means `src/cli.ts` / `dist/cli.js`. The task rows are kept as the historical log. |
+| AM-M4-8 | T4.1 Q2 | `REDACT_PATHS` covers `seed.adminPassword`, `*.adminPassword`, `*.seed.adminPassword`, `SEED_ADMIN_PASSWORD` and `*.SEED_ADMIN_PASSWORD` (T4.3). |
+| AM-M4-9 | T4.3 R1, T4.5 F1 | The **deploy-order gate** (§7.1 step 0): migrate before the new code serves traffic. It is backed by an M9 production boot guard (OPS-05). |
+| (T4.4 D1) | §5.3 built no `users.state_1` | M001 builds the whole users catalogue: `email_1` **and** `state_1`. |
+| (T4.4 D2) | §5.3 checked and mutated per collection, which allowed a partial rebuild | M002 checks **both** collections before touching either. |
+| (T4.4 D3) | §5.3 grouped names with `$toUpper`/`$trim` (ASCII-only) | M002's abort check groups names under the index's own collation (en, strength 2). This predicts exactly what `createIndex` refuses. |
+| (T4.3 D1) | §10.3's `z.email().trim().toLowerCase()` checks the format before trimming | The email DTO is `trim → max(254) → format check → lowercase`. Padded addresses are accepted, and look-alikes (for example the Kelvin sign) are refused before lowercasing. |
+| (T4.3 D5) | Fixed validator messages alone | pino's error serializer also copies `err.errors.*.value` and `.properties.value`, so those paths are redacted too. |
+
+Final review T4.5: **ACCEPT** (2026-09-24).
