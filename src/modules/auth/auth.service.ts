@@ -1,7 +1,7 @@
-import bcrypt from 'bcrypt';
-
 import { UnauthorizedError } from '../../core/errors';
+import type { Logger } from '../../core/logger';
 import type { TokenService } from '../../core/security/jwt';
+import { comparePassword, hashPassword, isUsableHash, needsRehash } from '../../core/security/password';
 import type { GoogleDto, LoginDto } from './auth.schemas';
 import type { GoogleProfile, GoogleVerifier } from './google.client';
 
@@ -9,6 +9,8 @@ import type { GoogleProfile, GoogleVerifier } from './google.client';
 export interface SignInUser {
   _id: unknown;
   state?: boolean | null;
+  /** Signed into every token (AM-M5-9): a token of another version is refused by authenticate (ADR-033). */
+  tokenVersion: number;
 }
 
 /** The one read that needs the password hash: the login's, with '+password'. */
@@ -33,7 +35,12 @@ export interface SignInUserModel {
     projection: '+password',
   ): PromiseLike<SignInUserWithPassword | null>;
   create(doc: GoogleSignUp): PromiseLike<SignInUser>;
+  /** The rehash (P25): replaces the stored hash only if it is still the one the login compared against. */
+  updateOne(filter: { _id: unknown; password: string }, update: { password: string }): PromiseLike<unknown>;
 }
+
+/** Where a failed background rehash is reported: the request's logger. */
+export type RehashLog = Pick<Logger, 'warn'>;
 
 /** A signed-in user and its x-token. The user serializes through its model's toJSON (id, uid, never password). */
 export interface Session {
@@ -42,46 +49,56 @@ export interface Session {
 }
 
 export interface AuthService {
-  login(dto: LoginDto): Promise<Session>;
+  /** `log` reports a failed background rehash (P25); it never affects the answer. */
+  login(dto: LoginDto, log: RehashLog): Promise<Session>;
   googleSignIn(dto: GoogleDto): Promise<Session>;
 }
 
-// F1: compared against when the email is unknown, so every credential failure costs one bcrypt check.
-const DUMMY_HASH = bcrypt.hashSync('dummy-password', 10);
-
-// A hash bcrypt really does work on ($2a$/$2b$, cost 04-31). Anything else, like the ':D' placeholder of
-// Google-created accounts, would fail instantly and reveal the account.
-const BCRYPT_HASH = /^\$2[ab]\$(0[4-9]|[12]\d|3[01])\$[./A-Za-z0-9]{53}$/;
-
 /**
  * Password and Google sign-in (ADR-005: the model, the token service and the Google client are injected).
- * Behaviour is today's: bcrypt stays synchronous, and email_verified and the ':D' placeholder stay as they are
- * until M5 (SEC-11, SEC-12). Throws AppErrors; knows nothing of HTTP.
+ * Hashing is asynchronous at config.auth.bcryptCost (ADR-035). Throws AppErrors; knows nothing of HTTP.
  */
 export function createAuthService(deps: {
   User: SignInUserModel;
   tokens: TokenService;
   google: GoogleVerifier;
+  /** config.auth.bcryptCost: the cost of every hash the API writes, and of the F1 dummy. */
+  bcryptCost: number;
 }): AuthService {
-  const { User, tokens, google } = deps;
+  const { User, tokens, google, bcryptCost } = deps;
+
+  // F1: compared against when the account has no usable hash (unknown email, Google-only account), so every
+  // credential failure costs one bcrypt compare at the configured cost, the cost of every hash the API writes.
+  const dummyHash = hashPassword('dummy-password', bcryptCost);
 
   // C5: one answer for every credential failure.
   const invalidCredentials = () => new UnauthorizedError('Invalid credentials');
+  // AM-M5-9: signed at the user's own tokenVersion, or the next logout-all would lock them out of every login.
   const session = async (user: SignInUser): Promise<Session> => ({
-    token: await tokens.sign(String(user._id)),
+    token: await tokens.sign(String(user._id), user.tokenVersion),
     user,
   });
 
   return {
-    async login({ email, password }) {
+    async login({ email, password }, log) {
       // AM-M4-1: the hash is select: false, so the one read that compares it asks for it.
       const user = await User.findOne({ email }, '+password');
 
-      // The password, the user and its state fail with the same answer; an account without a password hash is
-      // compared against the dummy one and never matches.
-      const hasPasswordHash = user !== null && BCRYPT_HASH.test(user.password);
-      const validPassword = bcrypt.compareSync(password, hasPasswordHash ? user.password : DUMMY_HASH);
-      if (!hasPasswordHash || !user.state || !validPassword) throw invalidCredentials();
+      // The password, the user and its state fail with the same answer. An account without a usable hash is
+      // compared against the dummy, and refused even if the password happens to be the dummy's.
+      const hash = user?.password;
+      const validPassword = await comparePassword(password, hash, await dummyHash);
+      if (!user || !isUsableHash(hash) || !user.state || !validPassword) throw invalidCredentials();
+
+      // P25: only once the compare has decided, and in the background, so it never touches this answer or its
+      // timing. The swap is conditional on the old hash, so a password changed meanwhile is never overwritten.
+      if (needsRehash(hash, bcryptCost)) {
+        void hashPassword(password, bcryptCost)
+          .then((rehashed) => User.updateOne({ _id: user._id, password: hash }, { password: rehashed }))
+          .then(undefined, (err: unknown) =>
+            log.warn({ err }, 'password rehash failed; the next login retries'),
+          );
+      }
 
       return session(user);
     },

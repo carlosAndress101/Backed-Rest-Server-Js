@@ -75,8 +75,16 @@ export function createApp({ config, logger }: AppDeps): Express {
     '/api/search',
     searchModule({ User: UserModel, Category: CategoryModel, Product: ProductModel, authenticate: auth }),
   );
-  app.use('/api/user', usersModule({ authenticate: auth }));
-  app.use('/api/auth', authModule({ User: UserModel, tokens, googleClientId: config.auth.googleClientId }));
+  app.use('/api/user', usersModule({ authenticate: auth, bcryptCost: config.auth.bcryptCost }));
+  app.use(
+    '/api/auth',
+    authModule({
+      User: UserModel,
+      tokens,
+      googleClientId: config.auth.googleClientId,
+      bcryptCost: config.auth.bcryptCost,
+    }),
+  );
   app.use(
     '/api/uploads',
     mediaModule({

@@ -10,7 +10,7 @@ export type AuthController = ReturnType<typeof createAuthController>;
 export function createAuthController(service: AuthService) {
   // The token stays in the body and travels as x-token (M5 moves it to Bearer).
   const login: RequestHandler = async (req, res) => {
-    const { token, user } = await service.login(req.body as LoginDto);
+    const { token, user } = await service.login(req.body as LoginDto, req.log);
     res.status(200).json(envelope({ token, user }));
   };
 

@@ -1,5 +1,7 @@
 import { z } from 'zod';
 
+import { passwordPolicy } from '../../core/security/password';
+
 export { paginationQuerySchema } from '../../core/http/pagination';
 
 // A well-formed id only: whether the user exists is the service's question (404), not validation's (VAL-01).
@@ -24,7 +26,7 @@ const name = z.string().trim().min(1).max(120);
 export const createUserBody = z.object({
   name,
   email,
-  password: z.string().min(8),
+  password: passwordPolicy, // P26: 8 characters to 72 bytes
 });
 
 // Every field is optional, so an absent body is the empty update. role and state are applied, and role checked
@@ -32,7 +34,7 @@ export const createUserBody = z.object({
 export const updateUserBody = z
   .object({
     name: name.optional(),
-    password: z.string().min(8).optional(),
+    password: passwordPolicy.optional(),
     role: z.string().optional(),
     state: z.boolean().optional(),
   })

@@ -1,13 +1,11 @@
-import bcrypt from 'bcrypt';
 import type { Model } from 'mongoose';
 
 import { ConflictError, NotFoundError, ValidationError } from '../../core/errors';
 import type { PaginationQuery } from '../../core/http/pagination';
+import { hashPassword } from '../../core/security/password';
 import { DEFAULT_ROLE, ROLES, isRole } from '../../core/security/roles';
 import type { User, UserDocument } from './user.model';
 import type { CreateUserDto, UpdateUserDto } from './user.schemas';
-
-const BCRYPT_ROUNDS = 10; // as helpers and controllers hash today; async and tuned in M5 (PERF-01)
 
 /** The authenticated caller, as far as the users rules need it. */
 export interface Actor {
@@ -22,8 +20,12 @@ export interface UsersService {
 }
 
 /** The users rules and persistence (ADR-005: the model is injected). Throws AppErrors; knows nothing of HTTP. */
-export function createUsersService(deps: { User: Model<User> }): UsersService {
-  const { User } = deps;
+export function createUsersService(deps: {
+  User: Model<User>;
+  /** config.auth.bcryptCost (ADR-035): every hash this service writes. */
+  bcryptCost: number;
+}): UsersService {
+  const { User, bcryptCost } = deps;
 
   return {
     async list(query) {
@@ -38,7 +40,7 @@ export function createUsersService(deps: { User: Model<User> }): UsersService {
     async create(dto) {
       // Any account, active or not, owns its email; the unique index is the race backstop (E11000 is also a 409, C1).
       if (await User.exists({ email: dto.email })) throw new ConflictError('Email already registered');
-      const password = await bcrypt.hash(dto.password, BCRYPT_ROUNDS);
+      const password = await hashPassword(dto.password, bcryptCost);
       // SEC-02: a sign-up is always the default role, whatever the client sent.
       return User.create({ name: dto.name, email: dto.email, password, role: DEFAULT_ROLE });
     },
@@ -57,7 +59,7 @@ export function createUsersService(deps: { User: Model<User> }): UsersService {
       }
       if (isAdmin && dto.state !== undefined) changes.state = dto.state;
       if (dto.name !== undefined) changes.name = dto.name;
-      if (dto.password !== undefined) changes.password = await bcrypt.hash(dto.password, BCRYPT_ROUNDS);
+      if (dto.password !== undefined) changes.password = await hashPassword(dto.password, bcryptCost);
 
       // One atomic find-and-update. An administrator also reaches a soft-deleted user, so state can be turned back on
       // (C6); anyone else acts only on themself (requireSelfOrAdmin), who is active (authenticate).

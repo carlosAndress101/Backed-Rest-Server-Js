@@ -90,14 +90,14 @@ describe('DB-02 email normalization, case-insensitive uniqueness and DTO caps', 
 
     test('a wrong password on a differently cased email is the generic 401, after exactly one cost-10 compare', async () => {
       await createUser({ email: 'ada@example.com', password: bcrypt.hashSync(PASSWORD, 10) });
-      const compareSync = vi.spyOn(bcrypt, 'compareSync');
+      const compare = vi.spyOn(bcrypt, 'compare'); // async since ADR-035
 
       const res = await login('ADA@EXAMPLE.COM', 'not-the-password');
 
       expect(res.status).toBe(401);
       expect(res.body).toEqual(INVALID_CREDENTIALS);
-      expect(compareSync).toHaveBeenCalledTimes(1);
-      expect(compareSync.mock.calls[0]![1]).toMatch(COST_10_HASH); // the stored hash: select: false is lifted here
+      expect(compare).toHaveBeenCalledTimes(1);
+      expect(compare.mock.calls[0]![1]).toMatch(COST_10_HASH); // the stored hash: select: false is lifted here
     });
 
     // The format check runs before the lowercasing, so a non-ASCII look-alike is refused rather than folded into
@@ -295,6 +295,43 @@ describe('DB-02 email normalization, case-insensitive uniqueness and DTO caps', 
       const res = await send(method, url || `/api/product/${productId}`, body);
 
       expect([200, 201]).toContain(res.status);
+    });
+
+    // P26 (SEC-16): every password the API sets is 8 characters to 72 BYTES, the unit bcrypt truncates at.
+    test.each<[string, () => [method: 'post' | 'put', path: string, body: object]]>([
+      [
+        'a 73-byte password at sign-up',
+        () => ['post', '/api/user', { name: 'Ada', email: 'long@example.com', password: 'p'.repeat(73) }],
+      ],
+      [
+        '19 emoji (76 bytes, 38 UTF-16 units) at sign-up',
+        () => ['post', '/api/user', { name: 'Ada', email: 'emoji@example.com', password: '😀'.repeat(19) }],
+      ],
+      [
+        'a 73-byte password on self-update',
+        () => ['put', `/api/user/${userId}`, { password: 'p'.repeat(73) }],
+      ],
+      [
+        'a 7-character password on self-update',
+        () => ['put', `/api/user/${userId}`, { password: 'p'.repeat(7) }],
+      ],
+    ])('%s is 422 on password', async (_case, build) => {
+      const [method, url, body] = build();
+
+      const res = await send(method, url, body);
+
+      expect(res.status).toBe(422);
+      expect(detailPaths(res.body)).toEqual(['password']);
+    });
+
+    test('a 72-byte password (18 emoji) is accepted, and it logs in', async () => {
+      const password = '😀'.repeat(18);
+
+      expectStatus(
+        await send('post', '/api/user', { name: 'Emoji', email: 'emoji72@example.com', password }),
+        201,
+      );
+      expectStatus(await login('emoji72@example.com', password), 200);
     });
   });
 });

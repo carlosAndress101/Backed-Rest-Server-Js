@@ -1,5 +1,5 @@
-// The auth rules (M3 design §5.2) against an in-memory model: no database, no vi.mock (ADR-023). F1 and C5 are
-// asserted here on the service itself: every credential failure is one bcrypt compare and one generic 401.
+// The auth rules (M3 design §5.2, M5 §3.4) against an in-memory model: no database, no vi.mock (ADR-023). F1 and C5
+// are asserted here on the service itself: every credential failure is one bcrypt compare and one generic 401.
 import bcrypt from 'bcrypt';
 import { beforeEach, describe, expect, test, vi, type MockInstance } from 'vitest';
 
@@ -18,9 +18,12 @@ interface Row extends SignInUserWithPassword {
   email?: string;
   name?: string;
 }
+/** A stored user as a test writes it: tokenVersion defaults to 0, as the schema's does. */
+type Seed = Omit<Row, 'tokenVersion'> & { tokenVersion?: number };
 
+const COST = 10; // config.auth.bcryptCost in these tests
 const PASSWORD = 'correct-horse-battery';
-const HASH = bcrypt.hashSync(PASSWORD, 4); // cheap: only the service's dummy has to cost 10
+const HASH = bcrypt.hashSync(PASSWORD, 4); // cheap, and of another cost than COST: a login rehashes it (P25)
 const COST_10_HASH = /^\$2[ab]\$10\$[./A-Za-z0-9]{53}$/;
 const PROFILE: GoogleProfile = {
   name: 'Grace',
@@ -39,17 +42,24 @@ const withoutPassword = (row: Row): Omit<Row, 'password'> => {
  * A hand-written User model holding `rows`, with only the two methods the service calls. Like the real one, a found
  * user carries its password only when the read's projection is '+password'.
  */
-function fakeUserModel(seed: Row[] = []) {
-  const rows = seed.map((stored) => ({ ...stored }));
+function fakeUserModel(seed: Seed[] = []) {
+  const rows: Row[] = seed.map((stored) => ({ tokenVersion: 0, ...stored }));
   const User = {
     findOne: vi.fn((filter: { email: string | undefined }, projection?: '+password') => {
       const row = rows.find((stored) => stored.email === filter.email) ?? null;
-      return Promise.resolve(row && (projection === '+password' ? row : withoutPassword(row)));
+      // a read returns a copy, as a database does
+      return Promise.resolve(row && (projection === '+password' ? { ...row } : withoutPassword(row)));
     }),
     create: vi.fn((doc: GoogleSignUp) => {
-      const created: Row = { _id: `id-${rows.length + 1}`, state: true, ...doc };
+      const created: Row = { _id: `id-${rows.length + 1}`, state: true, tokenVersion: 0, ...doc };
       rows.push(created);
       return Promise.resolve(created);
+    }),
+    // The rehash's compare-and-swap: the hash changes only if it is still the one in the filter.
+    updateOne: vi.fn((filter: { _id: unknown; password: string }, update: { password: string }) => {
+      const row = rows.find((stored) => stored._id === filter._id && stored.password === filter.password);
+      if (row) row.password = update.password;
+      return Promise.resolve({ matchedCount: row ? 1 : 0 });
     }),
   };
   return { rows, User };
@@ -60,16 +70,18 @@ const fakeGoogle = (profile: GoogleProfile = PROFILE) => ({
 });
 
 /** The service over fakes; `sign` is the token service's, which mints `token-for-<uid>`. */
-const build = (seed: Row[] = [], google = fakeGoogle()) => {
+const build = (seed: Seed[] = [], google = fakeGoogle(), bcryptCost = COST) => {
   const { rows, User } = fakeUserModel(seed);
   const sign = vi.fn<TokenService['sign']>((uid) => Promise.resolve(`token-for-${uid}`));
   const tokens: TokenService = { sign, verify: vi.fn() };
+  const log = { warn: vi.fn() };
   return {
     rows,
     User,
     sign,
     google,
-    service: createAuthService({ User: User as unknown as SignInUserModel, tokens, google }),
+    log,
+    service: createAuthService({ User: User as unknown as SignInUserModel, tokens, google, bcryptCost }),
   };
 };
 
@@ -83,32 +95,32 @@ const rejectsWithInvalidCredentials = async (promise: Promise<unknown>) => {
 };
 
 describe('createAuthService', () => {
-  let compareSync: MockInstance<typeof bcrypt.compareSync>;
+  let compare: MockInstance<typeof bcrypt.compare>;
 
   beforeEach(() => {
-    compareSync = vi.spyOn(bcrypt, 'compareSync');
+    compare = vi.spyOn(bcrypt, 'compare');
   });
 
   describe('login (F1, C5)', () => {
     test('the right password on an active account signs a token for the user', async () => {
-      const { service, sign, User } = build([
+      const { service, sign, User, log } = build([
         { _id: '1', email: 'ada@example.com', password: HASH, state: true },
       ]);
 
-      const session = await service.login({ email: 'ada@example.com', password: PASSWORD });
+      const session = await service.login({ email: 'ada@example.com', password: PASSWORD }, log);
 
       // AM-M4-1: the login's read is the one that asks for the select: false hash.
       expect(User.findOne).toHaveBeenCalledExactlyOnceWith({ email: 'ada@example.com' }, '+password');
-      expect(sign).toHaveBeenCalledExactlyOnceWith('1');
+      expect(sign).toHaveBeenCalledExactlyOnceWith('1', 0); // AM-M5-9: at the user's tokenVersion
       expect(session).toEqual({
         token: 'token-for-1',
-        user: { _id: '1', email: 'ada@example.com', password: HASH, state: true },
+        user: { _id: '1', email: 'ada@example.com', password: HASH, state: true, tokenVersion: 0 },
       });
-      expect(compareSync).toHaveBeenCalledExactlyOnceWith(PASSWORD, HASH);
+      expect(compare).toHaveBeenCalledExactlyOnceWith(PASSWORD, HASH);
     });
 
     // [case, stored account (or none), password sent, whether the stored hash is the one compared]
-    const failures: Array<[string, Row | undefined, string, boolean]> = [
+    const failures: Array<[string, Seed | undefined, string, boolean]> = [
       ['an unknown email', undefined, PASSWORD, false],
       ['an unknown email with the dummy password', undefined, 'dummy-password', false],
       ['a wrong password', { _id: '1', email: 'x@example.com', password: HASH, state: true }, 'wrong', true],
@@ -165,43 +177,73 @@ describe('createAuthService', () => {
     test.each(failures)(
       '%s is the generic 401 after exactly one bcrypt compare',
       async (_case, stored, password, comparesStoredHash) => {
-        const { service, sign } = build(stored ? [stored] : []);
+        const { service, sign, User, log } = build(stored ? [stored] : []);
 
-        await rejectsWithInvalidCredentials(service.login({ email: 'x@example.com', password }));
+        await rejectsWithInvalidCredentials(service.login({ email: 'x@example.com', password }, log));
 
-        expect(compareSync).toHaveBeenCalledTimes(1);
-        const [sent, hash] = compareSync.mock.calls[0]!;
+        expect(compare).toHaveBeenCalledTimes(1);
+        const [sent, hash] = compare.mock.calls[0]!;
         expect(sent).toBe(password);
         if (comparesStoredHash) expect(hash).toBe(stored!.password);
-        else expect(hash).toMatch(COST_10_HASH); // the dummy: the production cost, whatever the account stores
+        else expect(hash).toMatch(COST_10_HASH); // the dummy: the configured cost, whatever the account stores
         expect(sign).not.toHaveBeenCalled();
+        expect(User.updateOne).not.toHaveBeenCalled(); // P25: a failed login never rehashes
       },
     );
 
     test('every account without a usable hash is compared against the same dummy', async () => {
-      const { service } = build([{ _id: '1', email: 'google@example.com', password: ':D', state: true }]);
+      const { service, log } = build([
+        { _id: '1', email: 'google@example.com', password: ':D', state: true },
+      ]);
 
-      await rejectsWithInvalidCredentials(service.login({ email: 'ghost@example.com', password: PASSWORD }));
-      await rejectsWithInvalidCredentials(service.login({ email: 'google@example.com', password: PASSWORD }));
+      await rejectsWithInvalidCredentials(
+        service.login({ email: 'ghost@example.com', password: PASSWORD }, log),
+      );
+      await rejectsWithInvalidCredentials(
+        service.login({ email: 'google@example.com', password: PASSWORD }, log),
+      );
 
-      expect(compareSync.mock.calls[0]![1]).toBe(compareSync.mock.calls[1]![1]);
+      expect(compare.mock.calls[0]![1]).toBe(compare.mock.calls[1]![1]);
     });
 
     test('the dummy password matches the dummy hash, and an unknown email is still refused', async () => {
-      const { service } = build();
+      const { service, log } = build();
 
       await rejectsWithInvalidCredentials(
-        service.login({ email: 'ghost@example.com', password: 'dummy-password' }),
+        service.login({ email: 'ghost@example.com', password: 'dummy-password' }, log),
       );
 
-      expect(compareSync.mock.results[0]).toEqual({ type: 'return', value: true });
+      await expect(compare.mock.results[0]!.value).resolves.toBe(true);
+    });
+
+    // ADR-035: the dummy costs what every hash the API writes costs, so an unknown email is as slow as a real one.
+    test('the dummy is hashed at the configured cost', async () => {
+      const { service, log } = build([], fakeGoogle(), 11);
+
+      await rejectsWithInvalidCredentials(
+        service.login({ email: 'ghost@example.com', password: PASSWORD }, log),
+      );
+
+      expect(compare.mock.calls[0]![1]).toMatch(/^\$2[ab]\$11\$/);
+    });
+
+    test("a token is signed at the user's own tokenVersion (AM-M5-9)", async () => {
+      const { service, sign, log } = build([
+        { _id: '1', email: 'ada@example.com', password: HASH, state: true, tokenVersion: 3 },
+      ]);
+
+      await service.login({ email: 'ada@example.com', password: PASSWORD }, log);
+
+      expect(sign).toHaveBeenCalledExactlyOnceWith('1', 3);
     });
 
     test('a token that cannot be signed rejects with the original error, not a 401', async () => {
-      const { service, sign } = build([{ _id: '1', email: 'ada@example.com', password: HASH, state: true }]);
+      const { service, sign, log } = build([
+        { _id: '1', email: 'ada@example.com', password: HASH, state: true },
+      ]);
       sign.mockRejectedValueOnce(new Error('secretOrPrivateKey must have a value'));
 
-      await expect(service.login({ email: 'ada@example.com', password: PASSWORD })).rejects.toThrow(
+      await expect(service.login({ email: 'ada@example.com', password: PASSWORD }, log)).rejects.toThrow(
         'secretOrPrivateKey must have a value',
       );
     });
@@ -222,7 +264,7 @@ describe('createAuthService', () => {
         image: PROFILE.picture,
         google: true,
       });
-      expect(sign).toHaveBeenCalledExactlyOnceWith('id-1');
+      expect(sign).toHaveBeenCalledExactlyOnceWith('id-1', 0);
       expect(session).toEqual({ token: 'token-for-id-1', user: rows[0] });
     });
 
@@ -243,7 +285,13 @@ describe('createAuthService', () => {
     });
 
     test('an existing active account signs in without being created again or changed', async () => {
-      const existing: Row = { _id: '7', email: PROFILE.email, name: 'Old Name', password: ':D', state: true };
+      const existing: Seed = {
+        _id: '7',
+        email: PROFILE.email,
+        name: 'Old Name',
+        password: ':D',
+        state: true,
+      };
       const { service, User } = build([existing]);
 
       const session = await service.googleSignIn({ id_token: 'google-id-token' });
@@ -252,7 +300,7 @@ describe('createAuthService', () => {
       // AM-M4-1: this read does not select the password, so the session's user never carries it.
       expect(session).toEqual({
         token: 'token-for-7',
-        user: { _id: '7', email: PROFILE.email, name: 'Old Name', state: true },
+        user: { _id: '7', email: PROFILE.email, name: 'Old Name', state: true, tokenVersion: 0 },
       });
     });
 
@@ -292,7 +340,86 @@ describe('createAuthService', () => {
 
       await service.googleSignIn({ id_token: 'google-id-token' });
 
-      expect(compareSync).not.toHaveBeenCalled();
+      expect(compare).not.toHaveBeenCalled();
+    });
+  });
+
+  // ADR-035 / P25: a hash of another cost converges to the configured one on the next successful login, strictly
+  // after the compare has decided and without delaying the answer.
+  describe('rehash-on-login (P25)', () => {
+    const cost4 = { _id: '1', email: 'ada@example.com', password: HASH, state: true };
+
+    test('a hash of another cost is replaced by one at the configured cost, if it is still the stored one', async () => {
+      const { service, User, rows, log } = build([cost4]);
+
+      await service.login({ email: 'ada@example.com', password: PASSWORD }, log);
+
+      await vi.waitFor(() => expect(User.updateOne).toHaveBeenCalledTimes(1));
+      const [filter, update] = User.updateOne.mock.calls[0]!;
+      expect(filter).toEqual({ _id: '1', password: HASH }); // compare-and-swap on the hash the login compared
+      expect(update.password).toMatch(COST_10_HASH);
+      expect(bcrypt.compareSync(PASSWORD, update.password)).toBe(true);
+      expect(rows[0]!.password).toBe(update.password);
+    });
+
+    test('the answer never waits for it: a rehash that never finishes still lets the login answer', async () => {
+      const { service, User, log } = build([cost4]);
+      User.updateOne.mockImplementation(() => new Promise(() => undefined)); // the swap never completes
+
+      await expect(
+        service.login({ email: 'ada@example.com', password: PASSWORD }, log),
+      ).resolves.toMatchObject({
+        token: 'token-for-1',
+      });
+    });
+
+    test('a password changed meanwhile is never overwritten', async () => {
+      const { service, User, rows, log } = build([cost4]);
+      const login = service.login({ email: 'ada@example.com', password: PASSWORD }, log);
+      rows[0]!.password = bcrypt.hashSync('a-new-password-9', 4); // a password change lands before the rehash
+
+      await login;
+      await vi.waitFor(() => expect(User.updateOne).toHaveBeenCalledTimes(1));
+      expect(bcrypt.compareSync('a-new-password-9', rows[0]!.password)).toBe(true);
+    });
+
+    test.each([
+      ['a wrong password', { ...cost4 }, 'wrong-password'],
+      ['an inactive account', { ...cost4, state: false }, PASSWORD],
+    ])('%s is never rehashed', async (_case, stored, password) => {
+      const { service, User, log } = build([stored]);
+      const hash = vi.spyOn(bcrypt, 'hash');
+
+      await rejectsWithInvalidCredentials(service.login({ email: 'ada@example.com', password }, log));
+
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      expect(hash).not.toHaveBeenCalled();
+      expect(User.updateOne).not.toHaveBeenCalled();
+    });
+
+    test('a hash already at the configured cost is left alone', async () => {
+      const { service, User, log } = build([{ ...cost4, password: bcrypt.hashSync(PASSWORD, COST) }]);
+
+      await service.login({ email: 'ada@example.com', password: PASSWORD }, log);
+
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      expect(User.updateOne).not.toHaveBeenCalled();
+    });
+
+    test('a failed rehash is logged at warn and the login still succeeds', async () => {
+      const { service, User, log } = build([cost4]);
+      User.updateOne.mockRejectedValueOnce(new Error('database unavailable'));
+
+      await expect(
+        service.login({ email: 'ada@example.com', password: PASSWORD }, log),
+      ).resolves.toBeDefined();
+
+      await vi.waitFor(() =>
+        expect(log.warn).toHaveBeenCalledExactlyOnceWith(
+          { err: expect.objectContaining({ message: 'database unavailable' }) },
+          'password rehash failed; the next login retries',
+        ),
+      );
     });
   });
 });
