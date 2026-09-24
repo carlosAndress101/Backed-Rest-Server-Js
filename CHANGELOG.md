@@ -19,7 +19,7 @@ First release with breaking changes (ADR-015, ADR-024). Security fixes for the C
 - Media writes require authentication (admin, or the owner for their own user image) (SEC-03).
 - Image serving only returns bare filenames inside `uploads/<collection>/`: arbitrary file read closed (SEC-04).
 - `GET /api/user` and user search are admin-only (SEC-05).
-- Login and Google sign-in are rate-limited, 10 requests per 15 min per IP (SEC-06), and answer every credential failure with one generic 401, constant-time for unknown emails (SEC-07).
+- Login and Google sign-in are rate-limited, 10 requests per 15 min per IP (SEC-06), and answer every credential failure with one generic 401 at one bcrypt check each, including unknown emails and Google-created accounts (SEC-07).
 - Uploads: 5 MB limit, case-insensitive extension check, multipart parsed only on the two upload write routes after auth, one file per request, and a per-request temp folder removed on every exit path (SEC-08).
 - Dependencies: 48 advisories (2 critical, 25 high) down to 0 (SEC-09). `helmet` security headers, and `x-powered-by` disabled (SEC-10).
 - New `TRUST_PROXY` setting, so the rate limiter sees real client addresses behind a reverse proxy (SEC-15).
@@ -43,7 +43,7 @@ First release with breaking changes (ADR-015, ADR-024). Security fixes for the C
 - The unrouted `updateImage` handler (CQ-02, partial). The `uuid` dependency, replaced by `crypto.randomUUID()`.
 
 ### Tests
-- Security regression suite (Jest + supertest + mongodb-memory-server): 95 tests across 9 files (TEST-01, M1 part).
+- Security regression suite (Jest + supertest + mongodb-memory-server): 101 tests across 9 files (TEST-01, M1 part).
 
 ### Operational
 - Optional `TRUST_PROXY`: a non-negative integer hop count; an invalid value stops the boot. Set it to the real hop count behind any reverse proxy. Unset keeps `req.ip` as the socket address.
