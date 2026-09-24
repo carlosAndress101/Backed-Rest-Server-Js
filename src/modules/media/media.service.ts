@@ -23,7 +23,6 @@ export interface ImageRecordModel {
     options: { returnDocument: 'before' },
   ): PromiseLike<ImageRecord | null>;
 }
-export type ImageModels = (name: 'User' | 'Product') => ImageRecordModel;
 
 /** req.log: the lines below are the ones controllers/uploads.js wrote (LOG-01). */
 export type MediaLog = Pick<Logger, 'error' | 'warn'>;
@@ -39,24 +38,29 @@ export interface MediaService {
   imageUrl(collection: MediaCollection, id: string): Promise<string>;
 }
 
-const MODEL_NAMES = { user: 'User', product: 'Product' } as const;
-const NOT_FOUND = { user: 'User not found', product: 'Product not found' } as const;
 const ORPHANED = 'orphaned Cloudinary asset: the record was not saved';
 
 /** The media rules (ADR-030): Cloudinary is the only store. Throws AppErrors; knows nothing of HTTP. */
 export function createMediaService(deps: {
-  models: ImageModels;
+  User: ImageRecordModel;
+  Product: ImageRecordModel;
   client: MediaClient;
   cloudName: string;
 }): MediaService {
-  const { models, client, cloudName } = deps;
+  const { client, cloudName } = deps;
   const active = (id: string): ActiveFilter => ({ _id: id, state: true });
+  // mediaParams' enum has already limited the collection to 'user' or 'product'. It picks its model by a
+  // comparison, never by indexing an object with the request's string, so no inherited key is ever read.
+  const target = (collection: MediaCollection) =>
+    collection === 'user'
+      ? { Model: deps.User, notFound: 'User not found' }
+      : { Model: deps.Product, notFound: 'Product not found' };
 
   return {
     async replaceImage(collection, id, filePath, log) {
-      const Model = models(MODEL_NAMES[collection]);
+      const { Model, notFound } = target(collection);
       // find-active-or-404 first: nothing reaches Cloudinary for a missing or soft-deleted record.
-      if (!(await Model.exists(active(id)))) throw new NotFoundError(NOT_FOUND[collection]);
+      if (!(await Model.exists(active(id)))) throw new NotFoundError(notFound);
 
       const { secureUrl } = await client.upload(filePath);
 
@@ -72,7 +76,7 @@ export function createMediaService(deps: {
       if (!record) {
         // soft-deleted between the check and the swap: the new asset belongs to nothing
         log.error({ asset: secureUrl, collection, id }, ORPHANED);
-        throw new NotFoundError(NOT_FOUND[collection]);
+        throw new NotFoundError(notFound);
       }
 
       const previous = ownAssetUrl(record.image, cloudName);
@@ -91,8 +95,9 @@ export function createMediaService(deps: {
     },
 
     async imageUrl(collection, id) {
-      const record = await models(MODEL_NAMES[collection]).findOne(active(id), 'image');
-      if (!record) throw new NotFoundError(NOT_FOUND[collection]);
+      const { Model, notFound } = target(collection);
+      const record = await Model.findOne(active(id), 'image');
+      if (!record) throw new NotFoundError(notFound);
       const url = ownAssetUrl(record.image, cloudName);
       if (!url) throw new NotFoundError('Image not found');
       return url;

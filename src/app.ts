@@ -10,7 +10,6 @@ import type { Logger } from './core/logger';
 import { createTokenService } from './core/security/jwt';
 import { mountLegacyRoutes } from './legacy';
 import { authenticate, type UserLookup } from './middlewares/authenticate';
-import { requireAdmin } from './middlewares/authorize';
 import { errorHandler } from './middlewares/error-handler';
 import { notFound } from './middlewares/not-found';
 import { requestLogger } from './middlewares/request-logger';
@@ -70,8 +69,8 @@ export function createApp({ config, logger }: AppDeps): Express {
   };
   const auth = authenticate({ tokens, users });
 
-  app.use('/api/category', categoriesModule({ authenticate: auth, requireAdmin }));
-  app.use('/api/product', productsModule({ Category: CategoryModel, authenticate: auth, requireAdmin }));
+  app.use('/api/category', categoriesModule({ authenticate: auth }));
+  app.use('/api/product', productsModule({ Category: CategoryModel, authenticate: auth }));
   app.use(
     '/api/search',
     searchModule({ User: UserModel, Category: CategoryModel, Product: ProductModel, authenticate: auth }),
@@ -80,7 +79,8 @@ export function createApp({ config, logger }: AppDeps): Express {
   app.use(
     '/api/uploads',
     mediaModule({
-      models: (name) => (name === 'User' ? UserModel : ProductModel),
+      User: UserModel,
+      Product: ProductModel,
       authenticate: auth,
       cloudinaryUrl: config.media.cloudinaryUrl,
     }),

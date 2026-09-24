@@ -76,7 +76,8 @@ describe('createMediaService', () => {
     };
     log = { error: vi.fn(), warn: vi.fn() };
     service = createMediaService({
-      models: (name) => (name === 'User' ? users : products),
+      User: users,
+      Product: products,
       client,
       cloudName: 'demo',
     });

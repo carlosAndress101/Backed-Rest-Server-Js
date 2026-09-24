@@ -12,7 +12,6 @@ export interface ProductsModuleDeps {
   /** The categories model, injected by the composition root (§2.3 rule 4). */
   Category: CategoryLookup;
   authenticate: RequestHandler;
-  requireAdmin: RequestHandler;
 }
 
 /** P15: model → service → controller → router. src/app.ts mounts the result at /api/product. */
@@ -21,6 +20,5 @@ export function productsModule(deps: ProductsModuleDeps): Router {
   return createProductsRouter({
     controller: createProductsController(service),
     authenticate: deps.authenticate,
-    requireAdmin: deps.requireAdmin,
   });
 }

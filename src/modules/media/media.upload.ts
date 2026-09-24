@@ -6,13 +6,13 @@ import path from 'node:path';
 import type { RequestHandler } from 'express';
 import fileUpload from 'express-fileupload';
 
-import { AppError, BadRequestError } from '../../core/errors';
+import { AppError, BadRequestError, PayloadTooLargeError } from '../../core/errors';
 
 export const MAX_FILE_BYTES = 5 * 1024 * 1024;
 
 // F4: the 5 MB limit answers 413 with the JSON envelope (abortOnLimit then only drains and closes the request).
 const tooLarge: RequestHandler = (_req, _res, next) => {
-  next(new AppError(413, 'BAD_REQUEST', 'The file is larger than 5 MB'));
+  next(new PayloadTooLargeError('The file is larger than 5 MB'));
 };
 
 // One file, max 5 MB, written to a temp file (never kept in memory).

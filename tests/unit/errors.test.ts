@@ -8,6 +8,7 @@ import {
   ForbiddenError,
   InternalError,
   NotFoundError,
+  PayloadTooLargeError,
   RateLimitedError,
   UnauthorizedError,
   ValidationError,
@@ -16,7 +17,12 @@ import {
 } from '../../src/core/errors';
 
 /** The only messages a non-AppError can ever produce: nothing from the original error reaches the client. */
-const FIXED_MESSAGES = ['Invalid request data', 'Resource already exists', 'Internal server error'];
+const FIXED_MESSAGES = [
+  'Invalid request data',
+  'Payload too large',
+  'Resource already exists',
+  'Internal server error',
+];
 
 /** Shaped like body-parser's http-errors: a client error it marks safe to expose. */
 const bodyParserError = (status: number) =>
@@ -43,7 +49,14 @@ const C1_ROWS: readonly Row[] = [
     'BAD_REQUEST',
     'Invalid request data',
   ],
-  ['body-parser 413 (JSON > 100 kb)', () => bodyParserError(413), 413, 'BAD_REQUEST', 'Invalid request data'],
+  // AM-M3-10: a 413 has its own code in 3.0.0
+  [
+    'body-parser 413 (JSON > 100 kb)',
+    () => bodyParserError(413),
+    413,
+    'PAYLOAD_TOO_LARGE',
+    'Payload too large',
+  ],
   ['body-parser 415 (bad charset)', () => bodyParserError(415), 415, 'BAD_REQUEST', 'Invalid request data'],
   [
     'URIError with status 400 (bad % escape)',
@@ -81,6 +94,13 @@ const C1_ROWS: readonly Row[] = [
   [
     '{ status: 400, expose: false }',
     () => ({ status: 400, expose: false }),
+    500,
+    'INTERNAL',
+    'Internal server error',
+  ],
+  [
+    '{ status: 413, expose: false }',
+    () => ({ status: 413, expose: false }),
     500,
     'INTERNAL',
     'Internal server error',
@@ -125,6 +145,7 @@ describe('toAppError reproduces the M1 C1 mapping', () => {
   });
 
   test('the mapped classes match the §4.3 table', () => {
+    expect(toAppError(bodyParserError(413))).toBeInstanceOf(PayloadTooLargeError);
     expect(toAppError({ code: 11000 })).toBeInstanceOf(ConflictError);
     expect(toAppError(new mongoose.Error.CastError('ObjectId', 'x', '_id'))).toBeInstanceOf(BadRequestError);
     expect(toAppError(new Error('boom'))).toBeInstanceOf(InternalError);
@@ -136,6 +157,7 @@ describe('toAppError reproduces the M1 C1 mapping', () => {
     new ForbiddenError('Not the owner'),
     new NotFoundError('Route not found'),
     new ConflictError(),
+    new PayloadTooLargeError('The file is larger than 5 MB'),
     new ValidationError([{ path: 'name', message: 'Required' }]),
     new InternalError(new Error('cause')),
     new AppError(418, 'BAD_REQUEST', 'custom'),
@@ -151,6 +173,7 @@ describe('the AppError hierarchy', () => {
     [ForbiddenError, () => new ForbiddenError(), 403, 'FORBIDDEN', 'Forbidden'],
     [NotFoundError, () => new NotFoundError(), 404, 'NOT_FOUND', 'Resource not found'],
     [ConflictError, () => new ConflictError(), 409, 'CONFLICT', 'Resource already exists'],
+    [PayloadTooLargeError, () => new PayloadTooLargeError(), 413, 'PAYLOAD_TOO_LARGE', 'Payload too large'],
     [ValidationError, () => new ValidationError([]), 422, 'VALIDATION_FAILED', 'Validation failed'],
     [InternalError, () => new InternalError(), 500, 'INTERNAL', 'Internal server error'],
   ] as const)('%o: status, code, default message and name', (errorClass, create, status, code, message) => {
@@ -172,6 +195,9 @@ describe('the AppError hierarchy', () => {
     expect(new ForbiddenError('Not the owner').message).toBe('Not the owner');
     expect(new NotFoundError('Route not found').message).toBe('Route not found');
     expect(new ConflictError('Email taken').message).toBe('Email taken');
+    expect(new PayloadTooLargeError('The file is larger than 5 MB').message).toBe(
+      'The file is larger than 5 MB',
+    );
     expect(new ValidationError([], 'Invalid body').message).toBe('Invalid body');
     expect(new InternalError(new Error('secret detail')).message).toBe('Internal server error');
   });
@@ -181,6 +207,7 @@ describe('the AppError hierarchy', () => {
 
     expect(new BadRequestError(undefined, cause).cause).toBe(cause);
     expect(new ConflictError(undefined, cause).cause).toBe(cause);
+    expect(new PayloadTooLargeError(undefined, cause).cause).toBe(cause);
     expect(new InternalError(cause).cause).toBe(cause);
     expect(new AppError(400, 'BAD_REQUEST', 'x', { cause }).cause).toBe(cause);
   });
