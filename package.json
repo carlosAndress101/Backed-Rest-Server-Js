@@ -1,8 +1,8 @@
 {
-  "name": "07-restserver",
+  "name": "backed-rest-server-js",
   "version": "1.0.0",
   "description": "",
-  "main": "index.js",
+  "main": "app.js",
   "scripts": {
     "start": "node app.js",
     "dev": "nodemon app.js",
@@ -11,7 +11,7 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/carlosAndress101/Rest-Server"
+    "url": "git+https://github.com/carlosAndress101/Backed-Rest-Server-Js.git"
   },
   "keywords": [
     "express",
