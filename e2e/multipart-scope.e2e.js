@@ -19,6 +19,8 @@ const mongoose = require('mongoose');
 const {
   connectDatabase,
   buildApp,
+  closeServers,
+  expectStatus,
   clearDatabase,
   createUser,
   createAdmin,
@@ -62,12 +64,13 @@ describe('SEC-08 / C10 multipart bodies are parsed only by the upload routes, af
 
   beforeAll(async () => {
     await connectDatabase();
-    app = buildApp();
+    app = await buildApp();
   });
 
   // Every request here is either rejected or goes to the mocked Cloudinary, so
   // nothing is written under uploads/ (uploads.e2e.js owns that tree).
   afterAll(async () => {
+    await closeServers();
     await mongoose.connection.close();
   });
 
@@ -164,7 +167,7 @@ describe('SEC-08 / C10 multipart bodies are parsed only by the upload routes, af
         request(app).put(`/api/user/${owner.id}`).set(authHeader(await tokenFor(owner))).field('name', 'Changed')
       );
 
-      expect(res.statusCode).toBe(200);
+      expectStatus(res, 200);
       expect((await User.findById(owner.id)).name).toBe('Original');
       expect(tempWrites()).toEqual([]);
     });
@@ -211,7 +214,7 @@ describe('SEC-08 / C10 multipart bodies are parsed only by the upload routes, af
         attach(request(app).put(`/api/uploads/user/${owner.id}`).set(authHeader(await tokenFor(owner))))
       );
 
-      expect(res.statusCode).toBe(200);
+      expectStatus(res, 200);
       expect(cloudinary.uploader.upload).toHaveBeenCalledTimes(1);
       expect(tempWrites()).toHaveLength(1);
       expect(await waitForNoTempLeak(before)).toEqual([]);

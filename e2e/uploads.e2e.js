@@ -19,6 +19,8 @@ const mongoose = require('mongoose');
 const {
   connectDatabase,
   buildApp,
+  closeServers,
+  expectStatus,
   clearDatabase,
   createUser,
   createAdmin,
@@ -52,10 +54,11 @@ describe('media write policy and file serving', () => {
 
   beforeAll(async () => {
     await connectDatabase();
-    app = buildApp();
+    app = await buildApp();
   });
 
   afterAll(async () => {
+    await closeServers();
     resetUploadDirs();
     await mongoose.connection.close();
   });
@@ -89,7 +92,7 @@ describe('media write policy and file serving', () => {
 
       const res = await attach(request(app).post('/api/uploads').set(authHeader(token)));
 
-      expect(res.statusCode).toBe(200);
+      expectStatus(res, 200);
       expect(typeof res.body.fullName).toBe('string');
     });
   });
@@ -124,7 +127,7 @@ describe('media write policy and file serving', () => {
         request(app).put(`/api/uploads/user/${owner.id}`).set(authHeader(token))
       );
 
-      expect(res.statusCode).toBe(200);
+      expectStatus(res, 200);
 
       const updated = await User.findById(owner.id);
       expect(updated.image).toBe(SECURE_URL);
@@ -139,7 +142,7 @@ describe('media write policy and file serving', () => {
         request(app).put(`/api/uploads/user/${owner.id}`).set(authHeader(token))
       );
 
-      expect(res.statusCode).toBe(200);
+      expectStatus(res, 200);
     });
   });
 
@@ -174,7 +177,7 @@ describe('media write policy and file serving', () => {
         request(app).put(`/api/uploads/product/${product.id}`).set(authHeader(token))
       );
 
-      expect(res.statusCode).toBe(200);
+      expectStatus(res, 200);
     });
   });
 
@@ -184,7 +187,7 @@ describe('media write policy and file serving', () => {
 
       const res = await request(app).get(`/api/uploads/user/${user.id}`);
 
-      expect(res.statusCode).toBe(200);
+      expectStatus(res, 200);
       expect(res.headers['content-type']).toMatch(/^image\//);
     });
 
@@ -194,7 +197,7 @@ describe('media write policy and file serving', () => {
       const user = await createUser({ image: 'sub/secret.txt' });
       const res = await request(app).get(`/api/uploads/user/${user.id}`);
 
-      expect(res.statusCode).toBe(200);
+      expectStatus(res, 200);
       expect(res.headers['content-type']).toMatch(/^image\//);
     });
 
@@ -205,7 +208,7 @@ describe('media write policy and file serving', () => {
       const user = await createUser({ image: name });
       const res = await request(app).get(`/api/uploads/user/${user.id}`);
 
-      expect(res.statusCode).toBe(200);
+      expectStatus(res, 200);
       expect(res.headers['content-type']).toMatch(/^image\//);
       expect(Buffer.isBuffer(res.body)).toBe(true);
       expect(Buffer.compare(res.body, JPEG)).toBe(0);
@@ -222,7 +225,7 @@ describe('media write policy and file serving', () => {
         'PHOTO.JPG'
       );
 
-      expect(res.statusCode).toBe(200);
+      expectStatus(res, 200);
     });
 
     test('an upload larger than 5 MB is rejected with 413', async () => {
@@ -252,7 +255,7 @@ describe('media write policy and file serving', () => {
         request(app).put(`/api/uploads/user/${owner.id}`).set(authHeader(token))
       );
 
-      expect(res.statusCode).toBe(200);
+      expectStatus(res, 200);
       expect(await waitForNoTempLeak(before)).toEqual([]);
     });
 
@@ -285,7 +288,7 @@ describe('media write policy and file serving', () => {
         request(app).put(`/api/uploads/user/${owner.id}`).set(authHeader(token))
       );
 
-      expect(res.statusCode).toBe(200);
+      expectStatus(res, 200);
       expect(await waitForNoTempLeak(before)).toEqual([]);
     });
   });

@@ -10,7 +10,7 @@ jest.mock('../helpers/google-verify', () => ({
 const request = require('supertest');
 const mongoose = require('mongoose');
 
-const { connectDatabase, buildApp, clearDatabase } = require('./helpers/db');
+const { connectDatabase, buildApp, closeServers, clearDatabase } = require('./helpers/db');
 const { googleVerify } = require('../helpers/google-verify');
 
 const LIMIT = 10;
@@ -20,10 +20,11 @@ describe('SEC-06 rate limiting on the auth surface', () => {
 
   beforeAll(async () => {
     await connectDatabase();
-    app = buildApp();
+    app = await buildApp();
   });
 
   afterAll(async () => {
+    await closeServers();
     await mongoose.connection.close();
   });
 

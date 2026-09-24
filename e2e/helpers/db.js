@@ -10,6 +10,7 @@
 require('../../models/server');
 
 const fs = require('fs');
+const http = require('http');
 const os = require('os');
 const path = require('path');
 const mongoose = require('mongoose');
@@ -103,8 +104,55 @@ const connectDatabase = async () => {
   await connection();
 };
 
-/** C3: `new Server()` has no side effects and `server.app` is the Express app. */
-const buildApp = () => new Server().app;
+// ---------------------------------------------------------------------------
+// Serving the app (T1.8)
+// ---------------------------------------------------------------------------
+
+const servers = new Set();
+
+/**
+ * Serves an Express app on 127.0.0.1 and resolves to the listening server, which
+ * the tests hand to SuperTest instead of the bare app.
+ *
+ * Given a bare app, SuperTest listens on an ephemeral port of the dual-stack
+ * wildcard (::) and then connects to 127.0.0.1 on that port. macOS hands out such
+ * ports even when another process listens on 127.0.0.1 with the same number, and
+ * that more specific listener gets the connection: local services (an IDE helper,
+ * a device agent, another run's mongod) answered test requests with their own
+ * 401/403/501. Listening on 127.0.0.1 itself makes the port exclusively ours.
+ *
+ * Every response closes its connection, like SuperTest's per-request servers, so
+ * no keep-alive socket is reused from one request or test to the next.
+ */
+const serve = async (app) => {
+  const server = http.createServer((req, res) => {
+    res.setHeader('Connection', 'close');
+    app(req, res);
+  });
+  await new Promise((resolve, reject) => {
+    server.once('error', reject);
+    server.listen(0, '127.0.0.1', resolve);
+  });
+  servers.add(server);
+  return server;
+};
+
+/** C3: `new Server()` has no side effects; `server.app` is served by `serve()`. */
+const buildApp = () => serve(new Server().app);
+
+/** Closes every server this test file started. Call it from `afterAll`. */
+const closeServers = async () => {
+  await Promise.all([...servers].map((server) => new Promise((resolve) => server.close(resolve))));
+  servers.clear();
+};
+
+/**
+ * Asserts a response status. On a mismatch Jest's diff also prints the response
+ * body (which 401 fired, or whose), so an unexpected status is diagnosable from a
+ * single failing run.
+ */
+const expectStatus = (res, status) =>
+  expect({ status: res.statusCode, body: res.body }).toEqual({ status, body: res.body });
 
 // ---------------------------------------------------------------------------
 // Temporary upload files (express-fileupload useTempFiles)
@@ -170,7 +218,10 @@ module.exports = {
   clearDatabase,
   hashPassword,
   connectDatabase,
+  serve,
   buildApp,
+  closeServers,
+  expectStatus,
   createUser,
   createAdmin,
   seedRoles,
