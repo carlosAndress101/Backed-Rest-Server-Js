@@ -92,6 +92,7 @@ Why this order differs from the default template: **security first** (ADR-001) b
 
 ## M10: CI/CD
 - **Goal:** Automated gates and delivery.
+- **Carried from M2 (T2.7 Q1):** `cancel-in-progress` only for pull requests (`${{ github.event_name == 'pull_request' }}`), so every `master` commit gets a finished run.
 - **Deliverables:** PR pipeline (lint, typecheck, test, coverage, `pnpm audit`); CodeQL and dependency review; Renovate or Dependabot; image build and push to GHCR; deploy on tag; conventional commits driving CHANGELOG; branch protection.
 - **Risks:** Deploy secrets management; platform integration unknown.
 - **Complexity:** M · **Dependencies:** M9 (basic CI already exists from M2).
