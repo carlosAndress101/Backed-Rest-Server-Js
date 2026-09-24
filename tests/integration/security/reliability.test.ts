@@ -139,7 +139,7 @@ describe('crash safety and HTTP error handling', () => {
 
       const followUp = await request(app).get('/api/search/category/LAPTOP');
       expect(followUp.statusCode).toBe(200);
-      expect(followUp.body.results).toHaveLength(1);
+      expect(followUp.body.data).toHaveLength(1);
     });
 
     test('a well-formed id that does not exist returns a response and the next request works', async () => {
@@ -149,7 +149,7 @@ describe('crash safety and HTTP error handling', () => {
       const res = await request(app).get(`/api/search/category/${missing}`);
 
       expect(res.statusCode).toBe(200);
-      expect(res.body.results).toEqual([]);
+      expect(res.body.data).toEqual([]);
 
       const followUp = await request(app).get('/api/search/category/LAPTOP');
       expect(followUp.statusCode).toBe(200);
@@ -203,7 +203,7 @@ describe('crash safety and HTTP error handling', () => {
 
       const followUp = await request(app).get('/api/search/category/LAPTOP');
       expect(followUp.statusCode).toBe(200);
-      expect(followUp.body.results).toHaveLength(1);
+      expect(followUp.body.data).toHaveLength(1);
     });
   });
 });
