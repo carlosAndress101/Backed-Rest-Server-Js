@@ -10,6 +10,8 @@ import type { OAuth2Client } from 'google-auth-library';
 import type { Model } from 'mongoose';
 import { vi, type MockInstance } from 'vitest';
 
+import { createTokenService } from '../../src/core/security/jwt';
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type LegacyModel = Model<any>; // legacy schemas are untyped JS
 /** A document of a legacy model: untyped JS, so every field is `any` until M3 (factories return it). */
@@ -17,9 +19,12 @@ export type LegacyDoc = ReturnType<LegacyModel['hydrate']>;
 
 export const legacyModels = () =>
   require('../../models') as { User: LegacyModel; Role: LegacyModel; Category: LegacyModel; Product: LegacyModel };
-export const { generarJWT } = require('../../helpers/generar-jwt') as {
-  generarJWT: (uid: string) => Promise<string>;
-};
+/**
+ * Mints an x-token as the login route does: the core token service (T3.4 deleted helpers/generar-jwt.js). The
+ * secret is the test SECRET_KEY, read on every call as the legacy helper read it.
+ */
+export const generarJWT = (uid: string): Promise<string> =>
+  createTokenService(process.env.SECRET_KEY ?? '').sign(uid);
 
 const cloudinary = (require('cloudinary') as { v2: typeof v2 }).v2;
 const { OAuth2Client: GoogleClient } = require('google-auth-library') as { OAuth2Client: typeof OAuth2Client };
