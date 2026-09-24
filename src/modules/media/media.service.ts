@@ -24,7 +24,7 @@ export interface ImageRecordModel {
   ): PromiseLike<ImageRecord | null>;
 }
 
-/** req.log: the lines below are the ones controllers/uploads.js wrote (LOG-01). */
+/** req.log: the lines below are the ones 2.x wrote (LOG-01). */
 export type MediaLog = Pick<Logger, 'error' | 'warn'>;
 
 export interface MediaService {
