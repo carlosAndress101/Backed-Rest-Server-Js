@@ -247,13 +247,6 @@ describe('createApp', () => {
       expect(res.text).toContain('<title>Login Google</title>');
     });
 
-    test('a legacy request without a body sees req.body as {} (Express 4 parity)', async () => {
-      const { req } = await requestSeenByApp(server, () => request(server).get('/api/auth'));
-
-      expect(req.body).toEqual({});
-      expect(Object.getPrototypeOf(req.body)).toBe(Object.prototype);
-    });
-
     test('a bodiless PUT /api/user/:id by the owner is a 200 no-op (Express 4 parity)', async () => {
       const res = await request(server).put(`/api/user/${user.id}`).set('x-token', user.token);
 

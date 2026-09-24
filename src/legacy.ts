@@ -2,7 +2,7 @@
 import type { Express, RequestHandler, Router } from 'express';
 
 // Legacy JS is loaded with Node's own require: one module instance shared by app, tests and every transform.
-const LEGACY_ROUTES: ReadonlyArray<readonly [string, string]> = [['/api/auth', '../routes/auth']];
+const LEGACY_ROUTES: ReadonlyArray<readonly [string, string]> = [];
 
 // Express 5 leaves req.body undefined when no parser ran; legacy handlers were written against Express 4's `{}`.
 // It also keeps multipart fields on a plain object: express-fileupload adds them to an existing body, and only

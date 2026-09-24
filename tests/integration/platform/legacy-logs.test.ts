@@ -5,9 +5,10 @@ import type { Server } from 'node:http';
 import os from 'node:os';
 import path from 'node:path';
 
+import jwt from 'jsonwebtoken';
 import mongoose from 'mongoose';
 import request from 'supertest';
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test, vi } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, test, vi } from 'vitest';
 
 import { clearLogs, loggedText, startTestApp, stopTestApp } from '../../helpers/app';
 import { stubMediaClient } from '../../helpers/uploads';
@@ -38,10 +39,6 @@ describe('LOG-01: legacy code logs through req.log, never the console', () => {
     consoleCalls = () => spies.reduce((calls, spy) => calls + spy.mock.calls.length, 0);
   });
 
-  afterEach(() => {
-    vi.unstubAllEnvs(); // restoreMocks does not undo vi.stubEnv
-  });
-
   afterAll(stopTestApp);
 
   const replaceImage = (reqId: string) =>
@@ -67,7 +64,10 @@ describe('LOG-01: legacy code logs through req.log, never the console', () => {
 
   test('a token that cannot be signed rejects with the original error, which the platform logs', async () => {
     const { email } = await createUser();
-    vi.stubEnv('SECRET_KEY', '');
+    // The auth module's token service holds the secret it was built with (T3.4), so jsonwebtoken signs with an
+    // empty one instead, which fails as a missing SECRET_KEY did.
+    const realSign = jwt.sign as (...args: unknown[]) => void;
+    vi.spyOn(jwt, 'sign').mockImplementation((...args: unknown[]) => realSign(args[0], '', args[2], args[3]));
 
     const res = await request(server)
       .post('/api/auth/login')
