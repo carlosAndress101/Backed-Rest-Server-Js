@@ -17,6 +17,7 @@ const mongoose = require('mongoose');
 const {
   connectDatabase,
   buildApp,
+  closeServers,
   clearDatabase,
   createUser,
   createAdmin,
@@ -41,10 +42,11 @@ describe('REL-04 / C11 an image is replaced as upload, save, then destroy', () =
 
   beforeAll(async () => {
     await connectDatabase();
-    app = buildApp();
+    app = await buildApp();
   });
 
   afterAll(async () => {
+    await closeServers();
     await mongoose.connection.close();
   });
 

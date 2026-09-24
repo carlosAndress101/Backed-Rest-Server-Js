@@ -19,6 +19,7 @@ const mongoose = require('mongoose');
 const {
   connectDatabase,
   buildApp,
+  closeServers,
   clearDatabase,
   createUser,
   createAdmin,
@@ -52,10 +53,11 @@ describe('media write policy and file serving', () => {
 
   beforeAll(async () => {
     await connectDatabase();
-    app = buildApp();
+    app = await buildApp();
   });
 
   afterAll(async () => {
+    await closeServers();
     resetUploadDirs();
     await mongoose.connection.close();
   });

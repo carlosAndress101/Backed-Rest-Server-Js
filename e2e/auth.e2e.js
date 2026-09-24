@@ -12,6 +12,7 @@ const mongoose = require('mongoose');
 const {
   connectDatabase,
   buildApp,
+  closeServers,
   clearDatabase,
   createUser,
   hashPassword,
@@ -27,10 +28,11 @@ describe('auth surface', () => {
 
   beforeAll(async () => {
     await connectDatabase();
-    app = buildApp();
+    app = await buildApp();
   });
 
   afterAll(async () => {
+    await closeServers();
     await mongoose.connection.close();
   });
 
@@ -142,11 +144,11 @@ describe('auth surface', () => {
       const loginAsNewClient = (body) =>
         login(proxiedApp, body).set('X-Forwarded-For', `198.51.100.${(client += 1)}`);
 
-      beforeAll(() => {
+      beforeAll(async () => {
         const original = process.env.TRUST_PROXY;
         process.env.TRUST_PROXY = '1';
         try {
-          proxiedApp = buildApp();
+          proxiedApp = await buildApp();
         } finally {
           if (original === undefined) {
             delete process.env.TRUST_PROXY;

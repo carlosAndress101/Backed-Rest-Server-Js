@@ -7,6 +7,7 @@ const mongoose = require('mongoose');
 const {
   connectDatabase,
   buildApp,
+  closeServers,
   clearDatabase,
   createUser,
   createAdmin,
@@ -26,10 +27,11 @@ describe('search policy', () => {
 
   beforeAll(async () => {
     await connectDatabase();
-    app = buildApp();
+    app = await buildApp();
   });
 
   afterAll(async () => {
+    await closeServers();
     await mongoose.connection.close();
   });
 

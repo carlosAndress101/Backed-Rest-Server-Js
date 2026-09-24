@@ -19,6 +19,7 @@ const mongoose = require('mongoose');
 const {
   connectDatabase,
   buildApp,
+  closeServers,
   clearDatabase,
   createUser,
   createAdmin,
@@ -62,12 +63,13 @@ describe('SEC-08 / C10 multipart bodies are parsed only by the upload routes, af
 
   beforeAll(async () => {
     await connectDatabase();
-    app = buildApp();
+    app = await buildApp();
   });
 
   // Every request here is either rejected or goes to the mocked Cloudinary, so
   // nothing is written under uploads/ (uploads.e2e.js owns that tree).
   afterAll(async () => {
+    await closeServers();
     await mongoose.connection.close();
   });
 

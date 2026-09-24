@@ -7,6 +7,7 @@ const mongoose = require('mongoose');
 const {
   connectDatabase,
   buildApp,
+  closeServers,
   clearDatabase,
   createUser,
   createCategory,
@@ -24,13 +25,14 @@ describe('crash safety and HTTP error handling', () => {
 
   beforeAll(async () => {
     await connectDatabase();
-    app = buildApp();
+    app = await buildApp();
     // Make sure the unique indexes the duplicate-key path relies on exist.
     await Category.init();
     await Product.init();
   });
 
   afterAll(async () => {
+    await closeServers();
     await mongoose.connection.close();
   });
 

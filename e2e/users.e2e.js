@@ -12,6 +12,7 @@ const bcrypt = require('bcrypt');
 const {
   connectDatabase,
   buildApp,
+  closeServers,
   clearDatabase,
   createUser,
   seedRoles,
@@ -28,10 +29,11 @@ describe('user write policy and access control', () => {
 
   beforeAll(async () => {
     await connectDatabase();
-    app = buildApp();
+    app = await buildApp();
   });
 
   afterAll(async () => {
+    await closeServers();
     await mongoose.connection.close();
   });
 
