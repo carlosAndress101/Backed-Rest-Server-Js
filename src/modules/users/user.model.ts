@@ -26,9 +26,15 @@ const userSchema = new Schema(
     // password into err.message and err.stack, which REDACT_PATHS does not cover.
     // AM-M4-1 / P20: never read unless a query asks for '+password' (only the login does), so no find, populate or
     // .lean() read can carry the hash, whatever serializes it.
+    // ADR-036: a Google-only account has no password at all, so it is required only of the others.
     password: {
       type: String,
-      required: [true, 'The password is required'],
+      required: [
+        function (this: { google?: boolean }) {
+          return !this.google;
+        },
+        'The password is required',
+      ],
       cast: 'The password must be a string',
       select: false,
     },
@@ -59,7 +65,10 @@ userSchema.index({ state: 1 }, { name: 'state_1' });
 
 toJsonPlugin(userSchema, { hidden: ['password', 'tokenVersion'], uidAlias: true }); // id + the deprecated uid (4.0.0)
 
-export type User = InferSchemaType<typeof userSchema>;
+// The conditional `required` (ADR-036) makes the inferred password optional. It stays typed as before: it is select:
+// false, so most reads never carry it anyway, and the one read that does (the login) treats a missing or unusable
+// hash exactly like an unknown email (F1).
+export type User = Omit<InferSchemaType<typeof userSchema>, 'password'> & { password: string };
 export type UserDocument = HydratedDocument<User>;
 
 // ADR-027: the sole registrant of 'User'.

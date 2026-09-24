@@ -8,7 +8,6 @@ import type { TokenService } from '../../../src/core/security/jwt';
 import {
   createAuthService,
   type GoogleSignUp,
-  type SignInUserModel,
   type SignInUserWithPassword,
 } from '../../../src/modules/auth/auth.service';
 import type { GoogleProfile, GoogleVerifier } from '../../../src/modules/auth/google.client';
@@ -29,6 +28,7 @@ const PROFILE: GoogleProfile = {
   name: 'Grace',
   email: 'grace@example.com',
   picture: 'https://example.com/g.png',
+  emailVerified: true,
 };
 
 /** A found user as Mongoose returns it under `select: false` (AM-M4-1): without the password. */
@@ -81,7 +81,7 @@ const build = (seed: Seed[] = [], google = fakeGoogle(), bcryptCost = COST) => {
     sign,
     google,
     log,
-    service: createAuthService({ User: User as unknown as SignInUserModel, tokens, google, bcryptCost }),
+    service: createAuthService({ User, tokens, google, bcryptCost }),
   };
 };
 
@@ -250,7 +250,7 @@ describe('createAuthService', () => {
   });
 
   describe('googleSignIn', () => {
-    test('a first sign-in creates the account with the legacy shape and signs a token for it', async () => {
+    test('a first sign-in creates a Google-only account with no password and signs a token for it', async () => {
       const { service, User, sign, google, rows } = build();
 
       const session = await service.googleSignIn({ id_token: 'google-id-token' });
@@ -260,10 +260,9 @@ describe('createAuthService', () => {
       expect(User.create).toHaveBeenCalledExactlyOnceWith({
         name: PROFILE.name,
         email: PROFILE.email,
-        password: ':D',
         image: PROFILE.picture,
         google: true,
-      });
+      }); // ADR-036: no ':D' placeholder, no password field at all
       expect(sign).toHaveBeenCalledExactlyOnceWith('id-1', 0);
       expect(session).toEqual({ token: 'token-for-id-1', user: rows[0] });
     });
@@ -273,7 +272,7 @@ describe('createAuthService', () => {
     test('an existing account is found whatever the case or padding of the Google address', async () => {
       const google = fakeGoogle({ ...PROFILE, email: '  Grace@Example.COM ' });
       const { service, User } = build(
-        [{ _id: '9', email: 'grace@example.com', password: ':D', state: true }],
+        [{ _id: '9', email: 'grace@example.com', state: true, google: true }],
         google,
       );
 
@@ -285,13 +284,7 @@ describe('createAuthService', () => {
     });
 
     test('an existing active account signs in without being created again or changed', async () => {
-      const existing: Seed = {
-        _id: '7',
-        email: PROFILE.email,
-        name: 'Old Name',
-        password: ':D',
-        state: true,
-      };
+      const existing: Seed = { _id: '7', email: PROFILE.email, name: 'Old Name', state: true, google: true };
       const { service, User } = build([existing]);
 
       const session = await service.googleSignIn({ id_token: 'google-id-token' });
@@ -300,14 +293,19 @@ describe('createAuthService', () => {
       // AM-M4-1: this read does not select the password, so the session's user never carries it.
       expect(session).toEqual({
         token: 'token-for-7',
-        user: { _id: '7', email: PROFILE.email, name: 'Old Name', state: true, tokenVersion: 0 },
+        user: {
+          _id: '7',
+          email: PROFILE.email,
+          name: 'Old Name',
+          state: true,
+          google: true,
+          tokenVersion: 0,
+        },
       });
     });
 
     test('an inactive account is the generic 401, and no token is signed', async () => {
-      const { service, User, sign } = build([
-        { _id: '7', email: PROFILE.email, password: ':D', state: false },
-      ]);
+      const { service, User, sign } = build([{ _id: '7', email: PROFILE.email, state: false, google: true }]);
 
       await rejectsWithInvalidCredentials(service.googleSignIn({ id_token: 'google-id-token' }));
 
@@ -333,6 +331,41 @@ describe('createAuthService', () => {
       await expect(service.googleSignIn({ id_token: 'google-id-token' })).rejects.toThrow(
         'Path `name` is required.',
       );
+    });
+
+    // ADR-036 / P27: each of these is the same generic 401, and nothing is looked up, created or signed.
+    test.each([
+      ['an unverified address', { ...PROFILE, emailVerified: false }],
+      ['a verified profile without an address', { ...PROFILE, email: undefined }],
+      ['a blank address', { ...PROFILE, email: '   ' }],
+    ])('%s is the generic 401, before any lookup', async (_case, profile) => {
+      const { service, User, sign } = build([], fakeGoogle(profile));
+
+      await rejectsWithInvalidCredentials(service.googleSignIn({ id_token: 'google-id-token' }));
+
+      expect(User.findOne).not.toHaveBeenCalled();
+      expect(User.create).not.toHaveBeenCalled();
+      expect(sign).not.toHaveBeenCalled();
+    });
+
+    // AM-M5-1: a Google sign-in never enters a password account (no silent link, SEC-12).
+    test("a password account's address is the generic 401: nothing is created, changed or signed", async () => {
+      const owner: Seed = { _id: '5', email: PROFILE.email, password: HASH, state: true, google: false };
+      const { service, User, sign, rows } = build([owner]);
+
+      await rejectsWithInvalidCredentials(service.googleSignIn({ id_token: 'google-id-token' }));
+
+      expect(User.create).not.toHaveBeenCalled();
+      expect(sign).not.toHaveBeenCalled();
+      expect(rows).toEqual([{ ...owner, tokenVersion: 0 }]);
+    });
+
+    test('an account with no google flag is treated as a password account', async () => {
+      const { service, User } = build([{ _id: '5', email: PROFILE.email, password: HASH, state: true }]);
+
+      await rejectsWithInvalidCredentials(service.googleSignIn({ id_token: 'google-id-token' }));
+
+      expect(User.create).not.toHaveBeenCalled();
     });
 
     test('Google sign-in never compares a password', async () => {

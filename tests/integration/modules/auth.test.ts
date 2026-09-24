@@ -138,7 +138,7 @@ describe('auth module (§6 #2–#3)', () => {
       expect(jwt.verify(res.body.data.token, SECRET)).toMatchObject({ uid: res.body.data.user.id });
     });
 
-    test("the users module's model stores today's Google account: the ':D' placeholder password (SEC-12, M5)", async () => {
+    test("the users module's model stores a Google account with no password at all (ADR-036, SEC-12)", async () => {
       const { body } = await googleSignin();
 
       const stored = await UserModel.findById(body.data.user.id, '+password').lean(); // select: false (AM-M4-1)
@@ -146,12 +146,12 @@ describe('auth module (§6 #2–#3)', () => {
       expect(stored).toMatchObject({
         name: PROFILE.name,
         email: PROFILE.email,
-        password: ':D',
         image: PROFILE.picture,
         google: true,
         role: 'USER_ROLE',
         state: true,
       });
+      expect(stored).not.toHaveProperty('password'); // no ':D' placeholder any more
     });
 
     test('a second sign-in reuses the account', async () => {
@@ -160,6 +160,7 @@ describe('auth module (§6 #2–#3)', () => {
         ...PROFILE,
         name: 'Another Name',
         picture: 'https://example.com/b.png',
+        emailVerified: true,
       });
 
       const second = await googleSignin();
@@ -181,6 +182,7 @@ describe('auth module (§6 #2–#3)', () => {
       verifyIdToken.mockResolvedValue({
         getPayload: () => ({
           ...PROFILE,
+          email_verified: true,
           iss: 'https://accounts.google.com',
           sub: '1',
           aud: '',
@@ -218,13 +220,83 @@ describe('auth module (§6 #2–#3)', () => {
     });
 
     test('a verified profile without a name is rejected by the model, as today: 400 BAD_REQUEST', async () => {
-      googleVerify.mockResolvedValueOnce({ email: PROFILE.email, picture: PROFILE.picture });
+      googleVerify.mockResolvedValueOnce({
+        email: PROFILE.email,
+        picture: PROFILE.picture,
+        emailVerified: true,
+      });
 
       const res = await googleSignin();
 
       expect(res.status).toBe(400);
       expect(res.body.error.code).toBe('BAD_REQUEST');
       expect(await UserModel.countDocuments()).toBe(0);
+    });
+
+    // ADR-036 / P27: an address Google has not verified proves nothing; the answer is every failure's answer.
+    test('an unverified address (email_verified false) is 401 "Invalid credentials" and creates nothing', async () => {
+      googleVerify.mockResolvedValueOnce({ ...PROFILE, emailVerified: false });
+
+      const res = await googleSignin();
+
+      expect(res.status).toBe(401);
+      expect(res.body).toEqual(INVALID_CREDENTIALS);
+      expect(await UserModel.countDocuments()).toBe(0);
+    });
+
+    test('a Google payload without email_verified is 401, through the real GoogleClient', async () => {
+      googleVerify.mockRestore(); // the SDK answers; GoogleClient reads the claim
+      const verifyIdToken = vi.spyOn(OAuth2Client.prototype, 'verifyIdToken') as unknown as MockInstance<
+        (options: { idToken: string; audience?: string }) => Promise<LoginTicket>
+      >;
+      verifyIdToken.mockResolvedValue({
+        getPayload: () => ({
+          ...PROFILE,
+          iss: 'https://accounts.google.com',
+          sub: '1',
+          aud: '',
+          iat: 0,
+          exp: 0,
+        }),
+      } as LoginTicket);
+
+      const res = await googleSignin();
+
+      expect(res.status).toBe(401);
+      expect(res.body).toEqual(INVALID_CREDENTIALS);
+      expect(await UserModel.countDocuments()).toBe(0);
+    });
+
+    // AM-M5-1: no silent account link. The password account is untouched, and its own login still works.
+    test('a password account\'s address is 401 "Invalid credentials", and the account is untouched', async () => {
+      const owner = await createUser({
+        email: PROFILE.email,
+        name: 'Owner',
+        password: hashPassword(PASSWORD),
+      });
+      const before = await UserModel.findById(owner.id, '+password').lean();
+
+      const res = await googleSignin();
+
+      expect(res.status).toBe(401);
+      expect(res.body).toEqual(INVALID_CREDENTIALS);
+      expect(await UserModel.findById(owner.id, '+password').lean()).toEqual(before);
+      expect(await UserModel.countDocuments()).toBe(1);
+      expectStatus(
+        await request(app).post('/api/auth/login').send({ email: PROFILE.email, password: PASSWORD }),
+        200,
+      );
+    });
+
+    test('a Google-only account never logs in with a password, whatever it sends', async () => {
+      await googleSignin();
+
+      for (const password of ['dummy-password', ':D', PASSWORD]) {
+        const res = await request(app).post('/api/auth/login').send({ email: PROFILE.email, password });
+
+        expect(res.status).toBe(401);
+        expect(res.body).toEqual(INVALID_CREDENTIALS);
+      }
     });
 
     test.each([

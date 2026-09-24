@@ -9,20 +9,21 @@ import type { GoogleProfile, GoogleVerifier } from './google.client';
 export interface SignInUser {
   _id: unknown;
   state?: boolean | null;
+  /** A Google-only account (ADR-036): the only kind a Google sign-in may enter. */
+  google?: boolean | null;
   /** Signed into every token (AM-M5-9): a token of another version is refused by authenticate (ADR-033). */
   tokenVersion: number;
 }
 
-/** The one read that needs the password hash: the login's, with '+password'. */
+/** The one read that needs the password hash: the login's, with '+password'. A Google-only account has none. */
 export interface SignInUserWithPassword extends SignInUser {
-  password: string;
+  password?: string | null;
 }
 
-/** The account a first Google sign-in creates. The ':D' placeholder password is SEC-12's (M5). */
+/** The account a first Google sign-in creates: no password at all (ADR-036, SEC-12). */
 export interface GoogleSignUp {
   name?: string;
-  email?: string;
-  password: ':D';
+  email: string;
   image?: string;
   google: true;
 }
@@ -104,6 +105,8 @@ export function createAuthService(deps: {
     },
 
     async googleSignIn({ id_token }) {
+      // P27: every way a Google sign-in fails is this one answer: an invalid token, an unverified or missing address,
+      // a password account's address, an inactive account.
       let profile: GoogleProfile;
       try {
         profile = await google.verify(id_token);
@@ -114,9 +117,13 @@ export function createAuthService(deps: {
       const { name, picture } = profile;
       // §10.5: the Google address is matched the way sign-up and login store and read it (trimmed, lowercased).
       const email = profile.email?.trim().toLowerCase();
-      const user =
-        (await User.findOne({ email })) ??
-        (await User.create({ name, email, password: ':D', image: picture, google: true }));
+      // ADR-036: an address Google has not verified proves nothing about who holds it.
+      if (!profile.emailVerified || !email) throw invalidCredentials();
+
+      const existing = await User.findOne({ email });
+      // AM-M5-1: a Google sign-in never enters a password account; it would be a silent account link (SEC-12).
+      if (existing && !existing.google) throw invalidCredentials();
+      const user = existing ?? (await User.create({ name, email, image: picture, google: true })); // no password
       if (!user.state) throw invalidCredentials();
 
       return session(user);

@@ -99,6 +99,7 @@ describe('auth surface', () => {
         name: 'Disabled Google',
         picture: 'https://example.com/p.png',
         email: disabled.email,
+        emailVerified: true,
       });
 
       const res = await googleSignin(app);
@@ -191,6 +192,17 @@ describe('auth surface', () => {
             const user = await createUser({
               email: 'timing-google@example.com',
               password: ':D',
+              google: true,
+            });
+            return { email: user.email, password: 'any-password-123' };
+          },
+        ],
+        [
+          'any password on a Google-only account with no password at all (ADR-036)',
+          async () => {
+            const user = await createUser({
+              email: 'timing-google-m5@example.com',
+              password: undefined,
               google: true,
             });
             return { email: user.email, password: 'any-password-123' };
