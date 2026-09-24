@@ -18,8 +18,8 @@
 | Critical | 5 | M1 |
 | High | 19 | M1 (13), M2–M3 (6) |
 | Medium | 18 | M1 (partial) → M8 |
-| Low | 5 | M1, M3, M5, M8 |
-| **Total** | **47** | |
+| Low | 6 | M1, M3, M5, M8 |
+| **Total** | **48** | |
 
 ---
 
@@ -40,7 +40,7 @@
 | SEC-05 | Security / PII | Public `GET /api/user` lists every active user's name, email, and role. Public `GET /api/search/user/:term` allows regex enumeration over name/email. | `routes/usuarios.js:15`, `routes/search.js:9` | M1 (gate) → M6 | M1 part fixed (users: T1.2 00fe9b1; search: T1.3 79def09); M6 open |
 | SEC-06 | Security | No brute-force protection on `/api/auth/login` or `/api/auth/google`, and no rate limiting anywhere. | `routes/auth.js` | M1 → M5 | M1 part fixed (M1/T1.2, 00fe9b1); per-instance store and proxy trust → T1.7 (SEC-15), M5 open |
 | SEC-07 | Security | User enumeration: login returns distinct messages for unknown email, disabled account, and wrong password, and returns early (timing). | `controllers/auth.js:13-32` | M1 | fixed (M1/T1.2, 00fe9b1) |
-| SEC-08 | Security | Upload hardening: no size limits; multipart parsed on **every** route to `/tmp`; temp files never removed after the Cloudinary upload; extension check is filename-based and case-sensitive; no MIME sniffing. | `models/server.js:57-61`, `helpers/upload-file.js:9-14`, `controllers/uploads.js:143-145` | M1 (limits, cleanup) → M3 (MIME) | in-progress (M1/T1.7). Limits: T1.3 79def09. Extension case and cleanup in the upload controllers: T1.2 00fe9b1 (closes the T1.3 residual). **Residual:** multipart is still parsed on every route before auth (an unauthenticated disk-fill path) → C10 in T1.7. MIME check M3. The 413 body is `text/plain` until M2. |
+| SEC-08 | Security | Upload hardening: no size limits; multipart parsed on **every** route to `/tmp`; temp files never removed after the Cloudinary upload; extension check is filename-based and case-sensitive; no MIME sniffing. | `models/server.js:57-61`, `helpers/upload-file.js:9-14`, `controllers/uploads.js:143-145` | M1 (limits, cleanup) → M3 (MIME) | M1 part fixed: limits (T1.3 79def09); extension and cleanup (T1.2 00fe9b1); multipart only on upload write routes after auth, one file per request, per-request temp folder removed on every exit path (M1/T1.7, e0782fd). MIME check M3. The 413 body is `text/plain` until M3. |
 | SEC-09 | Security / Supply chain | Vulnerable dependencies. The **committed lockfile** carried **48 advisories (2 critical, 25 high, 13 moderate, 8 low)**, measured with pnpm 8 by T1.1. They include `mongoose` <7.8.4 search injection (critical, GHSA-vg7j-7cwx-8wgw), `mongoose` `$nor` sanitizeFilter bypass (high), `tar` via `bcrypt` → `@mapbox/node-pre-gyp` (critical, install-time), `cloudinary` <2.7.0 argument injection (high), `jws`, `body-parser`, `path-to-regexp`, `validator`, `lodash` (high), and `uuid` (moderate). | `package.json`, `pnpm-lock.yaml` | M1 | fixed (M1/T1.1: 48 → 0 advisories) |
 | SEC-10 | Security | No HTTP hardening: no `helmet`, CORS open to all origins, `x-powered-by` exposed. | `models/server.js:47` | M1 (helmet) → M2 (CORS allowlist) | M1 part fixed (helmet, M1/T1.3, 79def09); CORS allowlist M2 open |
 | REL-02 | Reliability | No centralised error handling. There is no error middleware and no 404 handler. Five different error shapes. Raw Mongoose error objects are returned to clients. A failed `POST /api/user` returns **200 with an empty body** (`res.json(error.output)` where `output` is undefined). | all controllers; `controllers/usuarios.js:35-37` | M1 (middleware) → M2 (AppError) | M1 part fixed (C1/C2 middleware, M1/T1.3, 79def09); AppError M2 open |
@@ -55,7 +55,7 @@
 | DB-01 | Database / Onboarding | Creating a user requires a matching `Role` document, but no seed exists. On a fresh DB, sign-up always fails. | `helpers/db-validators.js:3-9` | M1 (sign-up no longer takes role) → M4 (ADR-007) | M1 part fixed (M1/T1.2, 00fe9b1); Role → enum M4 open |
 | CFG-01 | Config | No centralised or validated config. `process.env` is read ad hoc in 5 files, and a missing `SECRET_KEY` only surfaces at the first login. `.example.env` lists names only. `GOOGLE_SECRET_ID` is unused. | see ARCHITECTURE §1.6 | M2 | open |
 | LOG-01 | Observability | No logging. `console.log` only, with no levels, no request logs or ids. `req.files` metadata is logged on every Cloudinary upload, and full stacks on every invalid token. | `controllers/uploads.js:143`, `middlewares/validar-jwt.js:41` | M2 | open |
-| SEC-15 | Security / Availability | **Proxy trust not configured.** Behind any reverse proxy (PaaS ingress, load balancer, nginx), `req.ip` is the proxy's address, so the C5 auth limiter puts every client in one bucket: 10 auth requests per 15 min for everyone, and anyone can lock all users out of login. It blocks any proxied deploy; there is no live deployment today. Found in the T1.2 review. | `models/server.js` | M1 (T1.7, C9) → M2 (config) | in-progress (M1/T1.7) |
+| SEC-15 | Security / Availability | **Proxy trust not configured.** Behind any reverse proxy (PaaS ingress, load balancer, nginx), `req.ip` is the proxy's address, so the C5 auth limiter puts every client in one bucket: 10 auth requests per 15 min for everyone, and anyone can lock all users out of login. It blocks any proxied deploy; there is no live deployment today. Found in the T1.2 review. | `models/server.js` | M1 (T1.7, C9) → M2 (config) | fixed (M1/T1.7, e0782fd); moves into the M2 config schema (ADR-019) |
 
 ## Medium
 
@@ -77,8 +77,8 @@
 | DOC-01 | Documentation | No README, no OpenAPI spec, no setup guide, no error catalogue. | — | M8 | open |
 | OPS-03 | DevOps | No lint/format config, no CI, no Dockerfile, no health endpoint, no `engines` / `.nvmrc`. Docker is not installed on the dev machine. | — | M1 (engines) → M2 / M9 / M10 | open |
 | CQ-01 | Code quality | Mixed Spanish/English identifiers and messages; typos (`categoty`, "Takl", "valied", "Encript"); misleading comments ("physically eliminated" on a soft delete). | multiple | M3 | open |
-| CQ-02 | Code quality | Dead code and placeholders: `updateImage` (unrouted), `usuariosPatch` stub route, debug `GET /hello`, `role` in search's permitted collections with no handler, unused imports. | `controllers/uploads.js:29-69`, `routes/usuarios.js:43`, `models/server.js:66-70`, `controllers/search.js:10` | M3 | in-progress (`updateImage` removal in M1/T1.7); the rest M3 |
-| REL-04 | Reliability | Image replacement destroys the old Cloudinary asset **before** uploading the new one. A failed upload or save leaves the record pointing at a deleted asset. Found in the T1.2 review. | `controllers/uploads.js` (`updateImageCloudinary`) | M1 (T1.7, C11) | in-progress (M1/T1.7) |
+| CQ-02 | Code quality | Dead code and placeholders: `updateImage` (unrouted), `usuariosPatch` stub route, debug `GET /hello`, `role` in search's permitted collections with no handler, unused imports. | `controllers/uploads.js:29-69`, `routes/usuarios.js:43`, `models/server.js:66-70`, `controllers/search.js:10` | M3 | `updateImage` removed (M1/T1.7, e0782fd); `usuariosPatch`, `/hello`, search `role` leftovers → M3 |
+| REL-04 | Reliability | Image replacement destroys the old Cloudinary asset **before** uploading the new one. A failed upload or save leaves the record pointing at a deleted asset. Found in the T1.2 review. | `controllers/uploads.js` (`updateImageCloudinary`) | M1 (T1.7, C11) | fixed (M1/T1.7, e0782fd) |
 
 ## Low
 
@@ -89,3 +89,4 @@
 | CQ-05 | Hygiene | `deleteUser` returns the pre-update document and echoes the authenticated user object. | `controllers/usuarios.js:66-79` | M3 | open |
 | CQ-06 | Hygiene | `googleSignin` error message typos; `Google` errors swallowed without a log. | `controllers/auth.js:68,82` | M5 | open |
 | CQ-07 | Hygiene | `public/` demo page ships with a hardcoded client id and production URL. That URL (`hookcoffee.zeabur.app`) is **dead**: the app is no longer deployed there (owner, 2026-09-23), so the page's Google sign-in fails anywhere except localhost. Its ownership (keep as dev tool or remove) is undecided. | `public/` | M8 | open |
+| HTTP-02 | API contract | A malformed multipart body on an upload route (busboy "Unexpected end of form", "Malformed part header") carries no `status`, so C1 maps it to 500 instead of 400. It is reachable only after authentication (C10). Found in the T1.7 review. | `middlewares/file-valid.js` (`fileParser`), C1 | M3 (media module wraps parser errors in `BadRequestError`) | open |
