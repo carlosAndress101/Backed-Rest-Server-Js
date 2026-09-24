@@ -72,6 +72,13 @@ class Server {
         //public path
         this.app.use(express.static(path.join(__dirname, '../public')))
 
+        // Express 5 leaves req.body undefined when no parser ran (Express 4 gave {});
+        // the legacy handlers destructure it
+        this.app.use((req, res, next) => {
+            req.body ??= {};
+            next();
+        })
+
         // multipart bodies are parsed only by the upload routes (fileParser)
     }
 
@@ -135,7 +142,9 @@ class Server {
     }
 
     listen(){
-        return this.app.listen(this.port, ()=>{
+        // Express 5 hands listen errors (e.g. EADDRINUSE) to this callback instead of throwing
+        return this.app.listen(this.port, (error)=>{
+            if( error ) throw error;
             console.log(`Server listening on :${ this.port }`);
         })
     }

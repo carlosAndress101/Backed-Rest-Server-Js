@@ -66,12 +66,13 @@ const showImage = async (req, res = response, next) => {
         const isInsideFolder = pathImage.startsWith(folder + path.sep);
 
         if(isBareFileName && isInsideFolder && fs.existsSync(pathImage)){
-            return res.sendFile(pathImage);
+            // name + root: Express 5 refuses an absolute path that has a dot-directory in it
+            return res.sendFile(model.image, { root: folder });
         }
     }
 
     const pathImageNotFound = path.join(__dirname, "../assets/notFound.jpg");
-    res.sendFile(pathImageNotFound);
+    res.sendFile(path.basename(pathImageNotFound), { root: path.dirname(pathImageNotFound) });
 }
 
 const updateImageCloudinary = async (req, res = response, next) => {
