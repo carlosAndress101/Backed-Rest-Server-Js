@@ -84,11 +84,17 @@ export default tseslint.config(
     files: LEGACY_DIRS.map((dir) => `${dir}/**/*.js`),
     languageOptions: { sourceType: 'commonjs' },
     rules: {
+      'no-console': 'error', // ADR-020: legacy logs only through req.log
       'no-restricted-syntax': [
         'error',
         {
           selector: "CallExpression[callee.name='require'] > Literal[value=/(^|\\/)(src|dist)(\\/|$)/]",
           message: 'Legacy JS must not require src/ or dist/ (breaks the compiled build).',
+        },
+        {
+          selector:
+            "MemberExpression[object.object.name='process'][object.property.name='env'][property.name!=/^(SECRET_KEY|GOOGLE_CLIENT_ID|CLOUDINARY_URL)$/]",
+          message: 'Legacy JS may only read the env vars validated by src/config/env.ts.', // ADR-019
         },
       ],
     },

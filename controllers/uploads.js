@@ -111,7 +111,7 @@ const updateImageCloudinary = async (req, res = response, next) => {
             await model.save();
         } catch (error) {
             // the record keeps its previous image, so the one just uploaded is orphaned
-            console.error(`Orphaned Cloudinary asset ${ secure_url }: the ${ collection } ${ id } was not saved`);
+            req.log.error({ asset: secure_url, collection, id }, 'orphaned Cloudinary asset: the record was not saved');
             throw error;
         }
 
@@ -124,7 +124,7 @@ const updateImageCloudinary = async (req, res = response, next) => {
                 await cloudinary.uploader.destroy( public_id );
             } catch (error) {
                 // a stale previous image must not fail an update that already succeeded
-                console.error(error);
+                req.log.warn({ err: error }, 'previous Cloudinary asset not destroyed');
             }
         }
 
