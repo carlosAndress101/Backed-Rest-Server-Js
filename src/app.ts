@@ -61,7 +61,7 @@ export function createApp({ config, logger }: AppDeps): Express {
   app.use(express.json());
   app.use(express.static(PUBLIC_DIR));
 
-  const tokens = createTokenService(config.auth.jwtSecret);
+  const tokens = createTokenService(config.auth.jwtSecret, { ttlSeconds: config.auth.jwtTtlSeconds });
   // The users module owns User (ADR-027). A uid that is not an ObjectId is no user, so authenticate answers 401,
   // never the 400 of a CastError.
   const users: UserLookup = {
