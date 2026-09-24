@@ -1,4 +1,4 @@
-// The users contract, §6 rows #4–#7 (M3 design §5.1), over HTTP through createApp.
+// The users contract, §6 rows #4–#8 (M3 design §5.1), over HTTP through createApp.
 import type { Server } from 'node:http';
 
 import bcrypt from 'bcrypt';
@@ -33,7 +33,7 @@ const invalidId = {
   },
 };
 
-describe('users module (§6 #4–#7)', () => {
+describe('users module (§6 #4–#8)', () => {
   let app: Server;
   let admin: LegacyDoc;
   let adminToken: string;
@@ -355,6 +355,15 @@ describe('users module (§6 #4–#7)', () => {
 
       expect(res.status).toBe(422);
       expect(res.body).toEqual(invalidId);
+    });
+  });
+
+  describe('#8 PATCH /api/user (removed, CQ-02)', () => {
+    test('is the generic 404, for anyone', async () => {
+      const res = await request(app).patch('/api/user').set(authHeader(adminToken)).send({ name: 'X' });
+
+      expect(res.status).toBe(404);
+      expect(res.body).toEqual({ error: { code: 'NOT_FOUND', message: 'Route not found' } });
     });
   });
 
