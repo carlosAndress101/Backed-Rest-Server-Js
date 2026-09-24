@@ -1569,6 +1569,7 @@ Sources: <https://mongoosejs.com/docs/migrating_to_8.html> and <https://mongoose
 | 9 | `Schema#doValidate()` returns a promise | no | — |
 | 9 | Update pipelines disallowed by default | no | — |
 | 9 | **`new` / `returnOriginal` deprecated → `returnDocument`** | **yes**: emits `[MONGOOSE] Warning … the new option … is deprecated` (verified) | `{new: true}` → `{ returnDocument: 'after' }` at `controllers/category.js:76,87`, `controllers/product.js:83,95`, `controllers/usuarios.js:60` (T2.3). `deleteUser`'s update has no option and keeps returning the pre-update document (default `'before'`, CQ-05 unchanged) |
+| 9 | **`Document#validateSync()` deprecated** (removed in 10); prints `[MONGOOSE] Warning … validateSync() is deprecated` | **tests only** (found by T2.3b): `tests/unit/logger.test.ts` builds its `ValidationError` fixture with it; no application call site | `await doc.validate()` (T2.4R); valid on 7 and 9 |
 | 9 | index `background` option removed | no | — |
 | 9 | `isValidObjectId()` false for numbers | search passes strings; no effect | — |
 | 9 | subdocument `deleteOne()` hooks | no | — |
