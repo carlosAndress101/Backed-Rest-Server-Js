@@ -19,95 +19,95 @@ const owner = new mongoose.Types.ObjectId();
 const validUser = { name: 'Ada', email: 'ada@example.com', password: 'stored-hash' };
 const validProduct = { name: 'KEYBOARD', user: owner, category: new mongoose.Types.ObjectId() };
 
-// [model, document, path, validator kind, fixed message, what must not leak]
-const cases: Array<[string, () => mongoose.Document, string, string, string, string]> = [
+// [model, path, validator kind, fixed message, what must not leak, document]
+const cases: Array<[string, string, string, string, string, () => mongoose.Document]> = [
   [
     'User',
-    () => new UserModel({ ...validUser, name: long(121) }),
     'name',
     'maxlength',
     'The name must be at most 120 characters',
     MARK,
+    () => new UserModel({ ...validUser, name: long(121) }),
   ],
   [
     'User',
-    () => new UserModel({ ...validUser, email: `${MARK} not an email` }),
     'email',
     'regexp',
     'The email format is invalid',
     MARK,
+    () => new UserModel({ ...validUser, email: `${MARK} not an email` }),
   ],
   [
     'User',
-    () => new UserModel({ ...validUser, email: `${long(250)}@example.com` }),
     'email',
     'maxlength',
     'The email must be at most 254 characters',
     MARK,
+    () => new UserModel({ ...validUser, email: `${long(250)}@example.com` }),
   ],
   [
     'User',
-    () => new UserModel({ ...validUser, image: long(2049) }),
     'image',
     'maxlength',
     'The image must be at most 2048 characters',
     MARK,
+    () => new UserModel({ ...validUser, image: long(2049) }),
   ],
   [
     'User',
-    () => new UserModel({ ...validUser, role: `${MARK}_ROLE` }),
     'role',
     'enum',
     'The role is not a valid role',
     MARK,
+    () => new UserModel({ ...validUser, role: `${MARK}_ROLE` }),
   ],
   [
     'User',
-    () => new UserModel({ ...validUser, tokenVersion: NEGATIVE }),
     'tokenVersion',
     'min',
     'The token version cannot be negative',
     String(NEGATIVE),
+    () => new UserModel({ ...validUser, tokenVersion: NEGATIVE }),
   ],
   [
     'Category',
+    'name',
+    'maxlength',
+    'The name must be at most 120 characters',
+    MARK,
     () => new CategoryModel({ name: long(121), user: owner }),
+  ],
+  [
+    'Product',
     'name',
     'maxlength',
     'The name must be at most 120 characters',
     MARK,
-  ],
-  [
-    'Product',
     () => new ProductModel({ ...validProduct, name: long(121) }),
-    'name',
-    'maxlength',
-    'The name must be at most 120 characters',
-    MARK,
   ],
   [
     'Product',
-    () => new ProductModel({ ...validProduct, price: NEGATIVE }),
     'price',
     'min',
     'The price cannot be negative',
     String(NEGATIVE),
+    () => new ProductModel({ ...validProduct, price: NEGATIVE }),
   ],
   [
     'Product',
-    () => new ProductModel({ ...validProduct, description: long(2001) }),
     'description',
     'maxlength',
     'The description must be at most 2000 characters',
     MARK,
+    () => new ProductModel({ ...validProduct, description: long(2001) }),
   ],
   [
     'Product',
-    () => new ProductModel({ ...validProduct, image: long(2049) }),
     'image',
     'maxlength',
     'The image must be at most 2048 characters',
     MARK,
+    () => new ProductModel({ ...validProduct, image: long(2049) }),
   ],
 ];
 
@@ -125,7 +125,7 @@ const logLine = (err: unknown) => {
 };
 
 describe('validator messages carry no rejected value', () => {
-  test.each(cases)('%s %s: %s', async (_model, build, path, kind, message, secret) => {
+  test.each(cases)('%s › %s (%s)', async (_model, path, kind, message, secret, build) => {
     const error = await build()
       .validate()
       .then(

@@ -226,6 +226,22 @@ describe('createAuthService', () => {
       expect(session).toEqual({ token: 'token-for-id-1', user: rows[0] });
     });
 
+    // §10.5: the Google address is matched as sign-up and login store it. This fake matches emails exactly (no
+    // Mongoose casting), so only the service's own normalization can find the account.
+    test('an existing account is found whatever the case or padding of the Google address', async () => {
+      const google = fakeGoogle({ ...PROFILE, email: '  Grace@Example.COM ' });
+      const { service, User } = build(
+        [{ _id: '9', email: 'grace@example.com', password: ':D', state: true }],
+        google,
+      );
+
+      const session = await service.googleSignIn({ id_token: 'google-id-token' });
+
+      expect(User.findOne).toHaveBeenCalledExactlyOnceWith({ email: 'grace@example.com' });
+      expect(User.create).not.toHaveBeenCalled();
+      expect(session.token).toBe('token-for-9');
+    });
+
     test('an existing active account signs in without being created again or changed', async () => {
       const existing: Row = { _id: '7', email: PROFILE.email, name: 'Old Name', password: ':D', state: true };
       const { service, User } = build([existing]);

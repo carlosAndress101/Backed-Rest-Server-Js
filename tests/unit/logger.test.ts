@@ -89,6 +89,36 @@ const FIXTURES: Record<string, Fixture> = {
     sibling: ['err', 'errors', 'name', 'properties', 'path'],
     siblingValue: 'name',
   },
+  'seed.adminPassword': {
+    fields: { seed: { adminPassword: SECRET, adminEmail: 'admin@example.com' } },
+    redacted: ['seed', 'adminPassword'],
+    sibling: ['seed', 'adminEmail'],
+    siblingValue: 'admin@example.com',
+  },
+  '*.adminPassword': {
+    fields: { options: { adminPassword: SECRET, dryRun: true } },
+    redacted: ['options', 'adminPassword'],
+    sibling: ['options', 'dryRun'],
+    siblingValue: true,
+  },
+  '*.seed.adminPassword': {
+    fields: { config: { seed: { adminPassword: SECRET, adminEmail: 'admin@example.com' } } },
+    redacted: ['config', 'seed', 'adminPassword'],
+    sibling: ['config', 'seed', 'adminEmail'],
+    siblingValue: 'admin@example.com',
+  },
+  SEED_ADMIN_PASSWORD: {
+    fields: { SEED_ADMIN_PASSWORD: SECRET, SEED_ADMIN_EMAIL: 'admin@example.com' },
+    redacted: ['SEED_ADMIN_PASSWORD'],
+    sibling: ['SEED_ADMIN_EMAIL'],
+    siblingValue: 'admin@example.com',
+  },
+  '*.SEED_ADMIN_PASSWORD': {
+    fields: { env: { SEED_ADMIN_PASSWORD: SECRET, NODE_ENV: 'production' } },
+    redacted: ['env', 'SEED_ADMIN_PASSWORD'],
+    sibling: ['env', 'NODE_ENV'],
+    siblingValue: 'production',
+  },
 };
 
 describe('createLogger redaction', () => {

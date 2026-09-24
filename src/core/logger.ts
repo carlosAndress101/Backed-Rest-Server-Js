@@ -17,6 +17,13 @@ export const REDACT_PATHS = [
   // messages are fixed, so these are the only copies.
   'err.errors.*.value',
   'err.errors.*.properties.value',
+  // P20 / AM-M4-8: the first-admin seed secret, as config.seed carries it or as the raw environment variable. pino
+  // matches one level per wildcard, so a whole logged config is covered too (config.seed.adminPassword).
+  'seed.adminPassword',
+  '*.adminPassword',
+  '*.seed.adminPassword',
+  'SEED_ADMIN_PASSWORD',
+  '*.SEED_ADMIN_PASSWORD',
 ];
 
 export function createLogger(config: Pick<Config, 'logLevel'>, destination?: pino.DestinationStream): Logger {
