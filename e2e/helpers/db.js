@@ -115,7 +115,14 @@ const TMP_DIRS = [...new Set(['/tmp', os.tmpdir()].map((dir) => path.normalize(d
 /**
  * Temp names are `tmp-<counter>-<pid><timestamp>` (express-fileupload). Filter
  * by our own pid so files written by parallel jest workers are ignored.
+ *
+ * C10: each upload request writes its temp files into its own
+ * `upload-<pid>-<uuid>` folder, so a folder left behind is a leak too.
  */
+const isOwnTempEntry = (name) =>
+  (name.startsWith('tmp-') && name.includes(`-${process.pid}`)) ||
+  name.startsWith(`upload-${process.pid}-`);
+
 const listTempFiles = () => {
   const found = new Set();
   TMP_DIRS.forEach((dir) => {
@@ -125,9 +132,7 @@ const listTempFiles = () => {
     } catch (error) {
       entries = [];
     }
-    entries
-      .filter((name) => name.startsWith('tmp-') && name.includes(`-${process.pid}`))
-      .forEach((name) => found.add(path.join(dir, name)));
+    entries.filter(isOwnTempEntry).forEach((name) => found.add(path.join(dir, name)));
   });
   return found;
 };

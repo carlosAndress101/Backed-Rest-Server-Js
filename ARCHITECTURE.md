@@ -151,6 +151,34 @@ Resolved versions come from a fresh resolution of `package.json` ranges; the com
 **Security-related packages present:** `bcrypt`, `jsonwebtoken`, `google-auth-library`, `cors`, `express-validator`.
 **Absent:** `helmet`, rate limiting, request size/file limits, NoSQL filter sanitisation (`mongoose.set('sanitizeFilter')`), structured logging with redaction.
 
+
+### 1.8 State after M1 (release 2.0.0, 2026-09-24)
+
+M1 changed the as-is state above in place. There was no restructuring (ADR-001); the layout of §1.2 is unchanged.
+
+**Request pipeline** (`models/server.js`):
+```
+[trust proxy ← TRUST_PROXY] → helmet(CSP for GIS + Fonts, COOP same-origin-allow-popups, CORP cross-origin) → cors() → express.json()
+  → express.static(public/) → router
+      /api/auth/{login,google}: authLimiter (10 / 15 min / IP, shared) → validators → controller
+      /api/uploads writes:      validarJWT → esAdminRole | esAdminOrOwner → param validators → fileParser (1 file, 5 MB,
+                                per-request temp folder removed on close) → fileValid → controller
+      other routes:             [validarJWT] → [esAdminRole | esAdminOrOwner | hasRole] → validators → controller
+  → 404 {msg:'Route not found'} → error middleware (C1 + A1: 409 / 400 / client 4xx / 500, no internals)
+```
+Boot: `app.js` awaits the DB connection, then `listen`, and exits 1 on failure. `new Server()` has no side effects.
+
+**Environment:** adds the optional `TRUST_PROXY` (a non-negative integer hop count; an invalid value stops the boot). `GOOGLE_SECRET_ID` is still unused and is removed in M2.
+
+**Dependencies:** pnpm 12.3.4 (lockfile v9), `engines.node >=24`, bcrypt 6, cloudinary 2, google-auth-library 11 (runtime), `uuid` removed; new: `helmet` 8 and `express-rate-limit` 8, plus `mongodb-memory-server` 11 and supertest 7 in dev. `pnpm audit --prod`: **0 advisories** (was 48).
+
+**Security packages present:** `bcrypt`, `jsonwebtoken`, `google-auth-library`, `cors` (still any origin, allowlist in M2), `express-validator`, **`helmet`**, **`express-rate-limit`**. Still absent until M2: `sanitizeFilter`/`strictQuery`, structured logging with redaction.
+
+**Tests:** 101 Jest + supertest + mongodb-memory-server e2e tests across 9 files (the security regression suite), with one known flake (TEST-02, T1.8).
+
+**Still open from the audit:** ARC-02 and ARC-03 (M2), and every M2+ item in TECH_DEBT.md.
+
+
 ---
 
 ## 2. To-be (target)
@@ -232,3 +260,4 @@ Status: **Accepted** = Orchestrator decision, binding on agents. **Proposed** = 
 | ADR-022 | **CORS allowlist via `CORS_ORIGINS`**; unset or `*` keeps any-origin, with a `warn` at production boot. Kept as written (D2 Q3): auth is a header token, never a cookie, and consumers are unknown | Accepted 2026-09-23 (D2 review; details in [M2-foundation](docs/design/M2-foundation.md) §1.1) | SEC-10 allowlist available; the M9 production checklist sets it. |
 | ADR-023 | **No `vi.mock`** (it can't reach `require()` in legacy CJS): tests spy on the shared CommonJS instance via `tests/helpers/legacy.ts`. One process and one database per test file on a shared `mongod` | Accepted 2026-09-23 (D2 review; details in [M2-foundation](docs/design/M2-foundation.md) §1.1) | The M1 suite ports mechanically; files run in parallel safely. |
 | ADR-024 | **Release mapping (SemVer, ADR-015).** M1 ships as **2.0.0** (breaking security fixes, releasable alone). M2 ships as **2.1.0** (operational and additive; operator objects in filters now get 400 as a security fix). The M3–M6 contract changes (envelope, status codes, `id`, Bearer auth, RBAC) are batched into **3.0.0**. Deprecated aliases (`uid`, `x-token`) are removed in **4.0.0**. Releases are git tags on `master` | Accepted 2026-09-23 (Orchestrator) | Clients migrate once per major. Erratum: D2's "2.0.0" for the envelope switch reads 3.0.0, and D4's "`uid` until 3.0.0" reads 4.0.0. |
+| ADR-025 | **Supply-chain age gate.** Keep pnpm 12's default `minimumReleaseAge` (24 h) and **never** add `minimumReleaseAgeExclude`. A dependency task pins only versions published at least 24 h earlier, or waits for the gate to clear, and proves it with a cold frozen install (empty store, state and cache) | Accepted 2026-09-24 (Orchestrator, from the T2.1 finding) | A fresh release is the classic window for a compromised package. The local verification cache hides violations, so the cold install is the only real proof. |

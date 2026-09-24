@@ -1,15 +1,15 @@
 # Roadmap
 
 > Owner: CarlosH / SH1FT3R · Orchestrated multi-agent delivery (Claude Code · OpenCode · Nodeterm · RTK)
-> Updated 2026-09-23 · Current milestone: **M1 in progress** (M0 accepted by owner 2026-09-23)
+> Updated 2026-09-24 · Current milestone: **M2 in progress** (M1 accepted 2026-09-24, release 2.0.0)
 
 Complexity scale: **S** (≤1 agent-day) · **M** (2–3) · **L** (4–6) · **XL** (>6). Tests are a quality gate in **every** milestone (ADR-013); M7 closes the remaining gaps.
 
 | # | Milestone | Complexity | Depends on | Status |
 |---|---|---|---|---|
 | M0 | Audit & Baseline | S | — | ✅ Accepted 2026-09-23 |
-| M1 | Stabilization & Security Hotfix | M | M0 | 🔄 In progress: T1.1–T1.4 ✅ accepted and merged (64/64 e2e); T1.7 follow-up running, then T1.5 review ([briefs](docs/tasks/M1-stabilization.md)) |
-| M2 | Foundation: tooling, TypeScript, config, logging, errors, Express 5 | L | M1 | 📝 Design in progress (ARCHITECT) |
+| M1 | Stabilization & Security Hotfix | M | M0 | ✅ Accepted 2026-09-24 (T1.5 review: ACCEPT after T1.2R), release **2.0.0** ([briefs](docs/tasks/M1-stabilization.md)) |
+| M2 | Foundation: tooling, TypeScript, config, logging, errors, Express 5 | L | M1 | 🔄 In progress: design accepted ([M2-foundation](docs/design/M2-foundation.md)); T2.1 done, awaiting review; target release 2.1.0 |
 | M3 | Feature-First Refactor + Validation/DTOs | L | M2 | Planned |
 | M4 | Database Improvements | M | M3 | 📝 Design accepted ([M4-database](docs/design/M4-database.md)) |
 | M5 | Authentication Hardening | M | M4 | Planned |
@@ -29,7 +29,8 @@ Why this order differs from the default template: **security first** (ADR-001) b
 - **Risks:** Findings are from static analysis plus a dependency audit. The runtime could not be exercised because the lockfile is unreadable (OPS-01).
 - **Complexity:** S · **Dependencies:** none.
 
-## M1: Stabilization & Security Hotfix
+## M1: Stabilization & Security Hotfix ✅ (accepted 2026-09-24, release 2.0.0)
+- **Outcome:** tasks T1.1–T1.4 and T1.7, plus the T1.2R fix from the T1.5 review. 101 regression tests. All 5 Criticals and SEC-06…SEC-10, SEC-15 and REL-04 fixed. 0 audit advisories. One follow-up, TEST-02 (flaky test, T1.8), lands before the M2 suite port.
 - **Goal:** Close every Critical and the cheap Highs **without restructuring**, so the current code is safe to run while the rewrite happens.
 - **Deliverables:**
   - Reproducible install (pnpm pinned, lockfile regenerated). `google-auth-library` moved to runtime deps. Vulnerable deps upgraded (cloudinary 2, bcrypt 6, uuid replaced by `crypto.randomUUID`). `engines`/`.nvmrc` on Node 24.
