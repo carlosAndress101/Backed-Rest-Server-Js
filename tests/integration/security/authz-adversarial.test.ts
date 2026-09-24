@@ -20,6 +20,7 @@ import {
   uniqueSuffix,
 } from '../../helpers/factories';
 import { stubMediaClient } from '../../helpers/uploads';
+import { MATRIX } from '../../helpers/permission-matrix';
 
 const JPEG = Buffer.from('ffd8ffe000104a46494600010100000100010000ffd9', 'hex');
 
@@ -227,7 +228,7 @@ describe('M6 adversarial suite (§6.3)', () => {
   });
 
   describe('IDOR sweep: a non-owner, non-privileged caller never reaches 200/204 on an ownership-checked route', () => {
-    test('every ownership-checked :id route refuses a non-owner USER_ROLE caller', async () => {
+    test('every fixture row with an owner dimension refuses a non-owner USER_ROLE caller', async () => {
       const owner = await createUser();
       const attacker = await createUser();
       const token = await tokenFor(attacker);
@@ -237,47 +238,99 @@ describe('M6 adversarial suite (§6.3)', () => {
       const category = await createCategory({ user: owner });
       const product = await createProduct({ user: owner });
       const mediaProduct = await createProduct({ user: owner });
+      const ownershipRows = MATRIX.filter((row) => row.cases.some((kase) => kase.owner !== undefined));
 
-      const attempts: Array<[string, () => Promise<{ statusCode: number }>]> = [
-        [
-          'PUT /api/user/:id (not self)',
-          () => request(app).put(`/api/user/${targetUser.id}`).set(authHeader(token)).send({ name: 'X' }),
-        ],
-        [
-          'DELETE /api/user/:id (not self)',
-          () => request(app).delete(`/api/user/${targetUser.id}`).set(authHeader(token)),
-        ],
-        [
-          'PUT /api/category/:id (not creator)',
-          () => request(app).put(`/api/category/${category.id}`).set(authHeader(token)).send({ name: 'X' }),
-        ],
-        [
-          'DELETE /api/category/:id (not creator)',
-          () => request(app).delete(`/api/category/${category.id}`).set(authHeader(token)),
-        ],
-        [
-          'PUT /api/product/:id (not creator)',
-          () => request(app).put(`/api/product/${product.id}`).set(authHeader(token)).send({ name: 'X' }),
-        ],
-        [
-          'DELETE /api/product/:id (not creator)',
-          () => request(app).delete(`/api/product/${product.id}`).set(authHeader(token)),
-        ],
-        [
-          'PUT /api/uploads/product/:id',
-          () =>
-            request(app)
-              .put(`/api/uploads/product/${mediaProduct.id}`)
-              .set(authHeader(token))
-              .attach('file', JPEG, 'p.jpg'),
-        ],
-      ];
+      const attempts: Array<[string, () => Promise<{ statusCode: number }>]> = ownershipRows.map((row) => {
+        let concretePath: string;
+        if (row.path === '/api/user/:id') {
+          concretePath = `/api/user/${targetUser.id}`;
+        } else if (row.path === '/api/category/:id') {
+          concretePath = `/api/category/${category.id}`;
+        } else if (row.path === '/api/product/:id') {
+          concretePath = `/api/product/${product.id}`;
+        } else if (row.path === '/api/uploads/:collection/:id') {
+          const ownerCase = row.cases.find((kase) => kase.owner !== undefined);
+          const collection = ownerCase?.label?.match(/collection=([^, ]+)/)?.[1];
+          if (collection === 'user') {
+            concretePath = `/api/uploads/user/${targetUser.id}`;
+          } else if (collection === 'product') {
+            concretePath = `/api/uploads/product/${mediaProduct.id}`;
+          } else {
+            throw new Error(`IDOR sweep cannot identify the media collection for row ${row.id}`);
+          }
+        } else {
+          throw new Error(`IDOR sweep has no request builder for owner-dimension row ${row.id}`);
+        }
+
+        if (row.method === 'delete') {
+          return [
+            `${row.method.toUpperCase()} ${row.path} (not owner)`,
+            () => request(app).delete(concretePath).set(authHeader(token)),
+          ];
+        }
+        if (row.method === 'put' && row.path.startsWith('/api/uploads/')) {
+          return [
+            `${row.method.toUpperCase()} ${row.path} (not owner)`,
+            () => request(app).put(concretePath).set(authHeader(token)).attach('file', JPEG, 'p.jpg'),
+          ];
+        }
+        if (row.method === 'put') {
+          return [
+            `${row.method.toUpperCase()} ${row.path} (not owner)`,
+            () => request(app).put(concretePath).set(authHeader(token)).send({ name: 'X' }),
+          ];
+        }
+        throw new Error(`IDOR sweep has no request builder for ${row.method.toUpperCase()} ${row.path}`);
+      });
 
       for (const [label, attempt] of attempts) {
         const res = await attempt();
         expect([200, 204]).not.toContain(res.statusCode);
         expect(res.statusCode, label).toBeGreaterThanOrEqual(400);
       }
+    });
+  });
+
+  describe('authorization check order pinned by T6.1 and AM-M6-8', () => {
+    // Source: T6.1 report, flipped assertion 7 (ADR-039): parameter validation runs before ownership.
+    test('PUT /api/product/:id with a malformed id is 422 for a non-owner USER_ROLE caller', async () => {
+      const attacker = await createUser();
+
+      const res = await request(app)
+        .put('/api/product/not-a-mongo-id')
+        .set(authHeader(await tokenFor(attacker)))
+        .send({ name: 'X' });
+
+      expect(res.statusCode).toBe(422);
+    });
+
+    // Source: T6.1 report, flipped assertion 7 (ADR-039): an existing product reaches the ownership check.
+    test('PUT /api/product/:id on an existing product the caller did not create is 403', async () => {
+      const owner = await createUser();
+      const attacker = await createUser();
+      const product = await createProduct({ user: owner });
+
+      const res = await request(app)
+        .put(`/api/product/${product.id}`)
+        .set(authHeader(await tokenFor(attacker)))
+        .send({ name: 'X' });
+
+      expect(res.statusCode).toBe(403);
+    });
+
+    // Source: accepted residual AM-M6-8: the category existence check precedes the ownership check.
+    test('PUT /api/product/:id with a category that does not exist is 404 for a non-owner USER_ROLE caller', async () => {
+      const owner = await createUser();
+      const attacker = await createUser();
+      const product = await createProduct({ user: owner });
+      const missingCategory = await createUser(); // Valid ObjectId, but not present in the categories collection.
+
+      const res = await request(app)
+        .put(`/api/product/${product.id}`)
+        .set(authHeader(await tokenFor(attacker)))
+        .send({ category: missingCategory.id });
+
+      expect(res.statusCode).toBe(404);
     });
   });
 
