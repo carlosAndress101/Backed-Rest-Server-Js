@@ -17,9 +17,9 @@
 |---|---|---|
 | Critical | 5 | M1 |
 | High | 19 | M1 (13), M2–M3 (6) |
-| Medium | 19 | M1 (partial) → M8 |
+| Medium | 20 | M1 (partial) → M8 |
 | Low | 7 | M1, M3, M5, M8 |
-| **Total** | **50** | |
+| **Total** | **51** | |
 
 ---
 
@@ -80,6 +80,7 @@
 | CQ-02 | Code quality | Dead code and placeholders: `updateImage` (unrouted), `usuariosPatch` stub route, debug `GET /hello`, `role` in search's permitted collections with no handler, unused imports. | `controllers/uploads.js:29-69`, `routes/usuarios.js:43`, `models/server.js:66-70`, `controllers/search.js:10` | M3 | `updateImage` removed (M1/T1.7, e0782fd); `usuariosPatch`, `/hello`, search `role` leftovers → M3 |
 | REL-04 | Reliability | Image replacement destroys the old Cloudinary asset **before** uploading the new one. A failed upload or save leaves the record pointing at a deleted asset. Found in the T1.2 review. | `controllers/uploads.js` (`updateImageCloudinary`) | M1 (T1.7, C11) | fixed (M1/T1.7, e0782fd) |
 | TEST-02 | Testing | Intermittent failure (about 1–2% of full runs, T1.5 finding F2): `image-replacement.e2e.js` gets a 401 for a freshly minted token. Fail-closed, test reliability only; it must be fixed before the suite becomes the CI gate and is ported (T2.6). | `e2e/` | M1 (T1.8) | fixed (M1/T1.8, 9727bca): root cause was a foreign local process answering on 127.0.0.1 (SuperTest bound bare apps to `::`); the harness now serves on 127.0.0.1. 250 consecutive green runs. Carried into M2 as P6 AM-5 |
+| TEST-03 | Testing | Vitest runs files in parallel. T2.5's platform tests (`app.test.ts` ×2, `legacy-logs.test.ts` ×1) make successful `POST /api/uploads` requests that write `uploads/imgs/`, while `security/uploads.test.ts` owns that tree and resets it. About 2 in 15 full runs fail (`ENOTEMPTY` in `resetUploadDirs`, or 500 instead of 200). Test-only. | `tests/integration/platform/` | M2 (T2.5R) | in-progress (M2/T2.5R) |
 
 ## Low
 
