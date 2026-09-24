@@ -2,7 +2,7 @@ const { request, response } = require("express");
 const { Category } = require("../models");
 
 //category obtained
-const getCategory = async (req, res = response) => {
+const getCategory = async (req, res = response, next) => {
   const { limit = 5, offset = 0 } = req.query;
   const query = { state: true };
 
@@ -17,14 +17,11 @@ const getCategory = async (req, res = response) => {
       categories
     });
   } catch (error) {
-    res.status(400).json({
-      msg: "I can't get the categories",
-      error
-    });
+    next(error);
   }
 };
 
-const getCategoryId = async (req, res = response) => {
+const getCategoryId = async (req, res = response, next) => {
     const { id } = req.params;
   try {
     const categories = await Category.findById(id).populate('user', 'name')
@@ -33,61 +30,62 @@ const getCategoryId = async (req, res = response) => {
       categories
     });
   } catch (error) {
-    res.status(400).json({
-      msg: "I can't get the category",
-      error
-    });
+    next(error);
   }
 };
 
 //create category
-const createCategory = async (req = request, res = response) => {
-  const name = req.body.name.toUpperCase();
+const createCategory = async (req = request, res = response, next) => {
+  try {
+    const name = req.body.name.toUpperCase();
 
-  const categoryDB = await Category.findOne({ name });
-  if (categoryDB) {
-    return res.status(400).json({
-      msg: `The ${categoryDB.name} category already exist`
-    });
+    const categoryDB = await Category.findOne({ name });
+    if (categoryDB) {
+      return res.status(400).json({
+        msg: `The ${categoryDB.name} category already exist`
+      });
+    }
+
+    //generate data to saved
+
+    const data = {
+      name: name,
+      user: req.user._id
+    };
+
+    const category = new Category(data);
+    await category.save();
+
+    res.status(201).json(category);
+  } catch (error) {
+    next(error);
   }
-
-  //generate data to saved
-
-  const data = {
-    name: name,
-    user: req.user._id
-  };
-
-  const category = new Category(data);
-  await category.save();
-
-  res.status(201).json(category);
 };
 
-const putCategory = async (req, res = response) => {
+const putCategory = async (req, res = response, next) => {
   const { id } = req.params;
   const {state, user, ...data } = req.body;
 
-  data.name = data.name.toUpperCase();
-  data.user = req.user._id;
-
   //TODO validar contra base de datos
   try {
+    data.name = data.name.toUpperCase();
+    data.user = req.user._id;
+
     const categories = await Category.findByIdAndUpdate(id, data, {new: true});
 
     res.json(categories);
   } catch (error) {
-    res.status(400).json(error.message);
+    next(error);
   }
 };
 
-const deleteCategory = async (req = request, res = response) => {
+const deleteCategory = async (req = request, res = response, next) => {
     const { id } = req.params;
     try {
         const categoryDelete = await Category.findByIdAndUpdate(id, {state: false}, {new: true});
         res.status(201).json(categoryDelete);
     } catch (error) {
-        res.status(400).json(error.message);
+        next(error);
     }
 }
 module.exports = {

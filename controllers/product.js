@@ -2,7 +2,7 @@ const { request, response } = require("express");
 const { Product } = require("../models");
 
 //product obtained
-const getProducts = async (req, res = response) => {
+const getProducts = async (req, res = response, next) => {
   const { limit = 5, offset = 0 } = req.query;
   const query = { state: true };
 
@@ -17,15 +17,12 @@ const getProducts = async (req, res = response) => {
       products
     });
   } catch (error) {
-    res.status(400).json({
-      msg: "I can't get the products",
-      error
-    });
+    next(error);
   }
 };
 
 //product obtained by id
-const getProductId = async (req, res = response) => {
+const getProductId = async (req, res = response, next) => {
     const { id } = req.params;
   try {
     const product = await Product.findById(id).populate('user', 'name').populate('category','name')
@@ -35,59 +32,61 @@ const getProductId = async (req, res = response) => {
     });
 
   } catch (error) {
-    res.status(400).json({
-      msg: "I can't get the product",
-      error
-    });
+    next(error);
   }
 };
 
 //create product
-const createProduct = async (req = request, res = response) => {
+const createProduct = async (req = request, res = response, next) => {
   const { state, user, ...body } = req.body;
 
-  const productDB = await Product.findOne({ name: body.name });
-  if (productDB) {
-    return res.status(400).json({
-      msg: `The ${productDB.name} product already exist`
-    });
+  try {
+    const name = body.name.toUpperCase();
+
+    const productDB = await Product.findOne({ name });
+    if (productDB) {
+      return res.status(400).json({
+        msg: `The ${productDB.name} product already exist`
+      });
+    }
+
+    //generate data to saved
+    const data = {
+      ...body,
+      name,
+      user: req.user._id,
+    };
+
+    const product = new Product(data);
+    await product.save();
+
+    res.status(201).json(product);
+  } catch (error) {
+    next(error);
   }
-
-  //generate data to saved
-  const data = {
-    ...body,
-    name: body.name.toUpperCase(),
-    user: req.user._id,
-   
-  };
-
-  const product = new Product(data);
-  await product.save();
-
-  res.status(201).json(product);
 };
 
-const putProduct = async (req, res = response) => {
+const putProduct = async (req, res = response, next) => {
   const { id } = req.params;
   const {state, user, ...data } = req.body;
 
-  if(data.name){
-    data.name = data.name.toUpperCase();
-  }
-
-  data.user = req.user._id;
-
   //TODO validar contra base de datos
   try {
+    if(data.name){
+      data.name = data.name.toUpperCase();
+    }
+
+    data.user = req.user._id;
+
     const product = await Product.findByIdAndUpdate(id, data, {new: true});
 
     res.json(product);
   } catch (error) {
-    res.status(400).json(error.message);
+    next(error);
   }
 };
 
-const deleteProduct = async (req = request, res = response) => {
+const deleteProduct = async (req = request, res = response, next) => {
     const { id } = req.params;
     try {
 
@@ -95,7 +94,7 @@ const deleteProduct = async (req = request, res = response) => {
         res.status(201).json(productDelete);
 
     } catch (error) {
-        res.status(400).json(error.message);
+        next(error);
     }
 }
 
