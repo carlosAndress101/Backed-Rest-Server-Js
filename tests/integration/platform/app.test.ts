@@ -258,7 +258,7 @@ describe('createApp', () => {
       const res = await request(server).put(`/api/user/${user.id}`).set('x-token', user.token);
 
       expect(res.status).toBe(200);
-      expect(res.body).toMatchObject({ uid: user.id, name: 'Platform User' });
+      expect(res.body.data).toMatchObject({ uid: user.id, name: 'Platform User' });
     });
 
     test('C10: a multipart body sent to a non-upload route is ignored', async () => {
@@ -270,7 +270,7 @@ describe('createApp', () => {
       );
 
       expect(res.status).toBe(200);
-      expect(res.body).toMatchObject({ uid: user.id, name: 'Platform User' });
+      expect(res.body.data).toMatchObject({ uid: user.id, name: 'Platform User' });
       expect(req.body).toEqual({});
     });
 

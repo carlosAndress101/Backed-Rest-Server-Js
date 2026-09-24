@@ -3,7 +3,6 @@ import type { Express, RequestHandler, Router } from 'express';
 
 // Legacy JS is loaded with Node's own require: one module instance shared by app, tests and every transform.
 const LEGACY_ROUTES: ReadonlyArray<readonly [string, string]> = [
-  ['/api/user', '../routes/usuarios'],
   ['/api/auth', '../routes/auth'],
   ['/api/search', '../routes/search'],
   ['/api/uploads', '../routes/uploads'],

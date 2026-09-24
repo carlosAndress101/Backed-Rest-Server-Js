@@ -34,8 +34,8 @@ describe('user write policy and access control', () => {
         .post('/api/user')
         .send({ name: 'Fresh User', email: 'fresh@example.com', password: 'password123' });
 
-      expectStatus(res, 200);
-      expect(res.body.role).toBe('USER_ROLE');
+      expectStatus(res, 201);
+      expect(res.body.data.role).toBe('USER_ROLE');
 
       const stored = await User.findOne({ email: 'fresh@example.com' });
       expect(stored).not.toBeNull();
@@ -56,8 +56,8 @@ describe('user write policy and access control', () => {
         role: 'ADMIN_ROLE',
       });
 
-      expectStatus(res, 200);
-      expect(res.body.role).toBe('USER_ROLE');
+      expectStatus(res, 201);
+      expect(res.body.data.role).toBe('USER_ROLE');
 
       const stored = await User.findOne({ email: 'wannabe@example.com' });
       expect(stored.role).toBe('USER_ROLE');
@@ -175,7 +175,8 @@ describe('user write policy and access control', () => {
         .set(authHeader(token))
         .send({ role: 'NOT_A_REAL_ROLE' });
 
-      expect(res.statusCode).toBe(400);
+      expect(res.statusCode).toBe(422);
+      expect(res.body.error).toMatchObject({ code: 'VALIDATION_FAILED', details: [{ path: 'role' }] });
 
       const unchanged = await reload(User, target.id);
       expect(unchanged.role).toBe('USER_ROLE');
@@ -206,12 +207,12 @@ describe('user write policy and access control', () => {
     test('an admin token is 200', async () => {
       const res = await request(app).get('/api/user').set(authHeader(adminToken));
       expectStatus(res, 200);
-      expect(res.body.user).toHaveLength(2);
+      expect(res.body.data).toHaveLength(2);
     });
 
     test('the list is still paginated below the documented default', async () => {
       const res = await request(app).get('/api/user').set(authHeader(adminToken));
-      expect(res.body.user.length).toBeLessThanOrEqual(USER_LIMIT);
+      expect(res.body.data.length).toBeLessThanOrEqual(USER_LIMIT);
     });
   });
 

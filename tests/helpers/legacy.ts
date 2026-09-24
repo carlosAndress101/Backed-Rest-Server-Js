@@ -4,6 +4,7 @@
 // model registers here first. A module task that migrates a model adds its line. Deleted with this file (T3.8).
 import '../../src/modules/categories/category.model';
 import '../../src/modules/products/product.model';
+import '../../src/modules/users/user.model';
 import type { v2 } from 'cloudinary';
 import type { OAuth2Client } from 'google-auth-library';
 import type { Model } from 'mongoose';
