@@ -150,24 +150,32 @@ const updateImageCloudinary = async (req, res = response, next) => {
                 return res.status(400).json({ msg:'I forgot to do this'})
         }
 
-        //clean preview images
-        if( model.image){
-            const nameArr = model.image.split("/");
-            const name    = nameArr[nameArr.length- 1];
-            const [ public_id ]      = name.split(".");
-            try {
-                await cloudinary.uploader.destroy( public_id );
-            } catch (error) {
-                // a stale previous image must not block the new upload
-                console.error(error);
-            }
-        }
+        const previousImage = model.image;
 
         const { tempFilePath } = req.files.file
         const { secure_url } = await cloudinary.uploader.upload( tempFilePath )
         
         model.image = secure_url;
-        await model.save();
+        try {
+            await model.save();
+        } catch (error) {
+            // the record keeps its previous image, so the one just uploaded is orphaned
+            console.error(`Orphaned Cloudinary asset ${ secure_url }: the ${ collection } ${ id } was not saved`);
+            throw error;
+        }
+
+        //clean preview images, only once the record points at the new one
+        if( previousImage ){
+            const nameArr = previousImage.split("/");
+            const name    = nameArr[nameArr.length- 1];
+            const [ public_id ]      = name.split(".");
+            try {
+                await cloudinary.uploader.destroy( public_id );
+            } catch (error) {
+                // a stale previous image must not fail an update that already succeeded
+                console.error(error);
+            }
+        }
 
         res.json( model )
     } catch (error) {
