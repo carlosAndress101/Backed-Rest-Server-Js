@@ -490,3 +490,19 @@ Integration branch **`m5/auth`**, cut from `next` @ `01be022`. P-numbers continu
 3. **`BCRYPT_COST` default and ceiling.** This design defaults to `10` (unchanged from today) with a `min(10)`/`max(14)` boot-time range. **Recommendation: keep 10 as the default**; raising it is an operational, measured decision (it directly trades login latency for brute-force cost) better made with real traffic data, not baked into this design. The range exists only to catch a fat-fingered config value (e.g., `31`, which would make every login take seconds) at boot, not to imply 14 is recommended.
 4. **`logout-all` semantics: everyone, or everyone-else?** This design bumps `tokenVersion` unconditionally, which also logs out the very request that called it (there is no per-session exception without a session store, which is out of scope, §0). **Recommendation: accept this** — it matches the endpoint's literal name ("logout-**all**," not "logout-others"), and `PUT /api/auth/password` already covers the "stay logged in on this device" case by minting a fresh token in its own response.
 5. **Whether to rate-limit `PUT /api/auth/password`.** This design leaves it unthrottled (§2.1, §6's acceptance notes why: a caller already holds a valid Bearer token, so guessing their own current password gains an attacker nothing they don't already have via the stolen token itself). **Recommendation: leave unthrottled for M5**; revisit only if telemetry (M9-era observability) shows abuse.
+
+---
+
+## 9. Orchestrator rulings on D5 (AM-M5-1…7, binding; override the text they name)
+
+The owner delegated decisions to the Orchestrator ("toma las mejores decisiones"). Each owner question below takes the design's recommended default and stays **reversible**; the owner may flip any of them before 3.0.0 ships.
+
+| ID | Question / finding | Ruling |
+|---|---|---|
+| AM-M5-1 | §8 Q1: Google account linking | **Refuse** a Google sign-in whose verified email matches an existing non-Google account: the generic 401 (P27), and the account is untouched. An authenticated linking endpoint is a later feature, not M5. CHANGELOG **Breaking**, because 2.x silently signed such users in. |
+| AM-M5-2 | §8 Q2: `JWT_TTL` default | **4h** (unchanged). |
+| AM-M5-3 | §8 Q3: `BCRYPT_COST` | Default **10**, boot range **10–14**. |
+| AM-M5-4 | §8 Q4: does logout-all include the caller? | **Yes**: every token of the user is revoked, the caller's included. `PUT /api/auth/password` returns a fresh token for "stay signed in here". |
+| AM-M5-5 | §8 Q5: throttle `PUT /api/auth/password`? | **Not in M5.** Revisit with M9 telemetry. Recorded as a TECH_DEBT note. |
+| AM-M5-6 | Orchestrator review of the T5.1 row: Files allowed | T5.1 re-signs the test fixtures and must raise the test `SECRET_KEY` to ≥ 32 characters. Its Files allowed also include **`tests/helpers/**`** (`tokenFor` signs `{ uid, tokenVersion }`) and **`tests/setup/**`** (the test env), plus any test file whose **only** change is the token-minting or header fixture. That is a mechanical change, listed per file. |
+| AM-M5-7 | Sequencing | As in §6: T5.1 (a **review gate**, "T5.1G", ARCHITECT) runs in parallel with T5.3 from the start; T5.2 starts after the T5.1 merge; T5.4 is the final review. |
