@@ -103,14 +103,13 @@ describe('user write policy and access control', () => {
   });
 
   describe('C6 owner self-update only changes the allowed fields', () => {
-    test('name and password change; email, role, state, image, google and _id are dropped', async () => {
+    test('name changes; email, role, state, image, google and _id are dropped', async () => {
       const owner = await createUser({ name: 'Owner', email: 'owner@example.com', image: 'original.png' });
       const other = await createUser({ email: 'other@example.com' });
       const token = await tokenFor(owner);
 
       const res = await request(app).put(`/api/user/${owner.id}`).set(authHeader(token)).send({
         name: 'Renamed Owner',
-        password: 'brand-new-password',
         email: 'hacked@evil.example',
         role: 'ADMIN_ROLE',
         state: false,
@@ -123,14 +122,29 @@ describe('user write policy and access control', () => {
 
       const updated = await reload(User, owner.id);
       expect(updated.name).toBe('Renamed Owner');
-      const { password } = await User.findById(owner.id, '+password').orFail(); // select: false (AM-M4-1)
-      expect(bcrypt.compareSync('brand-new-password', password)).toBe(true);
       expect(updated.email).toBe('owner@example.com');
       expect(updated.role).toBe('USER_ROLE');
       expect(updated.state).toBe(true);
       expect(updated.image).toBe('original.png');
       expect(updated.google).toBe(false);
       expect(updated.id).toBe(owner.id);
+    });
+  });
+
+  describe('AM-M5-10 a token alone cannot change its own password', () => {
+    test('a password on your own account is 422 and nothing is written, not even the name', async () => {
+      const owner = await createUser({ name: 'Owner', email: 'owner@example.com' });
+      const token = await tokenFor(owner);
+      const before = await User.findById(owner.id, '+password +tokenVersion').lean().orFail();
+
+      const res = await request(app)
+        .put(`/api/user/${owner.id}`)
+        .set(authHeader(token))
+        .send({ name: 'Stolen', password: 'attacker-password' });
+
+      expect(res.statusCode).toBe(422);
+      expect(res.body.error).toMatchObject({ code: 'VALIDATION_FAILED', details: [{ path: 'password' }] });
+      expect(await User.findById(owner.id, '+password +tokenVersion').lean().orFail()).toEqual(before);
     });
   });
 
