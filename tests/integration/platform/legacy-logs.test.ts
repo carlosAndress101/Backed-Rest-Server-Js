@@ -126,11 +126,12 @@ describe('LOG-01: legacy code logs through req.log, never the console', () => {
   });
 
   test('an upload temp folder that cannot be removed is logged at warn with the folder', async () => {
-    const realRm = fs.rm;
-    vi.spyOn(fs, 'rm').mockImplementation(
-      (target: fs.PathLike, options: fs.RmOptions, done: fs.NoParamCallback) =>
-        realRm(target, options, () => done(new Error('simulated cleanup failure'))),
-    );
+    // The folder is removed synchronously on close (T3.7R): the real removal runs, then the failure is simulated.
+    const realRmSync = fs.rmSync;
+    vi.spyOn(fs, 'rmSync').mockImplementation((target: fs.PathLike, options?: fs.RmOptions) => {
+      realRmSync(target, options);
+      throw new Error('simulated cleanup failure');
+    });
 
     // the stubbed Cloudinary client: nothing is written outside the request's temp folder (TEST-03)
     stubMediaClient(NEW_ASSET);

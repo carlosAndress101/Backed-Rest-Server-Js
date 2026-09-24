@@ -39,12 +39,23 @@ const asParserError = (err: unknown): unknown =>
  * express-fileupload fails to delete itself when an upload breaks off mid-file, which never reaches req.files.
  */
 export const fileParser: RequestHandler = (req, res, next) => {
+  // The client left while authentication ran: there is nobody to answer, so nothing is parsed or written.
+  if (res.closed) return;
+
   const tempFileDir = path.join(os.tmpdir(), `upload-${process.pid}-${randomUUID()}`);
 
+  // Once the response is over no handler reads the files. The parser stops first, so no file part can start
+  // later and recreate the folder (express-fileupload creates it with each file). The folder is then removed
+  // synchronously: an exit right after the response (a shutdown, a test worker's SIGTERM) cannot cut the
+  // removal short, as it could an asynchronous one.
   res.on('close', () => {
-    fs.rm(tempFileDir, { recursive: true, force: true, maxRetries: 3 }, (err) => {
-      if (err) req.log.warn({ err, tempFileDir }, 'upload temp folder not removed');
-    });
+    req.unpipe();
+    req.resume();
+    try {
+      fs.rmSync(tempFileDir, { recursive: true, force: true, maxRetries: 3 });
+    } catch (err) {
+      req.log.warn({ err, tempFileDir }, 'upload temp folder not removed');
+    }
   });
 
   // express-fileupload can call back twice (a body cut off mid-file fails both the file and the form),
