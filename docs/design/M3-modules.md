@@ -1,6 +1,6 @@
 # M3: Feature-First Refactor + Validation/DTOs — Technical Design
 
-> Author: ARCHITECT · 2026-09-24 · Status: **Proposed** (for Orchestrator acceptance)
+> Author: ARCHITECT · 2026-09-24 · Status: **Accepted** by the Orchestrator 2026-09-24, with amendments **AM-M3-1…3** folded in below (marked). ADR-027…ADR-030 accepted.
 > Base: `m3/design` cut from `next` @ `25fc00d` (release line ADR-026; 3.0.0 ships after M6). Builds on M2 (2.1.0, ARCHITECTURE §1.9).
 > Governing ADRs: ADR-004…ADR-026, and proposed **ADR-027…ADR-030** (§1). New decisions are proposed ADRs for the Orchestrator to accept.
 
@@ -390,7 +390,7 @@ mountLegacyRoutes(app); // remaining legacy routers
 Each module = the categories anatomy. Only the differences are listed; DTOs are zod, rules move into the service, responses use the envelope, models keep the legacy stored shape + `toJsonPlugin`.
 
 ### 5.1 `users` (routes #4–#8)
-- **Model** `user.model.ts`: legacy fields (name/email/password/image/role/state/google); `toJsonPlugin(userSchema, { hidden:['password'], uidAlias:true })` → keeps the legacy `uid` **and** adds `id`. Sole registrant; `models/user.js`→registry re-export. Exports `UserModel`, consumed by `auth` and by `authenticate` (replaces the ADR-027 lazy stub in `app.ts`).
+- **Model** `user.model.ts`: legacy fields (name/email/password/image/role/state/google); `toJsonPlugin(userSchema, { hidden:['password'], uidAlias:true })` → keeps the legacy `uid` **and** adds `id`. **AM-M3-2 (Orchestrator, LOG-02):** no `password` validator message may contain `{VALUE}`. Add a unit test asserting that a rejected password never appears in the `ValidationError`'s `message`, `stack` or `errors.password.message`. Sole registrant; `models/user.js`→registry re-export. Exports `UserModel`, consumed by `auth` and by `authenticate` (replaces the ADR-027 lazy stub in `app.ts`).
 - **DTOs:** `createUserBody { name, email(email), password(min 8) }` (role never accepted — SEC-02); `updateUserBody { name?, password?, role?, state? }` with **role/state applied only for admins** in the service (C6 whitelist; email/google/image/_id never writable); `paginationQuerySchema` for list.
 - **Service:** `list` (admin), `create` (bcrypt hash, force `USER_ROLE`, duplicate email → 409 via C1 or an explicit `exists` check), `update` (whitelist by caller role), `softDelete`.
 - **Rules kept:** `GET /api/user` admin-only; `PUT /:id` self-or-admin (`requireSelfOrAdmin`); `DELETE /:id` `requireRole('ADMIN_ROLE','VENTAS_ROLE')`. `usuariosPatch` stub and `PATCH /api/user` **removed** (CQ-02).
@@ -417,7 +417,7 @@ Each module = the categories anatomy. Only the differences are listed; DTOs are 
 - **No model.** Reads `User`/`Product`; wraps Cloudinary in `cloudinary.client.ts` (injected). Keeps the M2 `fileParser` (C10 scope: multipart only here, after auth; one file; per-request temp dir removed on every exit) — moved into the module.
 - **`POST /api/uploads` (#20) removed** (local disk, ADR-008). 404 after removal.
 - **`PUT /api/uploads/:collection/:id` (#21):** `authenticate` → `requireSelfOrAdmin`-style (user: owner-or-admin; product: admin) → param DTO (`collection ∈ {user,product}`, `id` objectId) → `fileParser` → **MIME sniff** (magic bytes: PNG `89 50 4E 47`, JPEG `FF D8 FF`, GIF `47 49 46 38`; mismatch → 400) → service: **upload → save → destroy old** (C11 order preserved), best-effort destroy logged via `req.log`. Parser errors → **400** (HTTP-02); > 5 MB → **413 with the JSON envelope** (F4) via the limiter/`abortOnLimit` handler mapped through the error handler.
-- **`GET /api/uploads/:collection/:id` (#22):** loads the record; if `image` is a Cloudinary URL → **302 redirect** to it (FUNC-01); else **404** (no local-disk serving). `assets/notFound.jpg` and `uploads/` are deleted.
+- **`GET /api/uploads/:collection/:id` (#22):** loads the record. If `image` is an asset of **this app's own Cloudinary cloud** (it starts with `https://res.cloudinary.com/<cloud_name>/`, where `<cloud_name>` is parsed from `config.media.cloudinaryUrl`), respond **302 redirect** to it (FUNC-01). Anything else gets **404**: no image, a Google avatar URL, a legacy bare filename, or any other host. **AM-M3-1 (Orchestrator): this allowlist prevents an open redirect.** Before M1, `image` was mass-assignable on products, so stored values cannot be trusted. Add a test per rejected shape. There is no local-disk serving; `assets/notFound.jpg` and `uploads/` are deleted.
 - **Contract:** #20 removed; #21 success body `envelope(record)` (id); #22 200-file → **302** (or 404). This is a **SECURITY & QA** task (MIME, media policy, C10/C11).
 
 ---
@@ -449,7 +449,7 @@ Auth column = enforced. Success = status + body. All error bodies are the envelo
 | 19 | GET `/api/search/:collection/:term` | user→admin; else none | `:collection,:term` | 200 `env(items)` | 400 (bad collection); 401/403 (user) |
 | 20 | POST `/api/uploads` | — | — | **removed** (404) | ADR-008 |
 | 21 | PUT `/api/uploads/:collection/:id` | user: owner/admin; product: admin | multipart 1 file ≤5 MB | 200 `env(record)` | 401/403; 404; 400 (MIME/parse); 413; 422 |
-| 22 | GET `/api/uploads/:collection/:id` | none | `:collection,:id` | **302** → Cloudinary URL | 404 (no image); 422 |
+| 22 | GET `/api/uploads/:collection/:id` | none | `:collection,:id` | **302** → own-cloud Cloudinary URL (AM-M3-1) | 404 (no image or non-own-cloud URL); 422 |
 | 23 | GET `/` static | none | — | 200 (unchanged) | CQ-07 (M8) |
 
 **Proposed API_PROGRESS ledger rows (M3):**
@@ -500,6 +500,8 @@ Flipping the error handler to the envelope produced **exactly 23 failing asserti
 
 ## 8. Task breakdown
 
+**AM-M3-3 (Orchestrator):** the dependency order is shown in the sequence below. Each agent runs its tasks in series: BACKEND T3.1 → T3.2 → T3.3 → T3.8; SECURITY T3.7 → T3.4; DATABASE T3.5 → T3.6. The integration branch is **`m3/modules`**, cut from `next`. Each module task branches from `m3/modules` after the previous merge it depends on. The Orchestrator resolves the one-line `src/app.ts`/`src/legacy.ts` conflicts at merge.
+
 P-numbers continue from M2 (P1–P8). New shared contracts:
 
 | ID | Contract | Owner | Consumers |
@@ -515,11 +517,9 @@ P-numbers continue from M2 (P1–P8). New shared contracts:
 ### Sequence
 
 ```
-core (T3.1) ─► categories reference (T3.2, REVIEW GATE) ─┬─► users (T3.3)
-                                                          ├─► auth (T3.4, needs users' UserModel)
-                                                          ├─► products (T3.5)
-                                                          ├─► search (T3.6)
-                                                          └─► media (T3.7)
+core (T3.1) ─► categories reference (T3.2, REVIEW GATE) ─┬─► users (T3.3, BACKEND) ─► auth (T3.4, SECURITY; needs UserModel)
+                                                          ├─► products (T3.5, DATABASE) ─► search (T3.6, DATABASE)
+                                                          └─► media (T3.7, SECURITY; before T3.4 on the same agent)
    ─► legacy removal (T3.8) ─► ARCHITECT review (T3.9) ─► Orchestrator close (T3.10)
 ```
 
