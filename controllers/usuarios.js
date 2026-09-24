@@ -57,7 +57,7 @@ const putUser = async (req = request, res = response, next) => {
       data.password = await bcrypt.hash(password, 10);
     }
   
-    const user = await User.findByIdAndUpdate(id, data, {new: true});
+    const user = await User.findByIdAndUpdate(id, data, { returnDocument: 'after' });
 
     res.json(user);
 
