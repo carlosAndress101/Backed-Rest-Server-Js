@@ -21,8 +21,9 @@ export interface UserLookup {
   findById(id: string): PromiseLike<LookupUser | null>;
 }
 
-// RFC 6750: the scheme exactly as ADR-032 fixes it, one space, then a b64token (a JWT's characters are a subset).
-const BEARER = /^Bearer ([A-Za-z0-9\-._~+/]+=*)$/;
+// RFC 6750: the scheme, one space, then a b64token (a JWT's characters are a subset). The scheme is case-insensitive
+// (RFC 7235 §2.1, AM-M5-8); the `i` flag changes nothing else, since the token's class already lists both cases.
+const BEARER = /^Bearer ([A-Za-z0-9\-._~+/]+=*)$/i;
 
 /**
  * P22 (ADR-032): `Authorization: Bearer` first. x-token is read only when there is no Authorization header at all,

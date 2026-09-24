@@ -209,13 +209,31 @@ describe('P22: the transport (ADR-032)', () => {
     expect(next).toHaveBeenCalledOnce();
   });
 
+  test.each(['bearer', 'BEARER', 'bEaReR'])(
+    'the scheme is case-insensitive (RFC 7235, AM-M5-8): "%s <token>" authenticates, and x-token is still not read',
+    async (scheme) => {
+      const { users, lookups } = fakeUsers();
+
+      const { error, req, responseHeaders } = await run(
+        { authorization: `${scheme} ${await sign(ACTIVE_ID)}`, 'x-token': await sign(OTHER_ID) },
+        users,
+      );
+
+      expect(error).toBeUndefined();
+      expect(req.user?.id).toBe(ACTIVE_ID.toHexString());
+      expect(lookups).toEqual([ACTIVE_ID.toHexString()]);
+      expect(responseHeaders).toEqual({});
+    },
+  );
+
   test.each<[string, (token: string) => string]>([
     ['empty', () => ''],
     ['the scheme alone', () => 'Bearer'],
     ['the scheme and a space', () => 'Bearer '],
     ['two spaces after the scheme', (token) => `Bearer  ${token}`],
-    ['a lowercase scheme', (token) => `bearer ${token}`],
-    ['an uppercase scheme', (token) => `BEARER ${token}`],
+    ['two spaces after a lowercase scheme', (token) => `bearer  ${token}`],
+    ['a tab instead of the space', (token) => `Bearer\t${token}`],
+    ['a near-miss scheme (Bearerx)', (token) => `Bearerx ${token}`],
     ['another scheme (Basic)', (token) => `Basic ${token}`],
     ['the token with no scheme', (token) => token],
     ['trailing garbage after the token', (token) => `Bearer ${token} extra`],
