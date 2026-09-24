@@ -5,7 +5,6 @@ import type { Express, RequestHandler, Router } from 'express';
 const LEGACY_ROUTES: ReadonlyArray<readonly [string, string]> = [
   ['/api/user', '../routes/usuarios'],
   ['/api/auth', '../routes/auth'],
-  ['/api/category', '../routes/category'],
   ['/api/product', '../routes/products'],
   ['/api/search', '../routes/search'],
   ['/api/uploads', '../routes/uploads'],
