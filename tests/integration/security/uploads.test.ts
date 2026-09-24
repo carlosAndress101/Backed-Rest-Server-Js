@@ -213,7 +213,9 @@ describe('media write policy and file serving', () => {
         .attach('file', tooBig, 'too-big.jpg');
 
       expect(res.statusCode).toBe(413);
-      expect(res.body).toEqual({ error: { code: 'BAD_REQUEST', message: 'The file is larger than 5 MB' } });
+      expect(res.body).toEqual({
+        error: { code: 'PAYLOAD_TOO_LARGE', message: 'The file is larger than 5 MB' },
+      });
       // C10: the aborted upload leaves nothing in the temp dir.
       expect(await waitForNoTempLeak(before)).toEqual([]);
     });

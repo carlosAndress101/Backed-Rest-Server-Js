@@ -4,6 +4,7 @@ export type ErrorCode =
   | 'FORBIDDEN'
   | 'NOT_FOUND'
   | 'CONFLICT'
+  | 'PAYLOAD_TOO_LARGE'
   | 'VALIDATION_FAILED'
   | 'RATE_LIMITED'
   | 'INTERNAL';
@@ -55,6 +56,13 @@ export class NotFoundError extends AppError {
 export class ConflictError extends AppError {
   constructor(message = 'Resource already exists', cause?: unknown) {
     super(409, 'CONFLICT', message, { cause });
+  }
+}
+
+/** A body over a size limit: express.json's 100 kb, or the media upload's 5 MB (AM-M3-10). */
+export class PayloadTooLargeError extends AppError {
+  constructor(message = 'Payload too large', cause?: unknown) {
+    super(413, 'PAYLOAD_TOO_LARGE', message, { cause });
   }
 }
 

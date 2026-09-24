@@ -78,13 +78,13 @@ describe('createApp', () => {
       expect(res.body).toEqual({ error: { code: 'BAD_REQUEST', message: 'Invalid request data' } });
     });
 
-    test('JSON over 100 kb is 413 BAD_REQUEST', async () => {
+    test('JSON over 100 kb is 413 PAYLOAD_TOO_LARGE (AM-M3-10)', async () => {
       const res = await request(server)
         .post('/api/category')
         .send({ name: 'x'.repeat(120 * 1024) });
 
       expect(res.status).toBe(413);
-      expect(res.body).toEqual({ error: { code: 'BAD_REQUEST', message: 'Invalid request data' } });
+      expect(res.body).toEqual({ error: { code: 'PAYLOAD_TOO_LARGE', message: 'Payload too large' } });
     });
 
     test('a bad percent escape in a path param is 400 BAD_REQUEST', async () => {

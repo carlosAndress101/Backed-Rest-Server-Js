@@ -6,6 +6,7 @@ import { PassThrough } from 'node:stream';
 import type { Request, Response } from 'express';
 import { describe, expect, test, vi } from 'vitest';
 
+import { PayloadTooLargeError } from '../../../src/core/errors';
 import { fileParser, isSupportedImage, MAX_FILE_BYTES } from '../../../src/modules/media/media.upload';
 import { listTempFiles, waitForNoTempLeak } from '../../helpers/uploads';
 
@@ -63,6 +64,42 @@ describe('fileParser', () => {
     await vi.waitFor(() => expect(next).toHaveBeenCalled());
     await new Promise((resolve) => setTimeout(resolve, 50));
     expect(next).toHaveBeenCalledTimes(1);
+
+    res.emit('close');
+    expect(await waitForNoTempLeak(before)).toEqual([]);
+  });
+
+  test('a file over 5 MB is a PayloadTooLargeError with the upload message (F4, AM-M3-10)', async () => {
+    const before = listTempFiles();
+    const body = Buffer.concat([
+      Buffer.from(
+        '--b\r\nContent-Disposition: form-data; name="file"; filename="a.jpg"\r\nContent-Type: image/jpeg\r\n\r\n',
+      ),
+      Buffer.alloc(MAX_FILE_BYTES + 1, 1),
+      Buffer.from('\r\n--b--\r\n'),
+    ]);
+    const req = Object.assign(new PassThrough(), {
+      method: 'PUT',
+      headers: { 'content-type': 'multipart/form-data; boundary=b', 'content-length': String(body.length) },
+      log: { warn: vi.fn() },
+    });
+    const res = Object.assign(new EventEmitter(), { headersSent: false });
+    // As the error handler does: it answers before express-fileupload aborts, which then only drains the body.
+    const next = vi.fn(() => {
+      res.headersSent = true;
+    });
+
+    fileParser(req as unknown as Request, res as unknown as Response, next);
+    req.end(body);
+
+    await vi.waitFor(() => expect(next).toHaveBeenCalled());
+    const [error] = next.mock.calls[0] as unknown[];
+    expect(error).toBeInstanceOf(PayloadTooLargeError);
+    expect(error).toMatchObject({
+      status: 413,
+      code: 'PAYLOAD_TOO_LARGE',
+      message: 'The file is larger than 5 MB',
+    });
 
     res.emit('close');
     expect(await waitForNoTempLeak(before)).toEqual([]);

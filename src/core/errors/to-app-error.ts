@@ -1,4 +1,4 @@
-import { AppError, BadRequestError, ConflictError, InternalError } from './app-error';
+import { AppError, BadRequestError, ConflictError, InternalError, PayloadTooLargeError } from './app-error';
 
 type ErrorLike = { name?: unknown; code?: unknown; status?: unknown; expose?: unknown };
 const asErrorLike = (err: unknown): ErrorLike => (typeof err === 'object' && err !== null ? err : {});
@@ -11,12 +11,14 @@ const httpClientStatus = (err: unknown): number | undefined => {
 };
 
 /**
- * The M1 C1 mapping: every failure that reaches the error handler becomes an AppError.
+ * The M1 C1 mapping: every failure that reaches the error handler becomes an AppError. The one change is
+ * body-parser's 413, which has its own code, PAYLOAD_TOO_LARGE, in 3.0.0 (AM-M3-10).
  * Duck-typed, so it works across Mongoose instances and keeps core/ free of a Mongoose import.
  */
 export function toAppError(err: unknown): AppError {
   if (err instanceof AppError) return err;
   const clientStatus = httpClientStatus(err);
+  if (clientStatus === 413) return new PayloadTooLargeError(undefined, err);
   if (clientStatus !== undefined)
     return new AppError(clientStatus, 'BAD_REQUEST', 'Invalid request data', { cause: err });
   const { code, name } = asErrorLike(err);

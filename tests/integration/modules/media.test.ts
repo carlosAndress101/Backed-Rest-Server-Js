@@ -294,7 +294,7 @@ describe('media module (§6 #20–#22)', () => {
 
         expect(res.status).toBe(413);
         expect(res.headers['content-type']).toMatch(/^application\/json/);
-        expect(res.body).toEqual(envelopeError('BAD_REQUEST', 'The file is larger than 5 MB'));
+        expect(res.body).toEqual(envelopeError('PAYLOAD_TOO_LARGE', 'The file is larger than 5 MB'));
         expect(upload).not.toHaveBeenCalled();
         expect(await waitForNoTempLeak(before)).toEqual([]);
       });
