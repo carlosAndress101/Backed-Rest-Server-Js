@@ -1,7 +1,7 @@
 # Roadmap
 
 > Owner: CarlosH / SH1FT3R · Orchestrated multi-agent delivery (Claude Code · OpenCode · Nodeterm · RTK)
-> Updated 2026-09-24 · Current milestone: **M2 in progress** (M1 accepted 2026-09-24, release 2.0.0)
+> Updated 2026-09-24 · Current milestone: **M3 next** (M2 accepted 2026-09-24, release 2.1.0)
 
 Complexity scale: **S** (≤1 agent-day) · **M** (2–3) · **L** (4–6) · **XL** (>6). Tests are a quality gate in **every** milestone (ADR-013); M7 closes the remaining gaps.
 
@@ -9,8 +9,8 @@ Complexity scale: **S** (≤1 agent-day) · **M** (2–3) · **L** (4–6) · **
 |---|---|---|---|---|
 | M0 | Audit & Baseline | S | — | ✅ Accepted 2026-09-23 |
 | M1 | Stabilization & Security Hotfix | M | M0 | ✅ Accepted 2026-09-24 (T1.5 review: ACCEPT after T1.2R), release **2.0.0** ([briefs](docs/tasks/M1-stabilization.md)) |
-| M2 | Foundation: tooling, TypeScript, config, logging, errors, Express 5 | L | M1 | 🔄 In progress: design accepted ([M2-foundation](docs/design/M2-foundation.md)); T2.1, T2.2 (Express 5), T2.4 ✅ merged; T2.3, T2.7 running; target release 2.1.0 |
-| M3 | Feature-First Refactor + Validation/DTOs | L | M2 | Planned |
+| M2 | Foundation: tooling, TypeScript, config, logging, errors, Express 5 | L | M1 | ✅ Accepted 2026-09-24 (T2.8 review: ACCEPT), release **2.1.0** ([design](docs/design/M2-foundation.md)) |
+| M3 | Feature-First Refactor + Validation/DTOs | L | M2 | 📝 Next: design (D3) |
 | M4 | Database Improvements | M | M3 | 📝 Design accepted ([M4-database](docs/design/M4-database.md)) |
 | M5 | Authentication Hardening | M | M4 | Planned |
 | M6 | Authorization (RBAC + ownership) | M | M5 | Planned |
@@ -42,7 +42,8 @@ Why this order differs from the default template: **security first** (ADR-001) b
 - **Risks:** The fixes are breaking for any client that relies on the open endpoints (see API_PROGRESS ledger). There is no live deployment (owner, 2026-09-23). If the old production database is reused, it may hold rogue admin accounts or tampered `image` values and needs the T1.6 data check first. The first `mongodb-memory-server` run downloads a `mongod` binary, which requires network.
 - **Complexity:** M · **Dependencies:** M0 sign-off. Owner answers: no live deployment; consumers unknown, so every change is logged as breaking (ADR-015).
 
-## M2: Foundation
+## M2: Foundation ✅ (accepted 2026-09-24, release 2.1.0)
+- **Outcome:** tasks T2.1–T2.7, plus follow-ups T2.3b (Mongoose 9 on Vitest, AM-6), T2.4R and T2.5R (TEST-03). The app boots from TypeScript (`src/server.ts` → `createApp`) with the legacy routers behind `src/legacy.ts`. Express 5.2.1, Mongoose 9.10.2, zod config, pino logging, one `AppError` model, 248 Vitest tests, CI. ARC-02, ARC-03, SEC-14, LOG-01, REL-02, REL-03, SEC-10, TEST-02 and TEST-03 fixed.
 - **Goal:** A typed, testable, observable platform for the refactor to land on.
 - **Deliverables:** TypeScript strict (`tsc` build, `tsx` dev), pending ADR-002. ESLint (flat) + Prettier, including a layer-boundary lint rule. Vitest + supertest + mongodb-memory-server harness, with the M1 suite ported. `src/config` validated with zod (fail fast), typed config object, documented `.example.env`. pino + pino-http with request id and redaction. `AppError` hierarchy, error middleware, 404, response envelope helpers. `createApp(deps)` separated from `server.ts` boot. Express 5 (ADR-003). Mongoose 9 with `sanitizeFilter` on and `strictQuery` true. CORS allowlist from config. Basic GitHub Actions CI: install, lint, typecheck, test.
 - **Risks:** Big-bang conversion; behaviour changes in Express 5 (`req.body` undefined without a parser, path syntax) and Mongoose 9. **Mitigation:** the M1 regression suite must be green before and after, and the upgrades land as separate commits.

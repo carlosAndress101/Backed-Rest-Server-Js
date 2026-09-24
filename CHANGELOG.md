@@ -6,8 +6,37 @@ Client-visible contract changes are always listed under **Breaking** and mirrore
 
 ## [Unreleased]
 
+## [2.1.0] - 2026-09-24 (M2: Foundation)
+
+Internal platform release (ADR-024). The HTTP contract of 2.0.0 is unchanged, apart from the additive and security items below.
+
 ### Added
-- M2 foundation design (`docs/design/M2-foundation.md`) and M4 database design (`docs/design/M4-database.md`); ADR-017…ADR-025.
+- `x-request-id` response header on every response: the inbound value when it matches `^[\w.:-]{1,128}$`, otherwise a generated UUID.
+- `CORS_ORIGINS`: a comma-separated origin allowlist. Unset or `*` keeps any-origin, with a warning at production boot (ADR-022).
+- Structured JSON logs (pino) on stdout: one line per request with `reqId`, and redaction of `x-token`, `authorization`, cookies and passwords (ADR-011, ADR-020).
+
+### Security
+- MongoDB filter hardening: `sanitizeFilter` and `strictQuery` are on, so operator objects in filter values (e.g. `{"email":{"$ne":null}}`) are rejected with **400** `Invalid request data` instead of matching (SEC-14).
+- Boot fails fast when `GOOGLE_CLIENT_ID` is missing, because an unset ID-token audience would accept any Google client's tokens (ADR-019).
+- Supply-chain age gate: dependency versions must be at least 24 h old, verified by a cold frozen install in CI (ADR-025).
+
+### Changed (internal)
+- The app boots from TypeScript: `src/server.ts` → `createApp` (`src/app.ts`), with the legacy JS routers mounted unchanged behind `src/legacy.ts` (ADR-016, ADR-017). ARC-02 and ARC-03 are resolved.
+- **Express 5.2.1** (ADR-003) and **Mongoose 9.10.2**, plus the MongoDB driver 7.6. The only visible difference is lowercase `charset=utf-8` on static-file `Content-Type` headers.
+- One error model (`AppError`, `toAppError`) behind the error middleware. Error bodies are byte-identical to 2.0.0 (`{ msg }`); the envelope switch is 3.0.0 (ADR-021).
+- Graceful shutdown on SIGTERM/SIGINT: stop accepting connections, drain for up to 10 s, disconnect from MongoDB.
+- Tests: the Jest suite is ported 1:1 to **Vitest** (248 tests: 104 security regression, 42 platform, 102 unit). `src/**` coverage is gated in CI.
+- Tooling: TypeScript 6 strict, ESLint 10 with layer-boundary rules, Prettier, and a GitHub Actions workflow (format, lint, typecheck, build, test with coverage, `pnpm audit --prod`).
+- Docs: M2 foundation and M4 database designs (`docs/design/`); ADR-017…ADR-025.
+
+### Removed
+- `app.js`, `models/server.js`, `database/config.js`, `jest`, `nodemon` and `dotenv` (replaced by `node --env-file-if-exists`). `GOOGLE_SECRET_ID` is dropped from `.example.env` (it was never read).
+
+### Operational
+- Build before start: `pnpm install --frozen-lockfile && pnpm build && pnpm start` (`start` runs `dist/server.js`).
+- Required environment: `MONGO_CLOUD`, `SECRET_KEY`, `GOOGLE_CLIENT_ID`, `CLOUDINARY_URL`. Optional: `NODE_ENV`, `PORT`, `LOG_LEVEL`, `CORS_ORIGINS`, `TRUST_PROXY`. An invalid or missing value stops the boot with exit 1 and lists every offending variable.
+- MongoDB server ≥ 4.4 is required (driver 7).
+- Without a `.env` file, Node prints `.env not found. Continuing without it.` (harmless).
 
 ## [2.0.0] - 2026-09-24 (M1: Stabilization & Security Hotfix)
 

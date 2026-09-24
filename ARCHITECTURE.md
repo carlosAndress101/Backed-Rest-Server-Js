@@ -179,6 +179,21 @@ Boot: `app.js` awaits the DB connection, then `listen`, and exits 1 on failure. 
 **Still open from the audit:** ARC-02 and ARC-03 (M2), and every M2+ item in TECH_DEBT.md.
 
 
+
+### 1.9 State after M2 (release 2.1.0, 2026-09-24)
+
+**Stack:** Node 24 · **TypeScript 6** (strict, CommonJS output; `src/` → `dist/`, ADR-017/018) for the platform, with the legacy JS unchanged behind one seam · **Express 5.2.1** · **Mongoose 9.10.2** (driver 7.6, MongoDB ≥ 4.4) · zod 4 (config) · pino + pino-http · Vitest 5 + supertest + mongodb-memory-server · ESLint 10 (layer rules) + Prettier · GitHub Actions CI.
+
+**Boot:** `src/server.ts`: `loadConfig()` (fail fast, exit 1 listing every bad variable) → `createLogger` → `connectDatabase` (`strictQuery`, `sanitizeFilter`) → `createApp` → `listen`, with graceful SIGTERM/SIGINT shutdown (10 s drain).
+
+**Pipeline** (`src/app.ts`): `[trust proxy]` → pino-http (request id) → helmet → cors (allowlist) → `express.json` → static `public/` → `src/legacy.ts` (`/hello` + 6 legacy routers, each behind `legacyBodyCompat`) → `notFound` → `errorHandler` (`toAppError`, `{ msg }` bodies until 3.0.0).
+
+**Layout:** `src/{server,app,legacy}.ts`, `src/config/`, `src/core/{errors,http,logger}`, `src/middlewares/`, `src/database/`; `tests/{setup,helpers,unit,integration/{platform,security}}`. Legacy `routes/ controllers/ middlewares/ helpers/ models/` are unchanged except the §4.8 ledger lines of the M2 design. `app.js`, `models/server.js`, `database/` and `e2e/` are gone.
+
+**Environment:** see `.example.env`. Required: `MONGO_CLOUD`, `SECRET_KEY`, `GOOGLE_CLIENT_ID`, `CLOUDINARY_URL`. Optional: `NODE_ENV`, `PORT`, `LOG_LEVEL`, `CORS_ORIGINS`, `TRUST_PROXY`.
+
+**Next (M3):** replace each legacy area with a TS feature module under `src/modules/` (ADR-016), removing its `src/legacy.ts` entry, with zod DTOs and the 3.0.0 envelope.
+
 ---
 
 ## 2. To-be (target)
