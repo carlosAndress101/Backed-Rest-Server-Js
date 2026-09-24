@@ -10,13 +10,20 @@ import { hashPassword } from '../../helpers/factories';
 
 const PASSWORD = 'seed-admin-secret-9f3c';
 const EMAIL = 'admin@example.com';
+const COST = 10; // config.auth.bcryptCost's default
+const TOO_LONG = `${'a'.repeat(64)}seedpass!`; // 73 bytes (AM-M5-11)
+const EMOJI_72_BYTES = '🔐'.repeat(18); // 18 characters, 36 UTF-16 units, 72 bytes: the most bcrypt reads
 
 let lines: string[];
 
-const seed = (config: { adminEmail?: string; adminPassword?: string }): Promise<SeedResult> =>
+const seed = (
+  config: { adminEmail?: string; adminPassword?: string },
+  bcryptCost = COST,
+): Promise<SeedResult> =>
   seedFirstAdmin({
     User: UserModel,
     config,
+    bcryptCost,
     log: createLogger({ logLevel: 'debug' }, { write: (line: string) => void lines.push(line) }),
   });
 const messages = () => lines.map((line) => (JSON.parse(line) as { msg: string }).msg);
@@ -137,6 +144,43 @@ describe('seedFirstAdmin', () => {
     expect(await UserModel.countDocuments()).toBe(0);
   });
 
+  test("the admin's hash is made at config.auth.bcryptCost, not a constant (ADR-035, AM-M5-11)", async () => {
+    await seed({ adminEmail: EMAIL, adminPassword: PASSWORD }, 11);
+
+    const admin = await UserModel.findOne({ email: EMAIL }).select('+password').lean().orFail();
+    expect(admin.password.slice(0, 7)).toBe('$2b$11$');
+    expect(await bcrypt.compare(PASSWORD, admin.password)).toBe(true);
+  });
+
+  test.each([
+    ['73 ASCII bytes', TOO_LONG],
+    ['73 bytes of emoji and one letter', `${EMOJI_72_BYTES}x`],
+  ])(
+    'a password of %s is refused like a short one: weak-password, nothing created, the value never logged (SEC-16)',
+    async (_case, password) => {
+      expect(Buffer.byteLength(password, 'utf8')).toBe(73);
+
+      expect(await seed({ adminEmail: EMAIL, adminPassword: password })).toEqual({
+        created: false,
+        reason: 'weak-password',
+      });
+      expect(await UserModel.countDocuments()).toBe(0);
+      expect(messages()).toEqual([
+        'seed: SEED_ADMIN_PASSWORD is longer than 72 bytes; refusing to create an admin',
+      ]);
+      for (const line of lines) expect(line).not.toContain(password);
+    },
+  );
+
+  test('a 72-byte multibyte password (18 emoji) is accepted, and it is the password that signs in', async () => {
+    expect(Buffer.byteLength(EMOJI_72_BYTES, 'utf8')).toBe(72);
+
+    expect(await seed({ adminEmail: EMAIL, adminPassword: EMOJI_72_BYTES })).toMatchObject({ created: true });
+
+    const admin = await UserModel.findOne({ email: EMAIL }).select('+password').lean().orFail();
+    expect(await bcrypt.compare(EMOJI_72_BYTES, admin.password)).toBe(true);
+  });
+
   test('P20: the password never reaches a log line, on any path', async () => {
     await seed({ adminEmail: EMAIL, adminPassword: PASSWORD }); // created
     await seed({ adminEmail: EMAIL, adminPassword: PASSWORD }); // admin-exists
@@ -144,15 +188,17 @@ describe('seedFirstAdmin', () => {
     await UserModel.create({ name: 'Ada', email: EMAIL, password: hashPassword() });
     await seed({ adminEmail: EMAIL, adminPassword: PASSWORD }); // email-exists
     await seed({ adminEmail: EMAIL, adminPassword: PASSWORD.slice(0, 7) }); // weak-password
+    await seed({ adminEmail: EMAIL, adminPassword: TOO_LONG }); // weak-password, over 72 bytes
     await seed({ adminPassword: PASSWORD }); // not-configured
     await clearDatabase();
     vi.spyOn(UserModel, 'create').mockRejectedValueOnce(Object.assign(new Error('E11000'), { code: 11000 }));
     await seed({ adminEmail: EMAIL, adminPassword: PASSWORD }); // email-exists, taken meanwhile
 
-    expect(lines).toHaveLength(6);
+    expect(lines).toHaveLength(7);
     for (const line of lines) {
       expect(line).not.toContain(PASSWORD);
       expect(line).not.toContain(PASSWORD.slice(0, 7));
+      expect(line).not.toContain(TOO_LONG);
     }
   });
 });
