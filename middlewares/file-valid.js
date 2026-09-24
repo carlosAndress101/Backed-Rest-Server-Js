@@ -27,7 +27,7 @@ const fileParser = (req, res = response, next) => {
     const tempFileDir = path.join(os.tmpdir(), `upload-${ process.pid }-${ randomUUID() }`);
 
     res.on('close', () => {
-        fs.rm(tempFileDir, { recursive: true, force: true, maxRetries: 3 }, err => err && console.error(err));
+        fs.rm(tempFileDir, { recursive: true, force: true, maxRetries: 3 }, err => err && req.log.warn({ err, tempFileDir }, 'upload temp folder not removed'));
     });
 
     expressFileUpload({ ...uploadOptions, tempFileDir })(req, res, next);

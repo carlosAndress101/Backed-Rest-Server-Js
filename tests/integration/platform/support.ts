@@ -6,32 +6,39 @@ import type { Express } from 'express';
 import mongoose from 'mongoose';
 import request from 'supertest';
 
-const PASSWORD = 'platform-password';
+export const PASSWORD = 'platform-password';
 
 export interface SignedIn {
   readonly id: string;
   readonly token: string;
 }
 
-/**
- * Creates a user straight in the file's database and signs in through the real login route. Each call
- * spends one request of the per-process login limiter (10 per window), so a file signs in sparingly.
- */
-export async function signIn(
-  server: Server,
+/** Creates a user with PASSWORD straight in the file's database (legacy models register on the first createApp). */
+export async function createUser(
   role: 'USER_ROLE' | 'ADMIN_ROLE' = 'USER_ROLE',
-): Promise<SignedIn> {
+): Promise<{ id: string; email: string }> {
   const email = `${role.toLowerCase()}-${randomUUID()}@example.com`;
-  // The legacy models are registered by createApp's first require of the legacy routers.
   const user = await mongoose.model('User').create({
     name: 'Platform User',
     email,
     password: await bcrypt.hash(PASSWORD, 4),
     role,
   });
+  return { id: String(user._id), email };
+}
+
+/**
+ * Creates a user and signs in through the real login route. Each call spends one request of the
+ * per-process login limiter (10 per window), so a file signs in sparingly.
+ */
+export async function signIn(
+  server: Server,
+  role: 'USER_ROLE' | 'ADMIN_ROLE' = 'USER_ROLE',
+): Promise<SignedIn> {
+  const { id, email } = await createUser(role);
   const res = await request(server).post('/api/auth/login').send({ email, password: PASSWORD });
   if (res.status !== 200) throw new Error(`login failed: ${res.status} ${JSON.stringify(res.body)}`);
-  return { id: String(user._id), token: res.body.token };
+  return { id, token: res.body.token };
 }
 
 export type AppRequest = IncomingMessage & { body?: unknown; app: Express };
