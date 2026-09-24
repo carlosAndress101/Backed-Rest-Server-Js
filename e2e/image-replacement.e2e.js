@@ -18,6 +18,7 @@ const {
   connectDatabase,
   buildApp,
   closeServers,
+  expectStatus,
   clearDatabase,
   createUser,
   createAdmin,
@@ -74,7 +75,7 @@ describe('REL-04 / C11 an image is replaced as upload, save, then destroy', () =
 
     const res = await replaceImage(app, `/api/uploads/user/${owner.id}`, await tokenFor(owner));
 
-    expect(res.statusCode).toBe(200);
+    expectStatus(res, 200);
     expect(cloudinary.uploader.upload).toHaveBeenCalledTimes(1);
     expect(cloudinary.uploader.destroy).toHaveBeenCalledTimes(1);
     expect(cloudinary.uploader.destroy).toHaveBeenCalledWith('old-avatar');
@@ -90,7 +91,7 @@ describe('REL-04 / C11 an image is replaced as upload, save, then destroy', () =
 
     const res = await replaceImage(app, `/api/uploads/product/${product.id}`, await tokenFor(await createAdmin()));
 
-    expect(res.statusCode).toBe(200);
+    expectStatus(res, 200);
     expect(cloudinary.uploader.destroy).toHaveBeenCalledWith('old-avatar');
     expect(cloudinary.uploader.destroy.mock.invocationCallOrder[0]).toBeGreaterThan(
       cloudinary.uploader.upload.mock.invocationCallOrder[0]
@@ -103,7 +104,7 @@ describe('REL-04 / C11 an image is replaced as upload, save, then destroy', () =
 
     const res = await replaceImage(app, `/api/uploads/user/${owner.id}`, await tokenFor(owner));
 
-    expect(res.statusCode).toBe(200);
+    expectStatus(res, 200);
     expect(cloudinary.uploader.destroy).not.toHaveBeenCalled();
   });
 
@@ -140,7 +141,7 @@ describe('REL-04 / C11 an image is replaced as upload, save, then destroy', () =
 
     const res = await replaceImage(app, `/api/uploads/user/${owner.id}`, await tokenFor(owner));
 
-    expect(res.statusCode).toBe(200);
+    expectStatus(res, 200);
     expect((await User.findById(owner.id)).image).toBe(NEW_URL);
   });
 });

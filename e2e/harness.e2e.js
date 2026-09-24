@@ -4,7 +4,7 @@ require('../models/server');
 const { spawn } = require('child_process');
 const request = require('supertest');
 
-const { buildApp, closeServers } = require('./helpers/db');
+const { buildApp, closeServers, expectStatus } = require('./helpers/db');
 
 /** Asks another process to listen on 127.0.0.1:<port>; resolves to 'listening' or the error code. */
 const bindFromAnotherProcess = (port) =>
@@ -45,7 +45,7 @@ describe('TEST-02 the test harness serves the app on a port no other process can
   test('requests reach the app itself', async () => {
     const res = await request(server).get('/api/no-such-route');
 
-    expect(res.statusCode).toBe(404);
+    expectStatus(res, 404);
     expect(res.body).toEqual({ msg: 'Route not found' });
   });
 });

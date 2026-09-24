@@ -13,6 +13,7 @@ const {
   connectDatabase,
   buildApp,
   closeServers,
+  expectStatus,
   clearDatabase,
   createUser,
   seedRoles,
@@ -47,7 +48,7 @@ describe('user write policy and access control', () => {
         .post('/api/user')
         .send({ name: 'Fresh User', email: 'fresh@example.com', password: 'password123' });
 
-      expect(res.statusCode).toBe(200);
+      expectStatus(res, 200);
       expect(res.body.role).toBe('USER_ROLE');
 
       const stored = await User.findOne({ email: 'fresh@example.com' });
@@ -71,7 +72,7 @@ describe('user write policy and access control', () => {
           role: 'ADMIN_ROLE',
         });
 
-      expect(res.statusCode).toBe(200);
+      expectStatus(res, 200);
       expect(res.body.role).toBe('USER_ROLE');
 
       const stored = await User.findOne({ email: 'wannabe@example.com' });
@@ -147,7 +148,7 @@ describe('user write policy and access control', () => {
           _id: other.id,
         });
 
-      expect(res.statusCode).toBe(200);
+      expectStatus(res, 200);
 
       const updated = await reload(User, owner.id);
       expect(updated.name).toBe('Renamed Owner');
@@ -176,7 +177,7 @@ describe('user write policy and access control', () => {
         .set(authHeader(token))
         .send({ role: 'ADMIN_ROLE', state: false });
 
-      expect(res.statusCode).toBe(200);
+      expectStatus(res, 200);
 
       const updated = await reload(User, target.id);
       expect(updated.role).toBe('ADMIN_ROLE');
@@ -223,7 +224,7 @@ describe('user write policy and access control', () => {
 
     test('an admin token is 200', async () => {
       const res = await request(app).get('/api/user').set(authHeader(adminToken));
-      expect(res.statusCode).toBe(200);
+      expectStatus(res, 200);
       expect(res.body.user).toHaveLength(2);
     });
 

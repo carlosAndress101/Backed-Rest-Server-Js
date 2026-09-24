@@ -146,6 +146,14 @@ const closeServers = async () => {
   servers.clear();
 };
 
+/**
+ * Asserts a response status. On a mismatch Jest's diff also prints the response
+ * body (which 401 fired, or whose), so an unexpected status is diagnosable from a
+ * single failing run.
+ */
+const expectStatus = (res, status) =>
+  expect({ status: res.statusCode, body: res.body }).toEqual({ status, body: res.body });
+
 // ---------------------------------------------------------------------------
 // Temporary upload files (express-fileupload useTempFiles)
 // ---------------------------------------------------------------------------
@@ -213,6 +221,7 @@ module.exports = {
   serve,
   buildApp,
   closeServers,
+  expectStatus,
   createUser,
   createAdmin,
   seedRoles,

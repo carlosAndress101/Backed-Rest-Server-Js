@@ -13,6 +13,7 @@ const {
   connectDatabase,
   buildApp,
   closeServers,
+  expectStatus,
   clearDatabase,
   createUser,
   hashPassword,
@@ -82,7 +83,7 @@ describe('auth surface', () => {
 
       const res = await login(app, { email: user.email, password: 'correct-password' });
 
-      expect(res.statusCode).toBe(200);
+      expectStatus(res, 200);
       expect(typeof res.body.token).toBe('string');
     });
 
