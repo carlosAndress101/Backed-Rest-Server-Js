@@ -13,7 +13,7 @@ import { expectStatus } from '../../helpers/assert';
 import { stubGoogleClient } from '../../helpers/auth';
 import { createUser, hashPassword } from '../../helpers/factories';
 
-const SECRET = 'test-secret'; // SECRET_KEY in vitest.config.mts
+const SECRET = 'test-secret-at-least-32-characters-long'; // SECRET_KEY in vitest.config.mts
 const GOOGLE_CLIENT_ID = 'test-client-id'; // GOOGLE_CLIENT_ID in vitest.config.mts
 const PASSWORD = 'correct-horse-battery';
 const PROFILE = {

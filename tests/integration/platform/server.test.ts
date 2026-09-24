@@ -53,7 +53,7 @@ const validEnv = (port: number): NodeJS.ProcessEnv => ({
   LOG_LEVEL: 'info',
   PORT: String(port),
   MONGO_CLOUD: `${inject('mongoUri')}server-${randomUUID()}`,
-  SECRET_KEY: 'test-secret',
+  SECRET_KEY: 'test-secret-at-least-32-characters-long',
   GOOGLE_CLIENT_ID: 'test-client-id',
   CLOUDINARY_URL: 'cloudinary://key:secret@demo',
 });
