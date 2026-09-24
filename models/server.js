@@ -1,6 +1,8 @@
 const cors = require('cors');
+const os = require('os');
 const path = require('path');
 const express = require('express');
+const helmet = require('helmet');
 const fileUpload = require('express-fileupload');
 const userRouter  = require('../routes/usuarios');
 const authRouter  = require('../routes/auth');
@@ -8,8 +10,6 @@ const categoryRouter  = require('../routes/category');
 const productRouter  = require('../routes/products');
 const searchRouter  = require('../routes/search');
 const uploadRouter  = require('../routes/uploads');
-
-const connection = require('../database/config');
 
 class Server {
 
@@ -26,9 +26,6 @@ class Server {
             uploads: '/api/uploads'
         }
 
-        // connect to the DB
-        this.conectarDB();
-
         // Middlewares
         this.middlewares();
 
@@ -36,12 +33,26 @@ class Server {
         this.routes();
     }
 
-    async conectarDB() {
-        await connection();
-    }
-
-
     middlewares() {
+
+        this.app.disable('x-powered-by');
+
+        // security headers; the CSP and COOP keep the demo page's Google
+        // sign-in and fonts working, CORP lets other origins embed images
+        this.app.use( helmet({
+            contentSecurityPolicy: {
+                directives: {
+                    scriptSrc: ["'self'", 'https://accounts.google.com/gsi/client'],
+                    styleSrc: ["'self'", "'unsafe-inline'", 'https://accounts.google.com/gsi/style', 'https://fonts.googleapis.com'],
+                    fontSrc: ["'self'", 'https://fonts.gstatic.com'],
+                    frameSrc: ['https://accounts.google.com/gsi/'],
+                    connectSrc: ["'self'", 'https://accounts.google.com/gsi/'],
+                }
+            },
+            crossOriginOpenerPolicy: { policy: 'same-origin-allow-popups' },
+            crossOriginResourcePolicy: { policy: 'cross-origin' },
+            referrerPolicy: { policy: 'strict-origin-when-cross-origin' },
+        }) );
 
         // CORS
         this.app.use( cors() );
@@ -53,11 +64,13 @@ class Server {
         //public path
         this.app.use(express.static(path.join(__dirname, '../public')))
 
-        //Upload files
+        //Upload files, max 5 MB (larger requests are aborted with 413)
         this.app.use(fileUpload({
             useTempFiles : true,
-            tempFileDir : '/tmp/',
+            tempFileDir : os.tmpdir(),
             createParentPath : true,
+            limits : { fileSize: 5 * 1024 * 1024 },
+            abortOnLimit : true,
         }));
     }
 
@@ -74,10 +87,55 @@ class Server {
         this.app.use(this.paths.product, productRouter)
         this.app.use(this.paths.search, searchRouter)
         this.app.use(this.paths.uploads, uploadRouter)
+
+        // unknown routes
+        this.app.use((req, res) => {
+            res.status(404).json({
+                msg: 'Route not found'
+            })
+        })
+
+        // error handler, must stay the last middleware
+        this.app.use((err, req, res, next) => {
+            // client errors from the HTTP layer (malformed JSON, bad URL escapes):
+            // http-errors flags them with expose, Express's URL decoding only sets status
+            const isClientError = err.status >= 400 && err.status < 500
+                && ( err.expose === true || err instanceof URIError );
+
+            if( isClientError && !res.headersSent ){
+                console.warn(`${ err.status } ${ req.method } ${ req.originalUrl }: ${ err.message }`);
+                return res.status(err.status).json({
+                    msg: 'Invalid request data'
+                })
+            }
+
+            console.error(err);
+
+            if( res.headersSent ){
+                return next(err);
+            }
+
+            if( err.code === 11000 ){
+                return res.status(409).json({
+                    msg: 'Resource already exists'
+                })
+            }
+
+            if( err.name === 'ValidationError' || err.name === 'CastError' ){
+                return res.status(400).json({
+                    msg: 'Invalid request data'
+                })
+            }
+
+            res.status(500).json({
+                msg: 'Internal server error'
+            })
+        })
     }
 
     listen(){
         return this.app.listen(this.port, ()=>{
+            console.log(`Server listening on :${ this.port }`);
         })
     }
 }
