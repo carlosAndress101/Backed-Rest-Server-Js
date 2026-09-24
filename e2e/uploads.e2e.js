@@ -26,7 +26,6 @@ const {
   tokenFor,
   authHeader,
   listTempFiles,
-  newTempFiles,
   waitForNoTempLeak,
   resetUploadDirs,
   User,
@@ -237,10 +236,9 @@ describe('media write policy and file serving', () => {
         .set(authHeader(token))
         .attach('file', tooBig, 'too-big.jpg');
 
-      // Whatever the aborted upload left in the temp dir must not leak.
-      newTempFiles(before).forEach((file) => fs.rmSync(file, { force: true }));
-
       expect(res.statusCode).toBe(413);
+      // C10: the aborted upload leaves nothing in the temp dir.
+      expect(await waitForNoTempLeak(before)).toEqual([]);
     });
   });
 
