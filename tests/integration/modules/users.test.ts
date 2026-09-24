@@ -92,7 +92,7 @@ describe('users module (§6 #4–#8)', () => {
         .set(authHeader(await tokenFor(caller)));
 
       expect(res.status).toBe(403);
-      expect(res.body).toEqual({ error: { code: 'FORBIDDEN', message: 'Administrator role required' } });
+      expect(res.body).toEqual({ error: { code: 'FORBIDDEN', message: 'Not allowed' } });
     });
 
     test('a bad page is 422', async () => {
@@ -266,7 +266,7 @@ describe('users module (§6 #4–#8)', () => {
       const res = await request(app).put(`/api/user/${BAD_ID}`).set(authHeader(userToken)).send({ name: 7 });
 
       expect(res.status).toBe(403);
-      expect(res.body).toEqual({ error: { code: 'FORBIDDEN', message: 'Owner or administrator required' } });
+      expect(res.body).toEqual({ error: { code: 'FORBIDDEN', message: 'Not allowed' } });
     });
 
     test('a user that does not exist is 404', async () => {

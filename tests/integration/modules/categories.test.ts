@@ -251,7 +251,7 @@ describe('categories module (§6 #9–#13)', () => {
       const res = await request(app).put(`/api/category/${BAD_ID}`).set(authHeader(userToken)).send({});
 
       expect(res.status).toBe(403);
-      expect(res.body).toEqual({ error: { code: 'FORBIDDEN', message: 'Administrator role required' } });
+      expect(res.body).toEqual({ error: { code: 'FORBIDDEN', message: 'Not allowed' } });
     });
 
     test('a category that does not exist is 404', async () => {

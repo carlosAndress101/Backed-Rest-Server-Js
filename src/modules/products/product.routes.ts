@@ -1,6 +1,6 @@
 import { Router, type RequestHandler } from 'express';
 
-import { requireAdmin } from '../../middlewares/authorize';
+import { authorize } from '../../middlewares/authorize';
 import { validate } from '../../middlewares/validate';
 import type { ProductsController } from './product.controller';
 import {
@@ -17,7 +17,7 @@ export interface ProductRouteDeps {
 
 /**
  * Paths, middleware and handlers only. The order matches the legacy chain: auth → authz → validate → controller.
- * The guards hold no state, so the access policy is declared here, next to the paths it protects (AM-M3-8).
+ * The policy holds no state, so it is declared here, next to the paths it protects (ADR-038).
  */
 export function createProductsRouter(deps: ProductRouteDeps): Router {
   const { controller, authenticate } = deps;
@@ -25,16 +25,22 @@ export function createProductsRouter(deps: ProductRouteDeps): Router {
 
   router.get('/', validate('query', paginationQuerySchema), controller.list);
   router.get('/:id', validate('params', productIdParams), controller.getOne);
-  router.post('/', authenticate, validate('body', createProductBody), controller.create);
+  router.post('/', authenticate, authorize({}), validate('body', createProductBody), controller.create);
   router.put(
     '/:id',
     authenticate,
-    requireAdmin,
+    authorize({ roles: ['ADMIN_ROLE'] }),
     validate('params', productIdParams),
     validate('body', updateProductBody),
     controller.update,
   );
-  router.delete('/:id', authenticate, requireAdmin, validate('params', productIdParams), controller.remove);
+  router.delete(
+    '/:id',
+    authenticate,
+    authorize({ roles: ['ADMIN_ROLE'] }),
+    validate('params', productIdParams),
+    controller.remove,
+  );
 
   return router;
 }

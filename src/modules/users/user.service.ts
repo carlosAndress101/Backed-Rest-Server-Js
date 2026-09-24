@@ -76,7 +76,7 @@ export function createUsersService(deps: {
       if (reset) changes.password = await hashPassword(dto.password!, bcryptCost);
 
       // One atomic find-and-update. An administrator also reaches a soft-deleted user, so state can be turned back on
-      // (C6); anyone else acts only on themself (requireSelfOrAdmin), who is active (authenticate). An administrator's
+      // (C6); anyone else acts only on themself (authorize's selfParam), who is active (authenticate). An administrator's
       // password reset bumps tokenVersion in that same write, so every session of the user dies with it (ADR-033).
       const filter = isAdmin ? { _id: id } : { _id: id, state: true };
       const update = reset ? { $set: changes, $inc: { tokenVersion: 1 } } : changes;

@@ -335,7 +335,7 @@ describe('products module (§6 #14–#18)', () => {
       const res = await request(app).put(`/api/product/${BAD_ID}`).set(authHeader(userToken)).send({});
 
       expect(res.status).toBe(403);
-      expect(res.body).toEqual({ error: { code: 'FORBIDDEN', message: 'Administrator role required' } });
+      expect(res.body).toEqual({ error: { code: 'FORBIDDEN', message: 'Not allowed' } });
     });
 
     test('a product that does not exist is 404', async () => {
