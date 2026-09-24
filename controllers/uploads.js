@@ -96,9 +96,13 @@ const showImage = async (req, res = response) => {
 
     //clean preview images
     if( model.image){
-        //the image must be find in the server
-        const pathImage = path.join(__dirname, "../uploads", collection, model.image);
-        if(fs.existsSync(pathImage)){
+        //the image must be find in the server, as a bare filename inside uploads/<collection>
+        const folder = path.join(__dirname, "../uploads", collection);
+        const pathImage = path.resolve(folder, model.image);
+        const isBareFileName = path.basename(model.image) === model.image;
+        const isInsideFolder = pathImage.startsWith(folder + path.sep);
+
+        if(isBareFileName && isInsideFolder && fs.existsSync(pathImage)){
             return res.sendFile(pathImage);
         }
     }
