@@ -29,8 +29,7 @@
     "express-validator": "^7.0.1",
     "google-auth-library": "^11.1.0",
     "jsonwebtoken": "^9.0.2",
-    "mongoose": "^7.5.0",
-    "uuid": "^9.0.1"
+    "mongoose": "^7.5.0"
   },
   "devDependencies": {
     "jest": "^29.6.4",
