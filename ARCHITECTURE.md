@@ -1,0 +1,224 @@
+# Architecture
+
+> Owner: Carlos Andrés Hinestroza Pérez (CarlosH / SH1FT3R) · Maintained by the Orchestrator
+> Audit baseline: commit `2f18dce` (master) · Audited 2026-09-23 · Milestone 0
+
+This document has three parts: the **as-is** inventory (what the code is today), the **to-be** target (what every milestone converges on), and the **ADR log** (why). Route-level detail lives in [API_PROGRESS.md](API_PROGRESS.md); every defect lives in [TECH_DEBT.md](TECH_DEBT.md).
+
+---
+
+## 1. As-is (audited)
+
+### 1.1 Stack and runtime
+
+| Item | Value |
+|---|---|
+| Runtime | Node.js (no `engines` pin; local machine: v24.16.0) |
+| Module system | CommonJS |
+| Language | JavaScript, no type checking |
+| Framework | Express 4 (`^4.18.2`, resolves 4.22.x) |
+| Database | MongoDB via Mongoose 7 (`^7.5.0`) |
+| Auth | JWT (`jsonwebtoken`), bcrypt, Google Identity (`google-auth-library`) |
+| Media | Cloudinary SDK v1 + `express-fileupload` (local disk and Cloudinary both used) |
+| Validation | `express-validator` 7, inline chains in route files |
+| Tests | Jest 29 + supertest (non-functional, see TEST-01) |
+| Package manager | pnpm (lockfile v6, **unreadable by the installed pnpm 12**, see OPS-01) |
+| Size | ~1,550 LOC JavaScript across 34 files |
+
+### 1.2 Folder structure
+
+```
+Backed-Rest-Server-Js/
+├── app.js                  # entrypoint: dotenv + new Server().listen()
+├── models/
+│   ├── server.js           # Express app + DB connect + listen (misplaced: not a model)
+│   ├── index.js            # barrel (re-exports Server as if it were a model)
+│   ├── user.js  role.js  category.js  product.js
+├── routes/                 # 6 routers, validation chains inline
+│   ├── auth.js  usuarios.js  category.js  products.js  search.js  uploads.js
+├── controllers/            # 6 controllers: HTTP + business rules + persistence + Cloudinary
+│   ├── auth.js  usuarios.js  category.js  product.js  search.js  uploads.js
+├── middlewares/            # validar-campos, validar-jwt, validar-roles, file-valid (+ barrel)
+├── helpers/                # db-validators, generar-jwt, google-verify, upload-file (+ barrel)
+├── database/config.js      # mongoose.connect(MONGO_CLOUD)
+├── public/                 # static Google Sign-In demo page (index.html, js/auth.js, css, svg)
+├── assets/notFound.jpg     # placeholder image served by GET /api/uploads
+├── uploads/                # local disk image storage (gitignored contents)
+├── e2e/                    # prueba.e2e.js (placeholder), user.e2e.js (broken)
+├── jest-e2e.json  package.json  pnpm-lock.yaml  .example.env  .gitignore
+```
+
+Organisation is **layer-by-type**. There is **no service layer, no repository layer, no config module, no error module, no logger**.
+
+### 1.3 Request pipeline (global middleware order, `models/server.js`)
+
+```
+cors() [all origins] → express.json() → express.static(public/) → fileUpload({useTempFiles, /tmp/}) [every route]
+  → router → [route validators (express-validator) → validarCampos] → [validarJWT] → [esAdminRole|hasRole] → controller
+  (no 404 handler, no error-handling middleware)
+```
+
+### 1.4 Layer inventory
+
+| Layer | Present | Files | Notes |
+|---|---|---|---|
+| Routes | ✅ | 6 | Mounted at `/api/{auth,user,category,product,search,uploads}` plus a debug `GET /hello` |
+| Controllers | ✅ | 6 (22 handlers) | Talk to Mongoose and Cloudinary directly; several async handlers have no error handling |
+| Services | ❌ | — | Business rules live in controllers |
+| Repositories | ❌ | — | Mongoose models used directly (see ADR-004: stays that way, deliberately) |
+| Models | ✅ | 4 (+`Server`) | User, Role, Category, Product |
+| Middlewares | ✅ | 4 | `validarCampos`, `validarJWT`, `esAdminRole` / `hasRole`, `fileValid` |
+| Helpers | ✅ | 4 | DB existence validators, JWT signing, Google token verify, local file upload |
+| Config | ⚠️ | 2 | `database/config.js`, `.example.env` (names only). `process.env` read ad hoc in 5 files |
+| DTOs | ❌ | — | `req.body` spread straight into models |
+| Error handling | ❌ | — | Per-handler try/catch where present; shapes differ per handler |
+| Logging | ❌ | — | `console.log` only |
+| Tests | ❌ | 2 | Both non-functional |
+| API docs | ❌ | — | No README, no OpenAPI |
+
+### 1.5 Data model and relationships
+
+```mermaid
+erDiagram
+    USER ||--o{ CATEGORY : "creates (category.user)"
+    USER ||--o{ PRODUCT  : "creates (product.user)"
+    CATEGORY ||--o{ PRODUCT : "classifies (product.category)"
+    ROLE }o..o{ USER : "lookup only: user.role (string) must equal a role.role"
+
+    USER {
+        string   name      "required"
+        string   email     "required, unique (case-sensitive)"
+        string   password  "required, bcrypt hash (':D' placeholder for Google users)"
+        string   image     "local filename or Cloudinary URL"
+        string   role      "required, default USER_ROLE, free string"
+        boolean  state     "default true, soft delete flag"
+        boolean  google    "default false"
+    }
+    ROLE {
+        string role "required; no seed script exists"
+    }
+    CATEGORY {
+        string   name   "required, unique, stored UPPERCASE"
+        boolean  state  "default true"
+        ObjectId user   "ref User, required"
+    }
+    PRODUCT {
+        string   name        "required, unique, stored UPPERCASE"
+        boolean  state       "default true"
+        ObjectId user        "ref User, required"
+        number   price       "default 0, no min"
+        ObjectId category    "ref Category, required, existence not validated"
+        string   description
+        boolean  available   "default true"
+        string   image
+    }
+```
+
+- No timestamps on any schema. No indexes beyond the implicit `unique` ones.
+- Soft delete (`state: false`) on User, Category, Product, but unique `name` indexes ignore state, so a deleted name can never be reused.
+- JSON shape is inconsistent: User maps `_id → uid` and hides `password`/`__v`; Product hides `state`/`__v`; Category only disables `versionKey`.
+
+### 1.6 Environment variables
+
+| Variable | Read in | Required | Notes |
+|---|---|---|---|
+| `PORT` | `models/server.js` | no | Fallback `1500`; code comments and `public/js/auth.js` assume `4321` |
+| `MONGO_CLOUD` | `database/config.js` | yes | Missing value causes an unhandled rejection at boot |
+| `SECRET_KEY` | `helpers/generar-jwt.js`, `middlewares/validar-jwt.js` | yes | Not validated; missing value only surfaces at first login |
+| `GOOGLE_CLIENT_ID` | `helpers/google-verify.js` | yes (Google login) | Also **hardcoded** in `public/index.html` |
+| `GOOGLE_SECRET_ID` | — | no | Declared in `.example.env`, never used |
+| `CLOUDINARY_URL` | `controllers/uploads.js` (implicitly by the SDK) | yes (media) | `cloudinary.config(process.env.CLOUDINARY_URL)` is a no-op getter call |
+
+### 1.7 Dependencies
+
+Resolved versions come from a fresh resolution of `package.json` ranges; the committed lockfile could not be read (OPS-01).
+
+| Package | Declared | Resolved | Latest (2026-09-23) | Role | Audit |
+|---|---|---|---|---|---|
+| express | ^4.18.2 | 4.22.3 | 5.2.1 | HTTP framework | — |
+| mongoose | ^7.5.0 | 7.8.12 | 9.10.2 | ODM | — |
+| jsonwebtoken | ^9.0.2 | 9.0.3 | 9.0.3 | JWT | — |
+| bcrypt | ^5.1.1 | 5.1.1 | 6.0.0 | Password hashing | pulls `@mapbox/node-pre-gyp` → `tar` (**critical**, install-time) |
+| cloudinary | ^1.41.0 | 1.41.3 | 2.11.0 | Media storage | **high**: argument injection (GHSA-g4mf-96x5-5m2c) |
+| express-fileupload | ^1.4.1 | 1.5.2 | 1.5.2 | Multipart parsing | — (misconfigured, see SEC-08) |
+| express-validator | ^7.0.1 | 7.3.2 | — | Validation | — |
+| cors | ^2.8.5 | 2.8.6 | — | CORS | — (open to all origins) |
+| dotenv | ^16.3.1 | 16.6.1 | — | Env loading | — |
+| uuid | ^9.0.1 | 9.0.1 | — | Upload filenames | **moderate** (GHSA-w5hq-g745-h8pq); replaceable by `crypto.randomUUID()` |
+| google-auth-library | ^9.0.0 (**devDependency**) | 9.15.1 | 11.1.0 | Google ID token verification | Required at runtime but declared dev-only (OPS-02) |
+| jest / supertest / nodemon | dev | 29.7 / 6.3 / 3.1 | — | Tooling | — |
+
+**Security-related packages present:** `bcrypt`, `jsonwebtoken`, `google-auth-library`, `cors`, `express-validator`.
+**Absent:** `helmet`, rate limiting, request size/file limits, NoSQL filter sanitisation (`mongoose.set('sanitizeFilter')`), structured logging with redaction.
+
+---
+
+## 2. To-be (target)
+
+### 2.1 Principles
+
+Clean Architecture boundaries, feature-first, SOLID/DRY/KISS/YAGNI. **An abstraction is added only when it removes existing duplication or enables a test that is otherwise impossible.** Everything else is YAGNI.
+
+### 2.2 Target layout
+
+```
+src/
+├── server.ts               # boot: load config → connect DB → createApp() → listen → graceful shutdown
+├── app.ts                  # createApp(deps): composition root, wires modules, no side effects
+├── config/                 # env schema (zod), typed config object, fail-fast on boot
+├── core/                   # cross-cutting, framework-agnostic where possible
+│   ├── errors/             # AppError hierarchy (NotFound, Conflict, Forbidden, Unauthorized, Validation)
+│   ├── http/               # response envelope, pagination query schema + helper
+│   ├── logger.ts           # pino instance (redacts authorization, password)
+│   └── security/           # password hashing, JWT sign/verify, roles enum
+├── middlewares/            # authenticate, authorize(policy), validate(schema), error-handler, not-found
+├── database/               # connection, migrations, seed
+└── modules/
+    ├── auth/               # auth.routes · auth.controller · auth.service · auth.schemas · google.client
+    ├── users/              # users.routes · users.controller · users.service · users.schemas · user.model
+    ├── categories/         # …same anatomy
+    ├── products/
+    ├── search/             # search.routes · search.controller · search.service (no model of its own)
+    └── media/              # media.routes · media.controller · media.service · cloudinary.client
+tests/
+├── integration/            # supertest against createApp() + mongodb-memory-server
+├── unit/                   # services with injected fakes
+└── helpers/                # factories, auth helpers, db lifecycle
+```
+
+### 2.3 Layer rules (enforced in review; lint rule in M2)
+
+```
+routes ──► controller ──► service ──► model (Mongoose) / external client
+   │            │             │
+   └─ validate(schema)        └─ throws AppError; never touches req/res
+```
+
+1. **Routes** declare path, middleware (`authenticate`, `authorize`, `validate`), and the controller. Nothing else.
+2. **Controllers** translate HTTP ↔ service calls: read the validated DTO, call one service method, shape the response. No Mongoose, no business rules.
+3. **Services** own business rules and persistence calls. They receive dependencies (models, clients, config) through a factory: `createUsersService({ User, passwordHasher, config })`. They throw `AppError`s and never import Express.
+4. **Modules** never import another module's internals, only its service (via the composition root).
+5. **Cross-cutting code** lives in `core/` and must not import from `modules/`.
+
+---
+
+## 3. ADR log
+
+Status: **Accepted** = Orchestrator decision, binding on agents. **Proposed** = needs owner confirmation before its milestone starts.
+
+| ID | Decision | Status | Rationale |
+|---|---|---|---|
+| ADR-001 | **Security hotfix (M1) ships before any refactor**, as minimal in-pattern changes to the current JS code | Accepted | The repo is public and a deployment URL is referenced in `public/js/auth.js`. Critical auth bypass and crash vectors can't wait for a restructure. |
+| ADR-002 | **Migrate to TypeScript (strict)** during M2, build with `tsc`, run dev with `tsx` | **Proposed** | The mandate asks for type-safe interfaces. At ~1.5k LOC, migration is cheapest now because every file is rewritten in M2/M3 anyway. It also gives DTOs types for free with ADR-006. The repo name ends in "Js", so the owner confirms. |
+| ADR-003 | **Upgrade to Express 5** in M2 | Accepted | Native promise-rejection forwarding removes a whole class of crash bugs (REL-01) with no `asyncHandler` wrapper. Deferred from M1 to keep the hotfix minimal. |
+| ADR-004 | **No repository layer.** Services use Mongoose models directly, injected via factories | Accepted | Mongoose already is the data mapper; wrapping it adds a layer with no second implementation. Testability comes from `mongodb-memory-server` + DI. Revisit only if a second datastore appears. |
+| ADR-005 | **DI by factory functions + one composition root** (`createApp`), no DI container library | Accepted | Explicit, zero-dependency, trivially testable. |
+| ADR-006 | **zod schemas are the DTOs** (validation + inferred types + OpenAPI source); `express-validator` is removed in M3 | Accepted | One source of truth for shape, type, and docs (DRY). |
+| ADR-007 | **Roles are a code-level enum**; the `Role` collection lookup is removed | Accepted | Roles are static. The DB lookup costs a query per validation and blocks onboarding on an unseeded DB (DB-01). |
+| ADR-008 | **Cloudinary is the only media store**; local-disk upload/serve is removed in M3 | Accepted | Two strategies coexist and conflict (FUNC-01). Local disk breaks stateless containers (M9). |
+| ADR-009 | **Single error model:** `AppError` hierarchy + one error middleware + one response envelope | Accepted | Replaces five different error shapes (REL-02, HTTP-01). |
+| ADR-010 | **Auth transport `Authorization: Bearer`**; `x-token` accepted with a deprecation header for one major. Revocation via a `tokenVersion` claim. **No refresh tokens** (YAGNI) until a client needs long sessions | Accepted | Standard transport. Revocation without a new collection, since `validarJWT` already loads the user per request. |
+| ADR-011 | **Logging:** pino + pino-http, request id, redaction of `authorization`/`x-token`/`password` | Accepted | Structured, fast, stdout-friendly for containers. |
+| ADR-012 | **Package manager: pnpm**, pinned through `packageManager` + corepack; lockfile regenerated | Accepted | Keeps the existing choice and makes installs reproducible (OPS-01). |
+| ADR-013 | **Tests are a gate in every milestone**, not a phase. Stack: Jest in M1 (existing), Vitest + supertest + mongodb-memory-server from M2 | Accepted | The refactor needs a safety net before it starts. |
+| ADR-014 | **Node 24 LTS** is the runtime baseline (`engines`, `.nvmrc`, Docker base image) | Accepted | Current LTS, already installed locally. |
