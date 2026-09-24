@@ -53,7 +53,8 @@ async function main(): Promise<void> {
   if (config.env === 'production' && config.cors.origins === '*') {
     logger.warn('CORS_ORIGINS is not set: every origin may call this API');
   }
-  await connectDatabase(config.mongoUri); // the database before any traffic (C3 / REL-03)
+  // The database before any traffic (C3 / REL-03). Production builds indexes with `pnpm migrate`, not on boot (§10.1).
+  await connectDatabase(config.mongoUri, { autoIndex: config.env !== 'production' });
   logger.info('database connected');
   const server = await listen(createApp({ config, logger }), config.port);
   logger.info({ port: config.port }, 'server listening');

@@ -18,6 +18,8 @@ export interface Config {
   readonly auth: { readonly jwtSecret: string; readonly googleClientId: string };
   /** Consumed by the media module in M3. */
   readonly media: { readonly cloudinaryUrl: string };
+  /** Read only by `pnpm seed` (M4 design §6, D-14). `adminPassword` is never logged (P20). */
+  readonly seed: { readonly adminEmail?: string; readonly adminPassword?: string };
 }
 
 export class ConfigError extends Error {
@@ -47,5 +49,6 @@ export function loadConfig(source: NodeJS.ProcessEnv = process.env): Config {
     trustProxy: env.TRUST_PROXY,
     auth: { jwtSecret: env.SECRET_KEY, googleClientId: env.GOOGLE_CLIENT_ID },
     media: { cloudinaryUrl: env.CLOUDINARY_URL },
+    seed: { adminEmail: env.SEED_ADMIN_EMAIL, adminPassword: env.SEED_ADMIN_PASSWORD },
   });
 }

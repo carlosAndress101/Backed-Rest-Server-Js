@@ -22,6 +22,9 @@ export const envSchema = z.object({
     .regex(/^\d+$/, 'must be a non-negative integer hop count (C9)')
     .transform(Number)
     .optional(),
+  // The first admin `pnpm seed` creates (M4 design §6). Plain strings: the seed checks them, not the boot.
+  SEED_ADMIN_EMAIL: z.string().optional(),
+  SEED_ADMIN_PASSWORD: z.string().optional(), // never logged (P20)
 });
 
 export type Env = z.infer<typeof envSchema>;
