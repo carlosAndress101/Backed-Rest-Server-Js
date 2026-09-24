@@ -11,6 +11,8 @@ import { M001 } from './database/migrations/M001-normalize-email';
 import { M002 } from './database/migrations/M002-rebuild-name-indexes';
 import { M003 } from './database/migrations/M003-backfill-created-at';
 import { M004 } from './database/migrations/M004-drop-roles-collection';
+import { seedFirstAdmin, type SeedResult } from './database/seed';
+import { UserModel } from './modules/users';
 
 export const USAGE = 'Usage: cli.js migrate up|down [--dry-run] | cli.js migrate status | cli.js seed';
 
@@ -28,17 +30,15 @@ export interface CliDeps {
   readonly log: Logger;
   readonly migrations: readonly Migration[];
   /** Runs the first-admin seed and resolves to the exit code. */
-  readonly seed: (db: mongo.Db, log: Logger) => Promise<number>;
+  readonly seed: (log: Logger) => Promise<number>;
 }
 
 /** The migrations `migrate` runs, in id order (M4 design §5.3). M004 is the one destructive step and runs last. */
 export const MIGRATIONS: readonly Migration[] = [M001, M002, M003, M004];
 
-/** The `seed` command until T4.4 wires the first-admin seed (§6): it refuses, so nothing looks seeded. */
-export const seedNotAvailable = (_db: mongo.Db, log: Logger): Promise<number> => {
-  log.error('seed: the first-admin seed is not available yet');
-  return Promise.resolve(1);
-};
+/** 0 once the instance has an active admin, created now or before; 1 when the seed could not give it one. */
+export const seedExitCode = (result: SeedResult): number =>
+  result.created || result.reason === 'admin-exists' ? 0 : 1;
 
 export function parseArgs(args: readonly string[]): Command {
   const [command, action, ...flags] = args;
@@ -69,7 +69,7 @@ export async function runCommand(command: Command, { db, log, migrations, seed }
       return 0;
     }
     case 'seed':
-      return seed(db, log);
+      return seed(log);
   }
 }
 
@@ -88,8 +88,10 @@ export async function main(args: readonly string[]): Promise<number> {
   // Only the migrations build indexes, after their data checks: never Mongoose behind their back (§10.1).
   await connectDatabase(config.mongoUri, { autoIndex: false });
   try {
-    const deps = { db: mongoose.connection.db!, log, migrations: MIGRATIONS, seed: seedNotAvailable };
-    return await runCommand(command, deps);
+    // AM-M4-7: this composition root hands the users module's model to the seed.
+    const seed = async (seedLog: Logger) =>
+      seedExitCode(await seedFirstAdmin({ User: UserModel, config: config.seed, log: seedLog }));
+    return await runCommand(command, { db: mongoose.connection.db!, log, migrations: MIGRATIONS, seed });
   } catch (err) {
     log.error({ err }, 'command failed'); // a migration that threw is not recorded, so the next run retries it
     return 1;

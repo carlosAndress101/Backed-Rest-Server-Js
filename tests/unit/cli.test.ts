@@ -12,7 +12,7 @@ import {
   main,
   parseArgs,
   runCommand,
-  seedNotAvailable,
+  seedExitCode,
   type Command,
 } from '../../src/cli';
 import { createLogger } from '../../src/core/logger';
@@ -96,7 +96,12 @@ describe('parseArgs', () => {
 });
 
 describe('runCommand', () => {
-  const deps = (migrations: readonly Migration[]) => ({ db, log, migrations, seed: seedNotAvailable });
+  const deps = (migrations: readonly Migration[]) => ({
+    db,
+    log,
+    migrations,
+    seed: () => Promise.resolve(0),
+  });
 
   test('migrate up runs the pending migrations and logs what it ran', async () => {
     const migrations = [recording('M001-first', calls)];
@@ -157,23 +162,36 @@ describe('runCommand', () => {
     ).rejects.toBe(failure);
   });
 
-  test('seed runs the injected seed and exits with its code', async () => {
-    const seed = vi.fn(() => Promise.resolve(0));
+  test.each([0, 1])(
+    'seed runs the injected seed with the logger and exits with its code (%i)',
+    async (exitCode) => {
+      const seed = vi.fn(() => Promise.resolve(exitCode));
 
-    expect(await runCommand({ name: 'seed' }, { ...deps([]), seed })).toBe(0);
-    expect(seed).toHaveBeenCalledWith(db, log);
-  });
+      expect(await runCommand({ name: 'seed' }, { ...deps([]), seed })).toBe(exitCode);
+      expect(seed).toHaveBeenCalledWith(log);
+    },
+  );
+});
 
-  test('the seed stub (until T4.4) refuses: exit code 1 and an error line', async () => {
-    expect(await runCommand({ name: 'seed' }, deps([]))).toBe(1);
-    expect(records()).toEqual([
-      expect.objectContaining({ level: 50, msg: 'seed: the first-admin seed is not available yet' }),
-    ]);
+describe('seedExitCode', () => {
+  test.each([
+    [{ created: true, id: 'x' }, 0],
+    [{ created: false, reason: 'admin-exists' }, 0],
+    [{ created: false, reason: 'not-configured' }, 1],
+    [{ created: false, reason: 'weak-password' }, 1],
+    [{ created: false, reason: 'email-exists' }, 1],
+  ] as const)('%o → %i: 0 exactly when the instance has an active admin', (result, code) => {
+    expect(seedExitCode(result)).toBe(code);
   });
 });
 
 describe('main (the CLI process)', () => {
-  const useDatabase = () => vi.stubEnv('MONGO_CLOUD', `${MONGO_URI}cli-${randomUUID()}`);
+  /** Points the CLI's config at a fresh database and returns that database, read through the test's client. */
+  const useDatabase = () => {
+    const name = `cli-main-${randomUUID()}`;
+    vi.stubEnv('MONGO_CLOUD', `${MONGO_URI}${name}`);
+    return client.db(name);
+  };
 
   test('migrate runs the M4 list, M001–M004 in id order', () => {
     expect(MIGRATIONS.map(({ id }) => id)).toEqual([
@@ -218,10 +236,32 @@ describe('main (the CLI process)', () => {
     expect(mongoose.connection.readyState).toBe(mongoose.ConnectionStates.disconnected);
   });
 
-  test('seed exits 1 until T4.4 wires the first-admin seed', async () => {
-    useDatabase();
+  test("seed creates the first admin with the users module's model, then is a no-op: exit 0 both times", async () => {
+    const target = useDatabase();
+    vi.stubEnv('SEED_ADMIN_EMAIL', ' Admin@Example.com ');
+    vi.stubEnv('SEED_ADMIN_PASSWORD', 'seed-admin-secret-9f3c');
+
+    expect(await main(['seed'])).toBe(0);
+    expect(await main(['seed'])).toBe(0);
+
+    const users = await target.collection('users').find({}).toArray();
+    expect(users).toEqual([
+      expect.objectContaining({
+        email: 'admin@example.com',
+        role: 'ADMIN_ROLE',
+        state: true,
+        tokenVersion: 0,
+      }),
+    ]);
+    await target.dropDatabase();
+  });
+
+  test('seed without SEED_ADMIN_* exits 1 and creates nothing', async () => {
+    const target = useDatabase();
 
     expect(await main(['seed'])).toBe(1);
+
+    expect(await target.collection('users').countDocuments()).toBe(0);
   });
 
   test('an invalid environment rejects with the ConfigError, before connecting', async () => {
