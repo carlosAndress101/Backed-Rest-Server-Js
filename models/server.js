@@ -97,6 +97,18 @@ class Server {
 
         // error handler, must stay the last middleware
         this.app.use((err, req, res, next) => {
+            // client errors from the HTTP layer (malformed JSON, bad URL escapes):
+            // http-errors flags them with expose, Express's URL decoding only sets status
+            const isClientError = err.status >= 400 && err.status < 500
+                && ( err.expose === true || err instanceof URIError );
+
+            if( isClientError && !res.headersSent ){
+                console.warn(`${ err.status } ${ req.method } ${ req.originalUrl }: ${ err.message }`);
+                return res.status(err.status).json({
+                    msg: 'Invalid request data'
+                })
+            }
+
             console.error(err);
 
             if( res.headersSent ){
