@@ -9,7 +9,7 @@ Complexity scale: **S** (≤1 agent-day) · **M** (2–3) · **L** (4–6) · **
 |---|---|---|---|---|
 | M0 | Audit & Baseline | S | — | ✅ Accepted 2026-09-23 |
 | M1 | Stabilization & Security Hotfix | M | M0 | ✅ Accepted 2026-09-24 (T1.5 review: ACCEPT after T1.2R), release **2.0.0** ([briefs](docs/tasks/M1-stabilization.md)) |
-| M2 | Foundation: tooling, TypeScript, config, logging, errors, Express 5 | L | M1 | 🔄 In progress: design accepted ([M2-foundation](docs/design/M2-foundation.md)); T2.1 done, awaiting review; target release 2.1.0 |
+| M2 | Foundation: tooling, TypeScript, config, logging, errors, Express 5 | L | M1 | 🔄 In progress: design accepted ([M2-foundation](docs/design/M2-foundation.md)); T2.1 ✅ merged; T2.2 and T2.4 running; target release 2.1.0 |
 | M3 | Feature-First Refactor + Validation/DTOs | L | M2 | Planned |
 | M4 | Database Improvements | M | M3 | 📝 Design accepted ([M4-database](docs/design/M4-database.md)) |
 | M5 | Authentication Hardening | M | M4 | Planned |

@@ -949,13 +949,31 @@ const logLines: string[] = [];
  * Builds the app from `process.env` merged with `overrides` (C9 tests pass e.g. `{ TRUST_PROXY: '1' }`).
  * Rejects with ConfigError when the merged env is invalid. Connects the file's database on first use.
  */
-export async function startTestApp(overrides: NodeJS.ProcessEnv = {}): Promise<Express> {
+export async function startTestApp(overrides: NodeJS.ProcessEnv = {}): Promise<Server> {
   const config = loadConfig({ ...process.env, MONGO_CLOUD: DATABASE_URI, ...overrides });
   if (mongoose.connection.readyState === mongoose.ConnectionStates.disconnected) await connectDatabase(config.mongoUri);
-  return createApp({ config, logger: createLogger(config, { write: (line: string) => logLines.push(line) }) });
+  const app = createApp({ config, logger: createLogger(config, { write: (line: string) => logLines.push(line) }) });
+  return serve(app); // TEST-02: never hand SuperTest a bare app (AM-5)
 }
 
+/** Listens on 127.0.0.1 (never `::`) so no other local process can own the port; one connection per request. */
+function serve(app: Express): Promise<Server> {
+  return new Promise((resolve, reject) => {
+    const server = createServer((req, res) => {
+      res.setHeader('Connection', 'close');
+      app(req, res);
+    });
+    server.once('error', reject);
+    server.listen(0, '127.0.0.1', () => {
+      servers.push(server);
+      resolve(server);
+    });
+  });
+}
+const servers: Server[] = [];
+
 export async function stopTestApp(): Promise<void> {
+  await Promise.all(servers.splice(0).map((server) => new Promise((done) => server.close(done))));
   await mongoose.connection.dropDatabase();
   await disconnectDatabase();
 }
@@ -972,6 +990,7 @@ export const clearLogs = (): void => {
 ```
 
 - **`startTestApp` can be called several times in one file**, as the C9 tests do, one app per `TRUST_PROXY` value. Every call shares the file's database connection. It rejects before any I/O when the merged env is invalid.
+- **AM-5 (Orchestrator, 2026-09-24, from T1.8 / TEST-02): tests talk to a server the harness owns on `127.0.0.1`, never to a bare app.** SuperTest given a bare app listens on an ephemeral port of `::` and connects to `127.0.0.1`. On macOS, another local process already holding `127.0.0.1:<port>` gets the connection and answers (T1.8 caught LogiPlugin, VS Code, opencode and nodeterm doing this; about 1–4% of runs). So `startTestApp` resolves to an `http.Server` listening on `127.0.0.1:0` that sets `Connection: close`. Tests call `request(server)` exactly as before, and `stopTestApp` closes every server of the file. T1.4's `e2e/harness.e2e.js` (added by T1.8) is ported like every other file and guards this property.
 - **Logs go to memory, never to stdout.** They stay empty at the test default level (`silent`). A file that asserts on a log line starts its app with a `LOG_LEVEL` override and reads `loggedText()` (§5.3).
 - **One database per file is kept from M1:** T1.4's harness already derived a database name per test file, and this harness keeps that.
 - The first `mongodb-memory-server` run downloads `mongod` 8.2.x once (cached in `~/.cache/mongodb-binaries`).
@@ -1033,7 +1052,7 @@ Mongoose models can also be reached by name (`mongoose.model('Category')`) once 
 | `jest.mock('cloudinary', …)` + `const cloudinary = require('cloudinary').v2` | delete both; `({ upload, destroy } = stubCloudinary())` in `beforeEach` |
 | `cloudinary.uploader.upload.mockReset(); cloudinary.uploader.upload.mockResolvedValue(x)` | `upload.mockResolvedValue(x)` (same for `destroy`) |
 | `expect(cloudinary.uploader.upload)…` | `expect(upload)…` |
-| `let app;` | `let app: Express;` (annotate only what `strict` requires) |
+| `let app;` | `let app: Server;` (`import type { Server } from 'node:http'`; annotate only what `strict` requires) |
 | `await connectDatabase(); app = buildApp();` | `app = await startTestApp();` |
 | `await mongoose.connection.close();` | `await stopTestApp();` |
 | `require('./helpers/db')` exports | see the helper table below |
@@ -1053,7 +1072,7 @@ The helper table below covers **every export of `e2e/helpers/db.js` at the merge
 
 | `e2e/helpers/db.js` export | New home |
 |---|---|
-| `connectDatabase` + `buildApp` | `startTestApp(overrides?)` in `tests/helpers/app.ts` (T2.5) |
+| `connectDatabase` + `buildApp` (T1.8: `buildApp()` now resolves to a served `127.0.0.1` server) | `startTestApp(overrides?)` in `tests/helpers/app.ts` (T2.5); `serve`, `closeServers` and `expectStatus` from T1.8 map to `startTestApp`, `stopTestApp` and a local `expectStatus` in `tests/helpers/app.ts` |
 | `clearDatabase` | `tests/helpers/app.ts` (T2.5) |
 | `BCRYPT_ROUNDS`, `TEST_PASSWORD`, `hashPassword`, `uniqueSuffix`, `createUser`, `createAdmin`, `seedRoles`, `createCategory`, `createProduct`, `tokenFor`, `authHeader`, `reload` | `tests/helpers/factories.ts` (T2.6, same signatures and defaults) |
 | `User`, `Role`, `Category`, `Product` | `legacyModels()` in `tests/helpers/legacy.ts` (T2.6) |
@@ -1070,7 +1089,7 @@ The helper table below covers **every export of `e2e/helpers/db.js` at the merge
 -const mongoose = require('mongoose');
 -const { connectDatabase, buildApp, clearDatabase, createUser, createCategory, createProduct,
 -        tokenFor, authHeader, Category, Product } = require('./helpers/db');
-+import type { Express } from 'express';
++import type { Server } from 'node:http';
 +import mongoose from 'mongoose';
 +import request from 'supertest';
 +import { afterAll, beforeAll, beforeEach, describe, expect, test, vi } from 'vitest';
@@ -1084,7 +1103,7 @@ The helper table below covers **every export of `e2e/helpers/db.js` at the merge
 -  let app;
 -  let admin;
 -  let adminToken;
-+  let app: Express;
++  let app: Server;
 +  let admin: Awaited<ReturnType<typeof createUser>>;
 +  let adminToken: string;
 
@@ -1251,7 +1270,7 @@ Setup-node runs before pnpm/action-setup so that pnpm 12 runs on Node 24, not on
 | P3 | `AppError` + 7 subclasses and `toAppError(err): AppError` as §4.3 (C1 reproduced byte-for-byte) | T2.4 | T2.5; M3 |
 | P4 | `envelope`, `pageEnvelope`, `errorEnvelope` and their types as §4.4 | T2.4 | M3 |
 | P5 | `createApp(deps: AppDeps): Express` with `AppDeps = { config; logger }`, middleware order and legacy mount as §4.5; `connectDatabase(uri)`, `disconnectDatabase()` as §4.7 | T2.5 | T2.6 (via P6) |
-| P6 | Test harness: `inject('mongoUri')` from `tests/setup/global-setup.ts` (T2.1); in `tests/helpers/app.ts` (T2.5): `startTestApp(overrides?: NodeJS.ProcessEnv): Promise<Express>` (merges `overrides` into the env given to `loadConfig`; rejects with `ConfigError`; callable many times per file, one DB connection), `stopTestApp(): Promise<void>`, `clearDatabase(): Promise<void>`, `loggedText(): string`, `clearLogs(): void` | T2.1, T2.5 | T2.6, T2.4 (runner only) |
+| P6 | Test harness: `inject('mongoUri')` from `tests/setup/global-setup.ts` (T2.1); in `tests/helpers/app.ts` (T2.5): `startTestApp(overrides?: NodeJS.ProcessEnv): Promise<Server>` (an `http.Server` on `127.0.0.1:0`, AM-5; merges `overrides` into the env given to `loadConfig`; rejects with `ConfigError`; callable many times per file, one DB connection), `stopTestApp(): Promise<void>`, `clearDatabase(): Promise<void>`, `loggedText(): string`, `clearLogs(): void` | T2.1, T2.5 | T2.6, T2.4 (runner only) |
 | P7 | Legacy test seam `tests/helpers/legacy.ts` as §5.2 (`legacyModels`, `LegacyDoc`, `generarJWT`, `stubGoogleVerify`, `googleTicket`, `stubCloudinary`) | T2.6 | M3 tests |
 | P8 | Script names (§3.2) and the lint rule set (§3.5) | T2.1 | every task, T2.7 |
 
