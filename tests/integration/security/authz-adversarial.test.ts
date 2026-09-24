@@ -228,7 +228,7 @@ describe('M6 adversarial suite (§6.3)', () => {
   });
 
   describe('IDOR sweep: a non-owner, non-privileged caller never reaches 200/204 on an ownership-checked route', () => {
-    test('every fixture row with an owner dimension refuses a non-owner USER_ROLE caller', async () => {
+    test('every :id write route in the fixture refuses a non-owner USER_ROLE caller', async () => {
       const owner = await createUser();
       const attacker = await createUser();
       const token = await tokenFor(attacker);
@@ -238,9 +238,12 @@ describe('M6 adversarial suite (§6.3)', () => {
       const category = await createCategory({ user: owner });
       const product = await createProduct({ user: owner });
       const mediaProduct = await createProduct({ user: owner });
-      const ownershipRows = MATRIX.filter((row) => row.cases.some((kase) => kase.owner !== undefined));
+      const idWriteRows = MATRIX.filter(
+        (row) => (row.method === 'put' || row.method === 'delete') && row.path.includes(':id'),
+      );
+      expect(idWriteRows).toHaveLength(8);
 
-      const attempts: Array<[string, () => Promise<{ statusCode: number }>]> = ownershipRows.map((row) => {
+      const attempts: Array<[string, () => Promise<{ statusCode: number }>]> = idWriteRows.map((row) => {
         let concretePath: string;
         if (row.path === '/api/user/:id') {
           concretePath = `/api/user/${targetUser.id}`;
@@ -259,7 +262,7 @@ describe('M6 adversarial suite (§6.3)', () => {
             throw new Error(`IDOR sweep cannot identify the media collection for row ${row.id}`);
           }
         } else {
-          throw new Error(`IDOR sweep has no request builder for owner-dimension row ${row.id}`);
+          throw new Error(`IDOR sweep has no request builder for :id write row ${row.id}`);
         }
 
         if (row.method === 'delete') {
@@ -304,6 +307,17 @@ describe('M6 adversarial suite (§6.3)', () => {
       expect(res.statusCode).toBe(422);
     });
 
+    // Source: T6.1 report, flipped assertion 7 (ADR-039): parameter validation runs before ownership.
+    test('DELETE /api/product/:id with a malformed id is 422 for a non-owner USER_ROLE caller', async () => {
+      const attacker = await createUser();
+
+      const res = await request(app)
+        .delete('/api/product/not-a-mongo-id')
+        .set(authHeader(await tokenFor(attacker)));
+
+      expect(res.statusCode).toBe(422);
+    });
+
     // Source: T6.1 report, flipped assertion 7 (ADR-039): an existing product reaches the ownership check.
     test('PUT /api/product/:id on an existing product the caller did not create is 403', async () => {
       const owner = await createUser();
@@ -314,6 +328,19 @@ describe('M6 adversarial suite (§6.3)', () => {
         .put(`/api/product/${product.id}`)
         .set(authHeader(await tokenFor(attacker)))
         .send({ name: 'X' });
+
+      expect(res.statusCode).toBe(403);
+    });
+
+    // Source: T6.1 report, flipped assertion 7 (ADR-039): an existing product reaches the ownership check.
+    test('DELETE /api/product/:id on an existing product the caller did not create is 403', async () => {
+      const owner = await createUser();
+      const attacker = await createUser();
+      const product = await createProduct({ user: owner });
+
+      const res = await request(app)
+        .delete(`/api/product/${product.id}`)
+        .set(authHeader(await tokenFor(attacker)));
 
       expect(res.statusCode).toBe(403);
     });
