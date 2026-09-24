@@ -18,10 +18,6 @@ const legacyBodyCompat: RequestHandler = (req, _res, next) => {
 };
 
 export function mountLegacyRoutes(app: Express): void {
-  // debug route kept for parity; removed in M3 (CQ-02)
-  app.get('/hello', (_req, res) => {
-    res.status(200).json({ name: 'caan' });
-  });
   for (const [path, file] of LEGACY_ROUTES) {
     // eslint-disable-next-line @typescript-eslint/no-require-imports
     const router = require(file) as Router;

@@ -168,13 +168,13 @@ describe('createApp', () => {
 
   describe('request id', () => {
     test('a valid inbound x-request-id is echoed', async () => {
-      const res = await request(server).get('/hello').set('x-request-id', 'client-id_1.2:3');
+      const res = await request(server).get('/').set('x-request-id', 'client-id_1.2:3');
 
       expect(res.headers['x-request-id']).toBe('client-id_1.2:3');
     });
 
     test('a UUID v4 is generated when the header is absent', async () => {
-      const res = await request(server).get('/hello');
+      const res = await request(server).get('/');
 
       expect(res.headers['x-request-id']).toMatch(UUID_V4);
     });
@@ -182,7 +182,7 @@ describe('createApp', () => {
     test.each(['has spaces', 'x'.repeat(129), 'line\\nbreak', ''])(
       'an unsafe inbound id (case %#) is replaced by a UUID v4',
       async (inbound) => {
-        const res = await request(server).get('/hello').set('x-request-id', inbound);
+        const res = await request(server).get('/').set('x-request-id', inbound);
 
         expect(res.headers['x-request-id']).toMatch(UUID_V4);
       },
@@ -191,7 +191,7 @@ describe('createApp', () => {
 
   describe('security headers and CORS', () => {
     test('there is no x-powered-by header', async () => {
-      const res = await request(server).get('/hello');
+      const res = await request(server).get('/');
 
       expect(res.headers).not.toHaveProperty('x-powered-by');
     });
@@ -211,7 +211,7 @@ describe('createApp', () => {
     });
 
     test('CORS allows any origin by default', async () => {
-      const res = await request(server).get('/hello').set('Origin', 'https://anyone.example');
+      const res = await request(server).get('/').set('Origin', 'https://anyone.example');
 
       expect(res.headers['access-control-allow-origin']).toBe('*');
     });
@@ -219,8 +219,8 @@ describe('createApp', () => {
     test('with CORS_ORIGINS, an allowlisted origin is echoed and any other gets no CORS header', async () => {
       const allowlisted = await startTestApp({ CORS_ORIGINS: 'https://shop.example, https://admin.example' });
 
-      const allowed = await request(allowlisted).get('/hello').set('Origin', 'https://admin.example');
-      const other = await request(allowlisted).get('/hello').set('Origin', 'https://evil.example');
+      const allowed = await request(allowlisted).get('/').set('Origin', 'https://admin.example');
+      const other = await request(allowlisted).get('/').set('Origin', 'https://evil.example');
 
       expect(allowed.headers['access-control-allow-origin']).toBe('https://admin.example');
       expect(other.headers).not.toHaveProperty('access-control-allow-origin');
@@ -228,11 +228,11 @@ describe('createApp', () => {
   });
 
   describe('the legacy mount', () => {
-    test('GET /hello answers {name:"caan"}', async () => {
+    test('GET /hello is removed: 404 (CQ-02, §6 #1)', async () => {
       const res = await request(server).get('/hello');
 
-      expect(res.status).toBe(200);
-      expect(res.body).toEqual({ name: 'caan' });
+      expect(res.status).toBe(404);
+      expect(res.body).toEqual({ error: { code: 'NOT_FOUND', message: 'Route not found' } });
     });
 
     test('GET / serves the demo page from public/', async () => {
