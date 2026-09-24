@@ -33,24 +33,24 @@ describe('crash safety and HTTP error handling', () => {
   });
 
   describe('C2 unknown routes return a JSON 404', () => {
-    test('an unknown path is 404 {msg:"Route not found"}', async () => {
+    test('an unknown path is 404 NOT_FOUND "Route not found"', async () => {
       const res = await request(app).get('/api/definitely-not-a-route');
 
       expect(res.statusCode).toBe(404);
       expect(res.headers['content-type']).toMatch(/json/);
-      expect(res.body).toEqual({ msg: 'Route not found' });
+      expect(res.body).toEqual({ error: { code: 'NOT_FOUND', message: 'Route not found' } });
     });
 
     test('an unknown non-api path is also a JSON 404', async () => {
       const res = await request(app).get('/nope/nope');
 
       expect(res.statusCode).toBe(404);
-      expect(res.body).toEqual({ msg: 'Route not found' });
+      expect(res.body).toEqual({ error: { code: 'NOT_FOUND', message: 'Route not found' } });
     });
   });
 
   describe('C1 the error middleware maps Mongoose errors', () => {
-    test('a duplicate key error is 409 {msg:"Resource already exists"}', async () => {
+    test('a duplicate key error is 409 CONFLICT', async () => {
       await createCategory({ name: 'DUP ONE' });
       const second = await createCategory({ name: 'DUP TWO' });
 
@@ -61,10 +61,10 @@ describe('crash safety and HTTP error handling', () => {
 
       expect(res.statusCode).toBe(409);
       expect(res.headers['content-type']).toMatch(/json/);
-      expect(res.body).toEqual({ msg: 'Resource already exists' });
+      expect(res.body).toEqual({ error: { code: 'CONFLICT', message: 'Resource already exists' } });
     });
 
-    test('a CastError is 400 {msg:"Invalid request data"}', async () => {
+    test('a CastError is 400 BAD_REQUEST', async () => {
       const category = await createCategory();
 
       const res = await request(app)
@@ -74,10 +74,10 @@ describe('crash safety and HTTP error handling', () => {
 
       expect(res.statusCode).toBe(400);
       expect(res.headers['content-type']).toMatch(/json/);
-      expect(res.body).toEqual({ msg: 'Invalid request data' });
+      expect(res.body).toEqual({ error: { code: 'BAD_REQUEST', message: 'Invalid request data' } });
     });
 
-    test('a ValidationError is 400 {msg:"Invalid request data"}', async () => {
+    test('a ValidationError is 400 BAD_REQUEST', async () => {
       const res = await request(app)
         .post('/api/product')
         .set(authHeader(adminToken))
@@ -85,10 +85,10 @@ describe('crash safety and HTTP error handling', () => {
 
       expect(res.statusCode).toBe(400);
       expect(res.headers['content-type']).toMatch(/json/);
-      expect(res.body).toEqual({ msg: 'Invalid request data' });
+      expect(res.body).toEqual({ error: { code: 'BAD_REQUEST', message: 'Invalid request data' } });
     });
 
-    test('an unexpected error is 500 {msg:"Internal server error"} without a stack', async () => {
+    test('an unexpected error is 500 INTERNAL without a stack', async () => {
       const spy = vi.spyOn(Category, 'find').mockImplementationOnce(() => {
         throw new Error('simulated database outage');
       });
@@ -99,25 +99,25 @@ describe('crash safety and HTTP error handling', () => {
 
       expect(res.statusCode).toBe(500);
       expect(res.headers['content-type']).toMatch(/json/);
-      expect(res.body).toEqual({ msg: 'Internal server error' });
+      expect(res.body).toEqual({ error: { code: 'INTERNAL', message: 'Internal server error' } });
     });
   });
 
   describe('C1 errors never leak a stack trace or a raw Mongoose object', () => {
-    test('the 404 body has only a msg key', async () => {
+    test('the 404 body has only an error key', async () => {
       const res = await request(app).get('/api/unknown');
 
-      expect(Object.keys(res.body)).toEqual(['msg']);
-      expect(typeof res.body.msg).toBe('string');
+      expect(Object.keys(res.body)).toEqual(['error']);
+      expect(typeof res.body.error.message).toBe('string');
     });
 
-    test('a ValidationError response has only a msg key', async () => {
+    test('a ValidationError response has only an error key', async () => {
       const res = await request(app)
         .post('/api/product')
         .set(authHeader(adminToken))
         .send({ name: 'NO-CATEGORY-LEAK' });
 
-      expect(Object.keys(res.body)).toEqual(['msg']);
+      expect(Object.keys(res.body)).toEqual(['error']);
       expect(JSON.stringify(res.body)).not.toMatch(/ValidationError|CastError|\bat \b/);
     });
   });

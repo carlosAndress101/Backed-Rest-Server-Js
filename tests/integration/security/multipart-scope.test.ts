@@ -222,7 +222,7 @@ describe('SEC-08 / C10 multipart bodies are parsed only by the upload routes, af
       );
 
       expect(res.statusCode).toBe(500);
-      expect(res.body).toEqual({ msg: 'Internal server error' });
+      expect(res.body).toEqual({ error: { code: 'INTERNAL', message: 'Internal server error' } });
       expect(tempWrites()).toHaveLength(1);
       expect(await waitForNoTempLeak(before)).toEqual([]);
     });

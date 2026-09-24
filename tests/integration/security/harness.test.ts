@@ -57,6 +57,6 @@ describe('TEST-02 the test harness serves the app on a port no other process can
     const res = await request(server).get('/api/no-such-route');
 
     expectStatus(res, 404);
-    expect(res.body).toEqual({ msg: 'Route not found' });
+    expect(res.body).toEqual({ error: { code: 'NOT_FOUND', message: 'Route not found' } });
   });
 });
