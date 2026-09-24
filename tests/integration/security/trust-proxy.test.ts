@@ -1,6 +1,6 @@
-// This file gets its own module registry, so the C5 limiter starts with a
-// fresh budget here. Every request sends an empty body: the limiter runs
-// before validation, so each one is counted and answered 400 until the 429.
+// Every app gets its own C5 limiter (the auth module creates it), so each
+// test's budget starts fresh. Every request sends an empty body: the limiter
+// runs before validation, so each one is counted and answered 422 until the 429.
 import type { Server } from 'node:http';
 
 import request from 'supertest';
@@ -60,12 +60,12 @@ describe('SEC-15 / C9 proxy trust is configured by TRUST_PROXY', () => {
       const clientB = '203.0.113.20';
 
       for (let i = 0; i < LIMIT; i++) {
-        expect((await login(app, clientA)).statusCode).toBe(400);
+        expect((await login(app, clientA)).statusCode).toBe(422);
       }
       expect((await login(app, clientA)).statusCode).toBe(429);
 
       // Another client behind the same proxy is not locked out by client A.
-      expect((await login(app, clientB)).statusCode).toBe(400);
+      expect((await login(app, clientB)).statusCode).toBe(422);
       expect((await login(app, clientA)).statusCode).toBe(429);
     });
 
@@ -73,7 +73,7 @@ describe('SEC-15 / C9 proxy trust is configured by TRUST_PROXY', () => {
       const app = await buildWith(undefined);
 
       for (let i = 0; i < LIMIT; i++) {
-        expect((await login(app, `198.51.100.${i + 1}`)).statusCode).toBe(400);
+        expect((await login(app, `198.51.100.${i + 1}`)).statusCode).toBe(422);
       }
 
       expect((await login(app, '198.51.100.200')).statusCode).toBe(429);

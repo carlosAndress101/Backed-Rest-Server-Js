@@ -142,7 +142,8 @@ describe('SEC-08 / C10 multipart bodies are parsed only by the upload routes, af
           .field('password', 'test-password-123'),
       );
 
-      expect(res.statusCode).toBe(400);
+      expect(res.statusCode).toBe(422);
+      expect(res.body.error.code).toBe('VALIDATION_FAILED');
       expect(tempWrites()).toEqual([]);
       expect(newTempFiles(before)).toEqual([]);
     });

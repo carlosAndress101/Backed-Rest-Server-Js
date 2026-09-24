@@ -14,6 +14,7 @@ import { requireAdmin } from './middlewares/authorize';
 import { errorHandler } from './middlewares/error-handler';
 import { notFound } from './middlewares/not-found';
 import { requestLogger } from './middlewares/request-logger';
+import { authModule } from './modules/auth';
 import { CategoryModel, categoriesModule } from './modules/categories';
 import { mediaModule } from './modules/media';
 import { ProductModel, productsModule } from './modules/products';
@@ -77,6 +78,7 @@ export function createApp({ config, logger }: AppDeps): Express {
     searchModule({ User: UserModel, Category: CategoryModel, Product: ProductModel, authenticate: auth }),
   );
   app.use('/api/user', usersModule({ authenticate: auth }));
+  app.use('/api/auth', authModule({ User: UserModel, tokens, googleClientId: config.auth.googleClientId }));
   app.use(
     '/api/uploads',
     mediaModule({

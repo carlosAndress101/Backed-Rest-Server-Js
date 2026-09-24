@@ -16,16 +16,19 @@ import {
 
 import { clearDatabase, startTestApp, stopTestApp } from '../../helpers/app';
 import { expectStatus } from '../../helpers/assert';
+import { stubGoogleClient } from '../../helpers/auth';
 import { createUser, hashPassword } from '../../helpers/factories';
-import { googleTicket, stubGoogleVerify } from '../../helpers/legacy';
 
 const login = (app: Server, body: object) => request(app).post('/api/auth/login').send(body);
 const googleSignin = (app: Server, idToken = 'fake-id-token') =>
   request(app).post('/api/auth/google').send({ id_token: idToken });
 
+// C5: the one answer every credential failure gets (3.0.0: the error envelope).
+const INVALID_CREDENTIALS = { error: { code: 'UNAUTHORIZED', message: 'Invalid credentials' } };
+
 describe('auth surface', () => {
   let app: Server;
-  let googleVerify: ReturnType<typeof stubGoogleVerify>;
+  let googleVerify: ReturnType<typeof stubGoogleClient>;
 
   beforeAll(async () => {
     app = await startTestApp();
@@ -37,7 +40,7 @@ describe('auth surface', () => {
 
   beforeEach(async () => {
     await clearDatabase();
-    googleVerify = stubGoogleVerify();
+    googleVerify = stubGoogleClient();
   });
 
   describe('C5 credential failures return a generic 401', () => {
@@ -45,7 +48,7 @@ describe('auth surface', () => {
       const res = await login(app, { email: 'nobody@example.com', password: 'whatever-123' });
 
       expect(res.statusCode).toBe(401);
-      expect(res.body).toEqual({ msg: 'Invalid credentials' });
+      expect(res.body).toEqual(INVALID_CREDENTIALS);
     });
 
     test('a disabled account is 401 with the same generic message', async () => {
@@ -58,7 +61,7 @@ describe('auth surface', () => {
       const res = await login(app, { email: disabled.email, password: 'correct-password' });
 
       expect(res.statusCode).toBe(401);
-      expect(res.body).toEqual({ msg: 'Invalid credentials' });
+      expect(res.body).toEqual(INVALID_CREDENTIALS);
     });
 
     test('a wrong password is 401 with the same generic message', async () => {
@@ -70,7 +73,7 @@ describe('auth surface', () => {
       const res = await login(app, { email: user.email, password: 'not-the-password' });
 
       expect(res.statusCode).toBe(401);
-      expect(res.body).toEqual({ msg: 'Invalid credentials' });
+      expect(res.body).toEqual(INVALID_CREDENTIALS);
     });
 
     test('valid credentials still return a token (positive control)', async () => {
@@ -82,7 +85,7 @@ describe('auth surface', () => {
       const res = await login(app, { email: user.email, password: 'correct-password' });
 
       expectStatus(res, 200);
-      expect(typeof res.body.token).toBe('string');
+      expect(typeof res.body.data.token).toBe('string');
     });
 
     test('google sign-in for a disabled user is 401 with the generic message', async () => {
@@ -91,18 +94,16 @@ describe('auth surface', () => {
         state: false,
         google: true,
       });
-      googleVerify.mockResolvedValueOnce(
-        googleTicket({
-          name: 'Disabled Google',
-          picture: 'https://example.com/p.png',
-          email: disabled.email,
-        }),
-      );
+      googleVerify.mockResolvedValueOnce({
+        name: 'Disabled Google',
+        picture: 'https://example.com/p.png',
+        email: disabled.email,
+      });
 
       const res = await googleSignin(app);
 
       expect(res.statusCode).toBe(401);
-      expect(res.body).toEqual({ msg: 'Invalid credentials' });
+      expect(res.body).toEqual(INVALID_CREDENTIALS);
     });
   });
 
@@ -124,7 +125,7 @@ describe('auth surface', () => {
 
       [unknownEmail, disabledUser, wrongPassword].forEach((res) => {
         expect(res.statusCode).toBe(401);
-        expect(res.body).toEqual({ msg: 'Invalid credentials' });
+        expect(res.body).toEqual(INVALID_CREDENTIALS);
       });
       expect(unknownEmail.body).toEqual(disabledUser.body);
       expect(disabledUser.body).toEqual(wrongPassword.body);
@@ -203,8 +204,8 @@ describe('auth surface', () => {
         const res = await loginAsNewClient(body);
 
         expect(res.statusCode).toBe(401);
-        expect(res.body).toEqual({ msg: 'Invalid credentials' });
-        expect(Object.keys(res.body)).toEqual(['msg']);
+        expect(res.body).toEqual(INVALID_CREDENTIALS);
+        expect(Object.keys(res.body)).toEqual(['error']);
         expect(compareSync).toHaveBeenCalledTimes(1);
         expect(compareSync.mock.calls[0]![1]).toMatch(COST_10_HASH);
       });
@@ -234,7 +235,7 @@ describe('auth surface', () => {
           const res = await loginAsNewClient({ email: google.email, password });
 
           expect(res.statusCode).toBe(401);
-          expect(res.body).toEqual({ msg: 'Invalid credentials' });
+          expect(res.body).toEqual(INVALID_CREDENTIALS);
         }
       });
     });
