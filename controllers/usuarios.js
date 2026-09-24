@@ -3,7 +3,7 @@ const bcrypt = require("bcrypt");
 
 const User = require("../models/user");
 
-const getUsers = async (req = request, res = response) => {
+const getUsers = async (req = request, res = response, next) => {
   const { limit = 5, offset = 0 } = req.query;
   const query = { state: true };
 
@@ -18,28 +18,37 @@ const getUsers = async (req = request, res = response) => {
       user,
     });
   } catch (error) {
-    res.status(400).json(error.message);
+    next(error);
   }
 };
 
-const postUser = async (req = request, res = response) => {
-  const { name, email, password, role } = req.body;
+const postUser = async (req = request, res = response, next) => {
+  const { name, email, password } = req.body;
   try {
     //Encript password
     const passHash = await bcrypt.hash(password, 10);
-    const newUser = new User({ name, email, password: passHash, role });
+    // sign-up never takes a role from the client
+    const newUser = new User({ name, email, password: passHash, role: "USER_ROLE" });
 
     //save DB
     await newUser.save();
     res.json(newUser);
   } catch (error) {
-    return res.json(error.output);
+    next(error);
   }
 };
 
-const putUser = async (req = request, res = response) => {
+const putUser = async (req = request, res = response, next) => {
   const { id } = req.params;
-  const { _id, password, google, ...data } = req.body;
+  const { name, password, role, state } = req.body;
+
+  // explicit whitelist: anything else in the body (email, google, image, _id...) is dropped
+  const data = {};
+  if (name !== undefined) data.name = name;
+  if (req.user.role === "ADMIN_ROLE") {
+    if (role !== undefined) data.role = role;
+    if (state !== undefined) data.state = state;
+  }
 
   //TODO validar contra base de datos
   try {
@@ -53,7 +62,7 @@ const putUser = async (req = request, res = response) => {
     res.json(user);
 
   } catch (error) {
-    res.status(400).json(error.message);
+    next(error);
   }
 };
 
@@ -63,7 +72,7 @@ const usuariosPatch = (req = request, res = response) => {
   });
 };
 
-const deleteUser = async (req = request, res = response) => {
+const deleteUser = async (req = request, res = response, next) => {
 
   const { id } = req.params;
   //physically eliminated
@@ -74,7 +83,7 @@ const deleteUser = async (req = request, res = response) => {
     res.status(201).json({userDelete, userAuthenticated});
 
   } catch (error) {
-    res.status(400).json(error.message);
+    next(error);
   }
 };
 
