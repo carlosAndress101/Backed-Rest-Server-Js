@@ -3,7 +3,7 @@ import bcrypt from 'bcrypt';
 import type { Model } from 'mongoose';
 import { describe, expect, test } from 'vitest';
 
-import { ConflictError, NotFoundError, ValidationError } from '../../../src/core/errors';
+import { ConflictError, ForbiddenError, NotFoundError, ValidationError } from '../../../src/core/errors';
 import type { User } from '../../../src/modules/users';
 import { createUsersService } from '../../../src/modules/users/user.service';
 import type { CreateUserDto, UpdateUserDto } from '../../../src/modules/users/user.schemas';
@@ -289,6 +289,77 @@ describe('createUsersService', () => {
       expect(rows[0]).toEqual(row({ _id: '1', email: 'a@example.com', image: 'a.png' }));
     });
 
+    // ADR-042, refined by AM-M6-3: an administrator may not use PUT to change their own role or active state.
+    describe('an administrator changing their own role or state (ADR-042)', () => {
+      const OWN_ROLE_STATE = new ForbiddenError(
+        'Ask another administrator to change your own role or active state',
+      );
+
+      test.each([
+        ['a different role', { role: 'VENTAS_ROLE' }],
+        ['state: false', { state: false }],
+        ['both a different role and state: false', { role: 'USER_ROLE', state: false }],
+      ])('%s is a ForbiddenError, and nothing is written', async (_case, dto) => {
+        const { User, rows } = fakeUserModel([row({ _id: 'admin', role: 'ADMIN_ROLE', state: true })]);
+        const before = structuredClone(rows);
+
+        await expect(
+          createUsersService({ User, bcryptCost: COST }).update('admin', dto, ADMIN),
+        ).rejects.toEqual(OWN_ROLE_STATE);
+        expect(rows).toEqual(before);
+      });
+
+      test('the same target in uppercase is still self (AM-M6-7 parity)', async () => {
+        const { User, rows } = fakeUserModel([row({ _id: 'admin', role: 'ADMIN_ROLE', state: true })]);
+        const before = structuredClone(rows);
+
+        await expect(
+          createUsersService({ User, bcryptCost: COST }).update('ADMIN', { state: false }, ADMIN),
+        ).rejects.toEqual(OWN_ROLE_STATE);
+        expect(rows).toEqual(before);
+      });
+
+      test.each([
+        ['an echo of their current role', { role: 'ADMIN_ROLE' }],
+        ['state: true', { state: true }],
+        ['an echo of both', { role: 'ADMIN_ROLE', state: true }],
+        ['neither field, only a name change', { name: 'New Name' }],
+      ])('%s is not a real change, so it passes', async (_case, dto) => {
+        const { User, rows } = fakeUserModel([row({ _id: 'admin', role: 'ADMIN_ROLE', state: true })]);
+
+        await createUsersService({ User, bcryptCost: COST }).update('admin', dto, ADMIN);
+
+        expect(rows[0]).toMatchObject({ role: 'ADMIN_ROLE', state: true });
+      });
+
+      test("an administrator changing another admin's role or state (admin, but not self) is unaffected", async () => {
+        const { User, rows } = fakeUserModel([
+          row({ _id: 'admin', role: 'ADMIN_ROLE' }),
+          row({ _id: 'other-admin', role: 'ADMIN_ROLE' }),
+        ]);
+
+        await createUsersService({ User, bcryptCost: COST }).update(
+          'other-admin',
+          { role: 'VENTAS_ROLE', state: false },
+          ADMIN,
+        );
+
+        expect(rows[1]).toMatchObject({ role: 'VENTAS_ROLE', state: false });
+      });
+
+      test('a non-administrator changing their own role/state (self, but not admin) is silently dropped, not a ForbiddenError (C6)', async () => {
+        const { User, rows } = fakeUserModel([row({ _id: '1', role: 'USER_ROLE', state: true })]);
+
+        await createUsersService({ User, bcryptCost: COST }).update(
+          '1',
+          { role: 'ADMIN_ROLE', state: false },
+          SELF,
+        );
+
+        expect(rows[0]).toMatchObject({ role: 'USER_ROLE', state: true });
+      });
+    });
+
     test('an administrator reaches a soft-deleted user, so state can be turned back on', async () => {
       const { User, rows } = fakeUserModel([row({ _id: '1', state: false })]);
 
@@ -310,12 +381,42 @@ describe('createUsersService', () => {
   });
 
   describe('softDelete', () => {
-    test('sets state to false and keeps the record', async () => {
+    test('an administrator deletes another user: state to false, the record kept', async () => {
       const { User, rows } = fakeUserModel([row({ _id: '1' })]);
 
-      await createUsersService({ User, bcryptCost: COST }).softDelete('1');
+      await createUsersService({ User, bcryptCost: COST }).softDelete('1', ADMIN);
 
       expect(rows).toEqual([row({ _id: '1', state: false })]);
+    });
+
+    // ADR-042: nobody may target their own account with DELETE, whatever their role.
+    test.each([
+      ['an administrator', 'admin', ADMIN],
+      ['a plain user', '1', SELF],
+    ])(
+      '%s targeting their own account is a ForbiddenError, and nothing is deleted',
+      async (_case, id, actor) => {
+        const { User, rows } = fakeUserModel([
+          row({ _id: '1', name: 'Ada' }),
+          row({ _id: 'admin', name: 'Boss', role: 'ADMIN_ROLE' }),
+        ]);
+        const before = structuredClone(rows);
+
+        await expect(createUsersService({ User, bcryptCost: COST }).softDelete(id, actor)).rejects.toEqual(
+          new ForbiddenError('You cannot delete your own account'),
+        );
+        expect(rows).toEqual(before);
+      },
+    );
+
+    test('the self check is case-insensitive, like the id in the URL (AM-M6-7 parity)', async () => {
+      const { User, rows } = fakeUserModel([row({ _id: 'admin', name: 'Boss', role: 'ADMIN_ROLE' })]);
+      const before = structuredClone(rows);
+
+      await expect(createUsersService({ User, bcryptCost: COST }).softDelete('ADMIN', ADMIN)).rejects.toEqual(
+        new ForbiddenError('You cannot delete your own account'),
+      );
+      expect(rows).toEqual(before);
     });
 
     test.each([
@@ -324,7 +425,7 @@ describe('createUsersService', () => {
     ])('a %s user is a NotFoundError', async (_case, id) => {
       const { User } = fakeUserModel([row({ _id: '2', state: false })]);
 
-      await expect(createUsersService({ User, bcryptCost: COST }).softDelete(id)).rejects.toEqual(
+      await expect(createUsersService({ User, bcryptCost: COST }).softDelete(id, ADMIN)).rejects.toEqual(
         new NotFoundError('User not found'),
       );
     });

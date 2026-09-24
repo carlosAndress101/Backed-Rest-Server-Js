@@ -1,7 +1,7 @@
-// M3 design §3.6 (ADR-007): the role enum lives in code.
+// M3 design §3.6 (ADR-007): the role enum lives in code. M6 design §11 AM-M6-5: CATALOG_ROLES is the one list.
 import { describe, expect, test } from 'vitest';
 
-import { DEFAULT_ROLE, ROLES, isRole } from '../../src/core/security/roles';
+import { CATALOG_ROLES, DEFAULT_ROLE, ROLES, isRole } from '../../src/core/security/roles';
 
 describe('roles', () => {
   test('the three roles the legacy code uses, and USER_ROLE by default', () => {
@@ -28,5 +28,16 @@ describe('roles', () => {
     { role: 'ADMIN_ROLE' },
   ])('isRole rejects %o', (value) => {
     expect(isRole(value)).toBe(false);
+  });
+});
+
+describe('CATALOG_ROLES (AM-M6-5)', () => {
+  test('is exactly the catalog manager roles (ADR-040)', () => {
+    expect(CATALOG_ROLES).toEqual(['ADMIN_ROLE', 'VENTAS_ROLE']);
+  });
+
+  test('every entry is a real role, and USER_ROLE is not one', () => {
+    for (const role of CATALOG_ROLES) expect(ROLES).toContain(role);
+    expect(CATALOG_ROLES).not.toContain('USER_ROLE');
   });
 });

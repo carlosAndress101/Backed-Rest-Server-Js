@@ -1,7 +1,8 @@
-import type { Model, UpdateQuery } from 'mongoose';
+import type { Model, QueryFilter, UpdateQuery } from 'mongoose';
 
-import { ConflictError, NotFoundError } from '../../core/errors';
+import { ConflictError, ForbiddenError, NotFoundError } from '../../core/errors';
 import type { PaginationQuery } from '../../core/http/pagination';
+import { CATALOG_ROLES, type Role } from '../../core/security/roles';
 import type { Product, ProductDocument } from './product.model';
 import type { CreateProductDto, UpdateProductDto } from './product.schemas';
 
@@ -13,12 +14,18 @@ export interface CategoryLookup {
   exists(filter: { _id: string; state: boolean }): Promise<unknown>;
 }
 
+/** The authenticated caller (req.user), as far as ownership needs it (ADR-039, P31). */
+export interface Actor {
+  id: string;
+  role: string;
+}
+
 export interface ProductsService {
   list(query: PaginationQuery): Promise<{ items: ProductDocument[]; total: number }>;
   getActive(id: string): Promise<ProductDocument>;
   create(dto: CreateProductDto, userId: string): Promise<ProductDocument>;
-  update(id: string, dto: UpdateProductDto, userId: string): Promise<ProductDocument>;
-  softDelete(id: string): Promise<void>;
+  update(id: string, dto: UpdateProductDto, actor: Actor): Promise<ProductDocument>;
+  softDelete(id: string, actor: Actor): Promise<void>;
 }
 
 // The collation of the name_active_unique index (§3.1): case variants are the same name.
@@ -46,6 +53,34 @@ export function createProductsService(deps: {
   // A product must reference a category that exists and is active.
   const activeCategory = async (id: string) => {
     if (!(await Category.exists({ _id: id, state: true }))) throw new NotFoundError('Category not found');
+  };
+
+  /**
+   * ADR-039: ownership enforced in the write's own filter — a privileged caller's filter never carries `user`,
+   * so it reaches (and may change) any active product; anyone else only reaches their own.
+   */
+  const ownedFilter = (id: string, actor: Actor): QueryFilter<Product> => {
+    const filter: QueryFilter<Product> = { _id: id, state: true };
+    if (!CATALOG_ROLES.includes(actor.role as Role)) filter.user = actor.id;
+    return filter;
+  };
+
+  /**
+   * When the ownership-filtered write matched nothing, one unprivileged existence check (the same shape
+   * `activeOr404` uses) disambiguates 403 (exists, not yours) from 404 (missing or soft-deleted) — the only
+   * place this service adds a second read, and only for a non-privileged caller (ADR-039).
+   */
+  const forbiddenOrMissing = async (
+    id: string,
+    filter: QueryFilter<Product>,
+    action: 'update' | 'delete',
+  ): Promise<never> => {
+    if (filter.user && (await Product.exists({ _id: id, state: true }))) {
+      throw new ForbiddenError(
+        `Only the creator, an administrator or VENTAS_ROLE may ${action} this product`,
+      );
+    }
+    throw new NotFoundError('Product not found');
   };
 
   return {
@@ -82,8 +117,9 @@ export function createProductsService(deps: {
       });
     },
 
-    async update(id, dto, userId) {
-      const update: UpdateQuery<Product> = { user: userId };
+    async update(id, dto, actor) {
+      const filter = ownedFilter(id, actor);
+      const update: UpdateQuery<Product> = {}; // ADR-041: no more `user: actor.id` reassignment
       if (dto.name !== undefined) update.name = dto.name.toUpperCase();
       if (dto.category !== undefined) {
         await activeCategory(dto.category);
@@ -93,19 +129,20 @@ export function createProductsService(deps: {
       if (dto.description !== undefined) update.description = dto.description;
       if (dto.available !== undefined) update.available = dto.available;
 
-      // One atomic find-active-and-update: a product soft-deleted meanwhile is never renamed.
-      const doc = await Product.findOneAndUpdate({ _id: id, state: true }, update, {
-        returnDocument: 'after',
-      })
+      // One atomic ownership-filtered find-and-update: a product soft-deleted meanwhile is never renamed, and
+      // an owner and a privileged role both succeed with no race between "check" and "write" (ADR-039).
+      const doc = await Product.findOneAndUpdate(filter, update, { returnDocument: 'after' })
         .populate('user', 'name')
         .populate('category', 'name');
-      if (!doc) throw new NotFoundError('Product not found');
-      return doc;
+      if (doc) return doc;
+      return forbiddenOrMissing(id, filter, 'update');
     },
 
-    async softDelete(id) {
-      const doc = await Product.findOneAndUpdate({ _id: id, state: true }, { state: false });
-      if (!doc) throw new NotFoundError('Product not found');
+    async softDelete(id, actor) {
+      const filter = ownedFilter(id, actor);
+      const doc = await Product.findOneAndUpdate(filter, { state: false });
+      if (doc) return;
+      await forbiddenOrMissing(id, filter, 'delete');
     },
   };
 }
