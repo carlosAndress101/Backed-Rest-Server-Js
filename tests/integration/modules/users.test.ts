@@ -117,6 +117,8 @@ describe('users module (§6 #4–#8)', () => {
         role: 'USER_ROLE',
         state: true,
         google: false,
+        createdAt: expect.any(String),
+        updatedAt: expect.any(String),
       });
       expectApiShape(res.body.data);
       const stored = await UserModel.findById(res.body.data.id).lean();

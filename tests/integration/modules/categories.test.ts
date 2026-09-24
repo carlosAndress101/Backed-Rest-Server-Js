@@ -107,6 +107,8 @@ describe('categories module (§6 #9–#13)', () => {
         name: 'COFFEE',
         state: true,
         user: expect.anything(),
+        createdAt: expect.any(String),
+        updatedAt: expect.any(String),
       });
       expect(res.body.data.user).toMatchObject({ name: 'Admin User' });
       expectApiShape(res.body.data);
@@ -144,7 +146,14 @@ describe('categories module (§6 #9–#13)', () => {
         .send({ name: '  coffee ' });
 
       expect(res.status).toBe(201);
-      expect(res.body.data).toEqual({ id: expect.any(String), name: 'COFFEE', state: true, user: user.id });
+      expect(res.body.data).toEqual({
+        id: expect.any(String),
+        name: 'COFFEE',
+        state: true,
+        user: user.id,
+        createdAt: expect.any(String),
+        updatedAt: expect.any(String),
+      });
       expectApiShape(res.body.data);
       expect(await CategoryModel.findById(res.body.data.id).lean()).toMatchObject({
         name: 'COFFEE',
@@ -195,7 +204,7 @@ describe('categories module (§6 #9–#13)', () => {
       expect(res.status).toBe(409);
       expect(res.body).toEqual({ error: { code: 'CONFLICT', message: 'Category already exists' } });
     });
-    test('a name only a soft-deleted category has is still 409: the unique index spans every record', async () => {
+    test('a name only a soft-deleted category has can be reused: 201 (M4 partial unique index)', async () => {
       await createCategory({ name: 'RETIRED', state: false });
 
       const res = await request(app)
@@ -203,8 +212,10 @@ describe('categories module (§6 #9–#13)', () => {
         .set(authHeader(userToken))
         .send({ name: 'retired' });
 
-      expect(res.status).toBe(409);
-      expect(res.body).toEqual({ error: { code: 'CONFLICT', message: 'Resource already exists' } });
+      expect(res.status).toBe(201);
+      const followUp = await request(app).get(`/api/category/${res.body.data.id}`);
+      expect(followUp.status).toBe(200);
+      expect(followUp.body.data).toMatchObject({ id: res.body.data.id, name: 'RETIRED', state: true });
     });
   });
 
