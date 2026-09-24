@@ -7,7 +7,7 @@ const uploadFile = ( files, ValidExtensions = ["png", "jpg", "jpeg", "gif"], fol
     const { file } = files;
 
     const nameCuted = file.name.split(".");
-    const extension = nameCuted[nameCuted.length - 1];
+    const extension = nameCuted[nameCuted.length - 1].toLowerCase();
 
     //validate the extension
     if (!ValidExtensions.includes(extension)) {
