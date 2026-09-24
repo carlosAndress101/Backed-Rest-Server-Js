@@ -95,7 +95,7 @@ describe('createLogger redaction', () => {
     expect(lines.join('')).not.toContain(SECRET);
   });
 
-  test('a real Mongoose ValidationError on a password never prints the password', () => {
+  test('a real Mongoose ValidationError on a password never prints the password', async () => {
     const rejectedPassword = 'Pw-7r!x'; // 7 characters: fails the minlength of 8
     const User = mongoose.model(
       'LoggerTestUser',
@@ -104,7 +104,10 @@ describe('createLogger redaction', () => {
         password: { type: String, minlength: [8, 'The password is too short'] },
       }),
     );
-    const err = new User({ name: 'Alice', password: rejectedPassword }).validateSync();
+    const err = await new User({ name: 'Alice', password: rejectedPassword }).validate().then(
+      () => undefined,
+      (error: unknown) => error,
+    );
     const { logger, lines, records } = capture('info');
 
     logger.error({ err }, 'validation failed');
