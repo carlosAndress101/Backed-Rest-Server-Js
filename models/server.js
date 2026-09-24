@@ -9,8 +9,6 @@ const productRouter  = require('../routes/products');
 const searchRouter  = require('../routes/search');
 const uploadRouter  = require('../routes/uploads');
 
-const connection = require('../database/config');
-
 class Server {
 
     constructor() {
@@ -26,20 +24,12 @@ class Server {
             uploads: '/api/uploads'
         }
 
-        // connect to the DB
-        this.conectarDB();
-
         // Middlewares
         this.middlewares();
 
         // router of the app
         this.routes();
     }
-
-    async conectarDB() {
-        await connection();
-    }
-
 
     middlewares() {
 
@@ -78,6 +68,7 @@ class Server {
 
     listen(){
         return this.app.listen(this.port, ()=>{
+            console.log(`Server listening on :${ this.port }`);
         })
     }
 }

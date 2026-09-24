@@ -1,9 +1,16 @@
 require('dotenv').config();
 const Server = require('./models/server');
+const connection = require('./database/config');
 
 
-const server = new Server();
+const main = async () => {
+    await connection();
 
+    const server = new Server();
+    server.listen();
+}
 
-
-server.listen();
+main().catch( error => {
+    console.error(error);
+    process.exit(1);
+});
