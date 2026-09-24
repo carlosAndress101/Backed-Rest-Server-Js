@@ -1,4 +1,4 @@
-const { v4: uuidv4 } = require('uuid');
+const { randomUUID } = require('crypto');
 const path = require("path");
 
 const uploadFile = ( files, ValidExtensions = ["png", "jpg", "jpeg", "gif"], folder = '') => {
@@ -7,7 +7,7 @@ const uploadFile = ( files, ValidExtensions = ["png", "jpg", "jpeg", "gif"], fol
     const { file } = files;
 
     const nameCuted = file.name.split(".");
-    const extension = nameCuted[nameCuted.length - 1];
+    const extension = nameCuted[nameCuted.length - 1].toLowerCase();
 
     //validate the extension
     if (!ValidExtensions.includes(extension)) {
@@ -15,7 +15,7 @@ const uploadFile = ( files, ValidExtensions = ["png", "jpg", "jpeg", "gif"], fol
     }
 
     //rename file
-    const tempNameFile = `${uuidv4()}.${extension}`;
+    const tempNameFile = `${randomUUID()}.${extension}`;
 
     //path file
     const uploadPath = path.join(__dirname, "../uploads/", folder, tempNameFile);
