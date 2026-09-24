@@ -346,7 +346,7 @@ import type { Schema } from 'mongoose';
 export interface ToJsonOptions {
   /** Field paths that must never reach a client (secrets / internals). */
   readonly hidden?: readonly string[];
-  /** Add the legacy `uid` alias for `_id` (ADR-015; removed in 3.0.0). */
+  /** Add the legacy `uid` alias for `_id` (ADR-015; removed in 4.0.0, ADR-024). */
   readonly uidAlias?: boolean;
 }
 
@@ -379,9 +379,9 @@ Wiring: `UserModel` gets `{ hidden: ['password', 'tokenVersion'], uidAlias: true
 
 ### 4.3 Legacy `uid` policy (ADR-015)
 
-- `uid` is kept as an **alias of `id`** on users until **3.0.0**, then removed. Until then every user payload carries both keys with the same value, so existing clients keep working.
-- The alias is declared in the plugin (`uidAlias`), not in a model, so removing it in 3.0.0 is a one-line change and a search for `uidAlias`.
-- New code must use `id`. The CHANGELOG marks `uid` deprecated at the release that introduces `id` (the M4 breaking release) and removed at 3.0.0.
+- `uid` is kept as an **alias of `id`** on users until **4.0.0** (ADR-024), then removed. Until then every user payload carries both keys with the same value, so existing clients keep working.
+- The alias is declared in the plugin (`uidAlias`), not in a model, so removing it in 4.0.0 is a one-line change and a search for `uidAlias`.
+- New code must use `id`. The CHANGELOG marks `uid` deprecated at the release that introduces `id` (3.0.0, ADR-024) and removed at 4.0.0.
 
 ### 4.4 Breaking API-shape changes to record (ADR-015)
 
