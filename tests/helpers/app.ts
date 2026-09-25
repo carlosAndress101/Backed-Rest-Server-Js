@@ -32,13 +32,10 @@ export async function startTestApp(overrides: NodeJS.ProcessEnv = {}): Promise<S
   return serve(app); // TEST-02: never hand SuperTest a bare app (AM-5)
 }
 
-/** Listens on 127.0.0.1 (never `::`) so no other local process can own the port; one connection per request. */
+/** Listens on 127.0.0.1 (never `::`) so no other local process can own the port (TEST-04: HTTP/1.1 keep-alive, the Node default). */
 function serve(app: Express): Promise<Server> {
   return new Promise((resolve, reject) => {
-    const server = createServer((req, res) => {
-      res.setHeader('Connection', 'close');
-      app(req, res);
-    });
+    const server = createServer(app);
     server.once('error', reject);
     server.listen(0, '127.0.0.1', () => {
       servers.push(server);

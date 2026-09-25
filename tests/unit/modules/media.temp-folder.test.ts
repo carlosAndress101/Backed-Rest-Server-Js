@@ -87,9 +87,9 @@ describe('an upload request leaves no temp folder once its response has closed',
     return { seen, leftBehind: newTempFiles(before) };
   };
 
-  /** A PUT through http.request: the status, or the socket error when the server cut the upload short. */
+  /** A PUT through http.request, resolving with the response status (TEST-04: no reset tolerance — a transport reset fails the test instead of resolving). */
   const put = (url: string, body: Buffer) =>
-    new Promise<number | string>((resolve) => {
+    new Promise<number>((resolve) => {
       const req = http.request(
         {
           host: '127.0.0.1',
@@ -106,7 +106,6 @@ describe('an upload request leaves no temp folder once its response has closed',
           res.on('end', () => resolve(res.statusCode!));
         },
       );
-      req.on('error', (err: NodeJS.ErrnoException) => resolve(err.code!)); // TEST-04: an early 413 can reset it
       req.end(body);
     });
 
@@ -151,7 +150,7 @@ describe('an upload request leaves no temp folder once its response has closed',
 
     const { seen, leftBehind } = await exchange(() => put('/upload/stored', tooBig));
 
-    expect([413, 'EPIPE', 'ECONNRESET']).toContain(seen);
+    expect(seen).toBe(413);
     expect(foldersCreated()).toBe(1);
     expect(leftBehind).toEqual([]);
   });
