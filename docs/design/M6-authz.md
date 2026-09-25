@@ -424,3 +424,36 @@ The owner delegated decisions to the Orchestrator ("toma las mejores decisiones"
 | AM-M6-7 | Review: `selfParam` case | `authorize` compares `req.params[selfParam]` and `req.user.id` **case-insensitively** (both lowercased), matching `users.update`'s `isSelf` (T5.2R D1) and [P29]: the same id in either hex case gets the same answer on #6 and #21a. CHANGELOG **Changed** (additive): a self request with an upper-case id goes from 403 to 200. Overrides §4.1's `===`. |
 | AM-M6-8 | Review: check order on `PUT /api/product/:id` | **Accepted residual.** A non-owner who sends a `category` that does not exist gets that category's 404 before the ownership 403, because `activeCategory` runs before the filtered write. It discloses nothing: categories are public (#9/#10). Not fixed in M6. |
 | AM-M6-9 | Sequencing | **T6.1 (BACKEND) and T6.2 (SECURITY & QA) start in parallel** from `m6/authz`. T6.2 works test-first from this design as ruled: new test files only, and the cells T6.1 changes fail until T6.1 lands. It commits and reports **T6.2A**. After T6.1 merges into `m6/authz` (an Orchestrator gate review; the ARCHITECT's budget is kept for T6.4), T6.2 merges `m6/authz` and finishes (**T6.2B**). T6.1 updates an existing test only where its own change flips that test's assertion, and lists each one. T6.4 is the final ARCHITECT review. |
+
+---
+
+## 12. As built (M6 close, 2026-09-25)
+
+M6 was accepted by the T6.4 review (`VERDICT: ACCEPT`, no defect findings) and merged into `next`. Commits: T6.1 `7d5ef64`, `2474e35`, `3ff7788` (BACKEND); T6.2A `a32485a`, T6.2B `64fb937`, T6.2C `0d52042` (SECURITY & QA). T6.3 did not run (AM-M6-1: no `M007`). 1263 tests, green three times; coverage about 99 % of `src/**` lines; `pnpm audit --prod` clean; no new dependency.
+
+### 12.1 Where the build departs from §1–§10 (all per §11)
+
+| Text | As built |
+|---|---|
+| §1 ADR-041, §2.2 rows #12/#13, §4.2 "mirrored in `category.service.ts`" | Categories have **no** creator rights (AM-M6-2): a pure `CATALOG_ROLES` policy, no `Actor` in `CategoriesService`; `update` only stops rewriting `user`. |
+| §4.1 `selfParam` compared with `===` | Case-insensitive (AM-M6-7). |
+| §4.2 `PRIVILEGED` set in the service | `CATALOG_ROLES` from `src/core/security/roles.ts`, shared by the routes and the service (AM-M6-5). |
+| §4.3 guard `dto.role !== undefined \|\| dto.state !== undefined` | Only a real change: `(dto.role !== undefined && dto.role !== actor.role) \|\| dto.state === false` (AM-M6-3). |
+| §1 ADR-044, §4.4 `ROUTE_POLICIES` exports, §6.2 step 2 | None (AM-M6-6). The fixture is the single source; the drift check takes mount prefixes from it and asserts the number of mounted routers. The IDOR sweep is generated from every `PUT`/`DELETE` `:id` row (8 entries, asserted). |
+| §7 sequencing (T6.1 gate, then T6.2) | T6.1 and T6.2A ran in parallel, test-first; the Orchestrator gated T6.1; T6.2B/T6.2C finished the tests; T6.4 reviewed (AM-M6-9). |
+
+### 12.2 Observable details the design did not spell out
+- Every authorization 403 carries the message `Not allowed`; the product-ownership refusal names the rule (`Only the creator, an administrator or VENTAS_ROLE may update this product`, or `delete`).
+- Because `deferToService` lets a non-creator through to validation, a malformed product id is **422** before the ownership 403; a missing `category` is 404 before it (AM-M6-8). Both are pinned by tests.
+- `POST /api/category` and `POST /api/product` carry `authorize({})`: no observable change.
+
+### 12.3 Residuals
+- **SEC-18:** two administrators demoting each other concurrently can leave none; recovery is `pnpm seed` with a new `SEED_ADMIN_EMAIL` (create-only, runs only when no active administrator exists).
+- **TEST-05:** the drift check pairs routers and prefixes by `app.use()` order.
+- AM-M6-8 check order (above): accepted; it discloses nothing because categories are public.
+
+### 12.4 3.0.0 release runbook (combined, per §10)
+0. Before the window: `SECRET_KEY` of at least 32 characters (M5); warn clients that every session ends (M5); if the deployment has a single administrator, create a second one (M6).
+1. `pnpm build && pnpm migrate up` (M001–M006) **before** the new code serves traffic (M4 §7.1 step 0, M5 §10.1).
+2. Deploy. M6 adds no step of its own.
+3. Rollback: revert the `next` → `master` merge; run `migrate down` before reverting the code only for migrations that ran.

@@ -8,6 +8,26 @@ Client-visible contract changes are always listed under **Breaking** and mirrore
 
 The 3.0 line accumulates on the `next` branch: M3–M6 ship together as **3.0.0** (ADR-024, ADR-026). `master` stays on 2.x for hotfixes.
 
+### M6: Authorization (on `next`)
+
+#### Breaking
+- **`VENTAS_ROLE` can no longer delete users:** `DELETE /api/user/:id` is 403 for it. The role is now the catalog manager (see Changed).
+- **An administrator can no longer change their own role or deactivate themself** through `PUT /api/user/:id` (403); resending the current role or `state: true` is still accepted. Ask another administrator. **Nobody can delete their own account** through `DELETE /api/user/:id` (403).
+- **Editing a product or a category no longer makes the editor its creator:** its `user` stays whoever created it.
+- **Every authorization 403 says `Not allowed`**, except the product-ownership refusal (`Only the creator, an administrator or VENTAS_ROLE may update this product`, or `delete`). A product `PUT`/`DELETE` by someone who is not its creator, with a malformed id, is now 422 (was 403).
+
+#### Changed
+- **`VENTAS_ROLE` is the catalog manager:** it may update and delete **any** product or category, and replace a product's image (`PUT /api/uploads/product/:id`).
+- **A product's creator may update and delete their own active product** (was administrators only). Categories are shared by every product, so only `ADMIN_ROLE` and `VENTAS_ROLE` may edit or delete one; any signed-in user may still create one.
+- A request on your own account whose id is written in upper-case hex is accepted (was 403).
+- Internal: one `authorize(policy)` middleware replaces the interim `requireAdmin`/`requireSelfOrAdmin`/`requireRole` guards, and the permission matrix in API_PROGRESS is tested cell by cell; a route with no matrix row fails the test suite.
+
+#### Security
+- SEC-13 closed: every route's rule comes from one reviewed permission matrix, with ownership checked inside the same database write it protects (no check-then-write window).
+
+#### Operational
+- **No new deploy step:** M6 changes no token, schema or data, and its rules apply from the first request served. A deployment with a single administrator should create a second one before it ever needs to change the first one's role. If two administrators demote each other at the same moment and none is left, run `pnpm seed` with a new `SEED_ADMIN_EMAIL` ([M6-authz](docs/design/M6-authz.md) §12).
+
 ### M5: Authentication hardening (on `next`)
 
 #### Breaking
