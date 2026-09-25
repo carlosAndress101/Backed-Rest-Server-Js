@@ -1,12 +1,12 @@
 # API Progress
 
-> Baseline: commit `2f18dce` · Updated 2026-09-24 (M3, M4 and M5 closed on `next`: the 3.0 line, unreleased; `master` is 2.1.0 and still serves the 2.x contract)
+> Baseline: commit `2f18dce` · Updated 2026-09-25 (M3, M4, M5 and M6 closed on `next`: the 3.0 line, unreleased; `master` is 2.1.0 and still serves the 2.x contract)
 > Status legend: 🔴 blocking defect · 🟠 works with defects · 🟢 target met · ⚪ to remove · ✂️ removed
 > Debt IDs link to [TECH_DEBT.md](TECH_DEBT.md). Contract source of truth: [docs/design/M3-modules.md](docs/design/M3-modules.md) §6.
 
-## Route inventory (after M5, 3.0 line)
+## Route inventory (after M6, 3.0 line)
 
-Every route is a TypeScript feature module (`src/modules/<feature>`). "Auth" = what is **enforced**; "JWT" is `Authorization: Bearer <token>` (`x-token` is still accepted, deprecated, until 4.0.0). Every success body is `{ data }` or, for lists, `{ data, meta: { total, limit, offset } }`. Every error body is `{ error: { code, message, details? } }`.
+Every route is a TypeScript feature module (`src/modules/<feature>`). "Auth" = what is **enforced**; "JWT" is `Authorization: Bearer <token>` (`x-token` is still accepted, deprecated, until 4.0.0). Every success body is `{ data }` or, for lists, `{ data, meta: { total, limit, offset } }`. Every error body is `{ error: { code, message, details? } }`. "Auth" is the M6 permission matrix ([M6-authz](docs/design/M6-authz.md) §2.2 as ruled in §11), enforced by one `authorize(policy)` and tested cell by cell (`tests/helpers/permission-matrix.ts`). 401 = no valid token; 403 = authenticated but not allowed (message `Not allowed`); 404 = missing or soft-deleted, whoever asks.
 
 | # | Method | Path | Auth | Request DTO (zod, 422 on failure) | Success | Issues | Status | Target |
 |---|---|---|---|---|---|---|---|---|
@@ -15,28 +15,28 @@ Every route is a TypeScript feature module (`src/modules/<feature>`). "Auth" = w
 | 3 | POST | `/api/auth/google` | none; rate-limited (shared with #2) | `{ id_token }`; Google `email_verified` required | 200 `{ data: { token, user } }` | — | 🟢 | — |
 | 4 | GET | `/api/user` | JWT + admin | `?limit` 1–50 (default 5), `?offset` ≥ 0 | 200 page | — | 🟢 | — |
 | 5 | POST | `/api/user` | none (public sign-up); always `USER_ROLE` | `{ name, email, password ≥ 8 }` | **201** `{ data: user }` | — | 🟢 | — |
-| 6 | PUT | `/api/user/:id` | JWT + owner-or-admin | `{ name?, password?, role?, state? }`; `role`/`state` applied for admins only (`role` ∈ ROLES); `password` only as an admin reset of **another** user (revokes their tokens), else 422 (AM-M5-10) | 200 `{ data: user }` | — | 🟢 | M6 `authorize(policy)` (AM-M3-7: an admin can reactivate a soft-deleted user) |
-| 7 | DELETE | `/api/user/:id` | JWT + `ADMIN_ROLE`\|`VENTAS_ROLE` | `:id` | **204** | SEC-13 | 🟠 | M6 |
+| 6 | PUT | `/api/user/:id` | JWT; self (id in either hex case) or `ADMIN_ROLE` | `{ name?, password?, role?, state? }`; `role`/`state` applied for admins only (`role` ∈ ROLES), but an admin may not change their **own** role or deactivate themself (403; resending the current values is accepted, ADR-042/AM-M6-3); `password` only as an admin reset of **another** user (revokes their tokens), else 422 (AM-M5-10); an admin can reactivate a soft-deleted user (AM-M3-7) | 200 `{ data: user }` | — | 🟢 | — |
+| 7 | DELETE | `/api/user/:id` | JWT + `ADMIN_ROLE`; never your own account (403, ADR-042) | `:id` | **204** | — | 🟢 | — |
 | 8 | PATCH | `/api/user` | — | — | ✂️ 404 | — | ✂️ | Removed (CQ-02) |
 | 9 | GET | `/api/category` | none | pagination | 200 page | — | 🟢 | — |
 | 10 | GET | `/api/category/:id` | none | `:id` (ObjectId) | 200 `{ data }` | — | 🟢 | — |
-| 11 | POST | `/api/category` | JWT (any role) | `{ name }` | 201 `{ data }` | SEC-13 | 🟠 | M6 policy |
-| 12 | PUT | `/api/category/:id` | JWT + admin | `{ name }` | 200 `{ data }` | — | 🟢 | — |
-| 13 | DELETE | `/api/category/:id` | JWT + admin | `:id` | **204** | — | 🟢 | — |
+| 11 | POST | `/api/category` | JWT (any role; the caller is the creator) | `{ name }` | 201 `{ data }` | — | 🟢 | — |
+| 12 | PUT | `/api/category/:id` | JWT + `ADMIN_ROLE`\|`VENTAS_ROLE` (categories are shared: no creator rights, AM-M6-2) | `{ name }` | 200 `{ data }` | — | 🟢 | — |
+| 13 | DELETE | `/api/category/:id` | JWT + `ADMIN_ROLE`\|`VENTAS_ROLE` | `:id` | **204** | — | 🟢 | — |
 | 14 | GET | `/api/product` | none | pagination | 200 page | — | 🟢 | — |
 | 15 | GET | `/api/product/:id` | none | `:id` | 200 `{ data }` | — | 🟢 | — |
-| 16 | POST | `/api/product` | JWT (any role) | `{ name, price?, category, description?, available? }` (no `_id`/`user`/`image`/`state`) | 201 `{ data }` | — | 🟢 | — |
-| 17 | PUT | `/api/product/:id` | JWT + admin | the same fields, all optional | 200 `{ data }` | — | 🟢 | — |
-| 18 | DELETE | `/api/product/:id` | JWT + admin | `:id` | **204** | — | 🟢 | — |
+| 16 | POST | `/api/product` | JWT (any role; the caller is the creator) | `{ name, price?, category, description?, available? }` (no `_id`/`user`/`image`/`state`) | 201 `{ data }` | — | 🟢 | — |
+| 17 | PUT | `/api/product/:id` | JWT + `ADMIN_ROLE`\|`VENTAS_ROLE` (any product), or the product's creator (ADR-041) | the same fields, all optional; the creator never changes | 200 `{ data }` | — | 🟢 | — |
+| 18 | DELETE | `/api/product/:id` | JWT + `ADMIN_ROLE`\|`VENTAS_ROLE` (any product), or the product's creator | `:id` | **204** | — | 🟢 | — |
 | 19 | GET | `/api/search/:collection/:term` | category/product public; user: JWT + admin (on the decoded param) | collection ∈ {user, category, product}, else 400 | 200 `{ data: [...] }` (≤ 20) | PERF-02 (scan, accepted until the D4 trigger) | 🟢 | M4 trigger |
 | 20 | POST | `/api/uploads` | — | — | ✂️ 404 | — | ✂️ | Removed (ADR-008, ADR-030) |
-| 21 | PUT | `/api/uploads/:collection/:id` | JWT + owner-or-admin (`product`: admin) | `:collection` ∈ {user, product}, `:id`; one PNG/JPEG/GIF ≤ 5 MB (magic bytes) | 200 `{ data: record }` | TEST-04 (test-only) | 🟢 | — |
+| 21 | PUT | `/api/uploads/:collection/:id` | JWT; `user`: self (either hex case) or `ADMIN_ROLE`; `product`: `ADMIN_ROLE`\|`VENTAS_ROLE` (no creator rights) | `:collection` ∈ {user, product}, `:id`; one PNG/JPEG/GIF ≤ 5 MB (magic bytes) | 200 `{ data: record }` | TEST-04 (test-only) | 🟢 | — |
 | 22 | GET | `/api/uploads/:collection/:id` | none | `:collection`, `:id` | **302** to this app's own Cloudinary asset; otherwise 404 (AM-M3-1) | — | 🟢 | — |
 | 23 | GET | `/` (static `public/`) | none | — | 200 | CQ-07 (dead demo URL) | 🟠 | M8 decide |
 | 24 | POST | `/api/auth/logout-all` | JWT | — | **204** | — | 🟢 | — |
 | 25 | PUT | `/api/auth/password` | JWT | `{ currentPassword, newPassword }` (8 characters to 72 bytes) | 200 `{ data: { token } }` (a fresh token; every earlier one is revoked) | — | 🟢 | — |
 
-**Totals:** 25 entry points · 🔴 0 · 🟠 3 (after M3: 5) · 🟢 19 (after M3: 15) · ✂️ 3 removed
+**Totals:** 25 entry points · 🔴 0 · 🟠 1 (after M5: 3) · 🟢 21 (after M5: 19) · ✂️ 3 removed
 
 ## Planned contract changes (breaking-change ledger)
 
@@ -77,3 +77,7 @@ Every change clients can observe is listed here before it ships, and in CHANGELO
 | M5 | **Own password:** `PUT /api/user/:id` with a `password` for your own account is **422**, for every role; use `PUT /api/auth/password`. An admin reset of another user's password signs that user out everywhere (AM-M5-10) | #6 |
 | M5 | **Added:** `POST /api/auth/logout-all` (204) and `PUT /api/auth/password` (200 `{ data: { token } }`); login is also limited per account (429 `RATE_LIMITED`) | #2, #24, #25 |
 | M5 | **Operational:** `SECRET_KEY` must be at least 32 characters or the boot fails; every session ends at the deploy; `pnpm migrate up` runs M005/M006 (M5 design §10.1) | — |
+| M6 | **`VENTAS_ROLE` is the catalog manager:** it may update and delete any product or category and replace a product image (was 403); it can no longer delete a user (**403**, was 204) | #7, #12, #13, #17, #18, #21 |
+| M6 | **Product ownership:** a product's creator may update and delete their own active product (200/204, was 403). Categories stay `ADMIN_ROLE`/`VENTAS_ROLE` only. Editing a product or category no longer makes the editor its creator | #12, #13, #17, #18 |
+| M6 | **Self-lockout guard:** an administrator can no longer change their own role or deactivate themself through `PUT /api/user/:id` (**403**; resending the current values is accepted), and nobody can delete their own account (**403**) | #6, #7 |
+| M6 | **Messages and order:** every authorization 403 says `Not allowed` (product ownership: `Only the creator, an administrator or VENTAS_ROLE may …`). A non-creator's product `PUT`/`DELETE` with a malformed id is **422** (was 403), and with a missing `category` 404 (AM-M6-8). A request on your own account with an upper-case id is accepted (was 403, AM-M6-7) | #4, #6, #7, #12, #13, #17, #18, #19, #21 |

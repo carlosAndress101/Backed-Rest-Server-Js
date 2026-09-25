@@ -31,7 +31,7 @@ export function createUsersController(service: UsersService) {
 
   const remove: RequestHandler = async (req, res) => {
     const { id } = req.params as { id: string };
-    await service.softDelete(id);
+    await service.softDelete(id, req.user!);
     res.status(204).end();
   };
 

@@ -30,13 +30,13 @@ export function createProductsController(service: ProductsService) {
 
   const update: RequestHandler = async (req, res) => {
     const { id } = req.params as { id: string };
-    const product = await service.update(id, req.body as UpdateProductDto, req.user!.id);
+    const product = await service.update(id, req.body as UpdateProductDto, req.user!);
     res.status(200).json(envelope(product));
   };
 
   const remove: RequestHandler = async (req, res) => {
     const { id } = req.params as { id: string };
-    await service.softDelete(id);
+    await service.softDelete(id, req.user!);
     res.status(204).end();
   };
 

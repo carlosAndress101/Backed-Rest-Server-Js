@@ -1,7 +1,7 @@
 # Roadmap
 
 > Owner: CarlosH / SH1FT3R · Orchestrated multi-agent delivery (Claude Code · OpenCode · Nodeterm · RTK)
-> Updated 2026-09-24 · Current milestone: **M6 next** (M3, M4 and M5 accepted 2026-09-24 on `next`, the unreleased 3.0 line; `master` = 2.1.0)
+> Updated 2026-09-24 · Current milestone: **3.0.0 release next** (M3–M6 accepted on `next`, the unreleased 3.0 line; `master` = 2.1.0), then M7
 
 Complexity scale: **S** (≤1 agent-day) · **M** (2–3) · **L** (4–6) · **XL** (>6). Tests are a quality gate in **every** milestone (ADR-013); M7 closes the remaining gaps.
 
@@ -13,7 +13,7 @@ Complexity scale: **S** (≤1 agent-day) · **M** (2–3) · **L** (4–6) · **
 | M3 | Feature-First Refactor + Validation/DTOs | L | M2 | ✅ Accepted 2026-09-24 (T3.9 review: ACCEPT), merged into `next`; ships in **3.0.0** after M6 ([design](docs/design/M3-modules.md)) |
 | M4 | Database Improvements | M | M3 | ✅ Accepted 2026-09-24 (T4.5 review: ACCEPT), merged into `next`; ships in **3.0.0** ([design](docs/design/M4-database.md)) |
 | M5 | Authentication Hardening | M | M4 | ✅ Accepted 2026-09-24 (T5.4 review: ACCEPT), merged into `next`; ships in **3.0.0** ([design](docs/design/M5-auth.md)) |
-| M6 | Authorization (RBAC + ownership) | M | M5 | Planned |
+| M6 | Authorization (RBAC + ownership) | M | M5 | ✅ Accepted 2026-09-25 (T6.4 review: ACCEPT), merged into `next`; ships in **3.0.0** ([design](docs/design/M6-authz.md)) |
 | M7 | Testing Hardening | M | M6 | Planned |
 | M8 | API Documentation | S–M | M3, M6 | Planned |
 | M9 | Docker & Production Readiness | M | M2, M4 | Planned |
@@ -69,13 +69,15 @@ Why this order differs from the default template: **security first** (ADR-001) b
 - **Risks:** Index builds fail on existing duplicates in any reused database. **Mitigation:** dry-run report, backup, and owner approval before running against a real database.
 - **Complexity:** M · **Dependencies:** M3.
 
-## M5: Authentication Hardening
+## M5: Authentication Hardening ✅ (accepted 2026-09-24, on `next`)
+- **Outcome:** Bearer transport with `x-token` deprecated, HS256 pinned with `iss`/`aud`, `tokenVersion` revocation (logout-all, password change, admin reset), async bcrypt at `BCRYPT_COST` with a 72-byte policy, Google `email_verified` with auto-linking refused, per-account login limit. M005/M006. 1109 tests. Rulings AM-M5-1…11 (design §9, §10).
 - **Goal:** Standards-compliant, revocable, abuse-resistant authentication.
 - **Deliverables:** `Authorization: Bearer`, with `x-token` deprecated (ADR-010). JWT pinned to HS256 with `iss`/`aud` and configurable TTL; a minimum secret length validated at boot. `tokenVersion` revocation, with `POST /auth/logout-all` and `PUT /auth/password` (current password required). Async bcrypt compare with cost from config. A password policy. Google: `email_verified` required, no placeholder password, explicit account-linking rule. Rate limits per IP and per account. **Refresh tokens are out of scope** (YAGNI) until a client needs them.
 - **Risks:** Existing tokens are invalidated on deploy; client migration to Bearer.
 - **Complexity:** M · **Dependencies:** M4.
 
-## M6: Authorization
+## M6: Authorization ✅ (accepted 2026-09-25, on `next`)
+- **Outcome:** one `authorize(policy)`; a permission matrix published in API_PROGRESS and tested cell by cell, with a drift check; product-creator ownership inside the write filter; `VENTAS_ROLE` defined as the catalog manager; a query-free administrator self-lockout guard. No migration, no new dependency. 1263 tests. Rulings AM-M6-1…9 (design §11, §12).
 - **Goal:** Explicit, testable RBAC plus ownership rules.
 - **Deliverables:** one `authorize(policy)` middleware replacing `esAdminRole`/`hasRole`. A permission matrix per route published in API_PROGRESS. Ownership rules (users edit themselves; the product/category creator vs admin rules are confirmed by the owner). Consistent 401 vs 403. A decision on `VENTAS_ROLE`. A test for every cell of the matrix.
 - **Risks:** Business rules for roles are unspecified today, so owner input is needed.

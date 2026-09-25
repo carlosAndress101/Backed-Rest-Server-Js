@@ -1,10 +1,15 @@
-// The products rules (M3 design §5.3) against in-memory models: no database, no vi.mock (ADR-023).
+// The products rules (M3 design §5.3; M6 design §4.2, ADR-039/041) against in-memory models: no database, no
+// vi.mock (ADR-023).
 import type { Model } from 'mongoose';
 import { describe, expect, test } from 'vitest';
 
-import { ConflictError, NotFoundError } from '../../../src/core/errors';
+import { ConflictError, ForbiddenError, NotFoundError } from '../../../src/core/errors';
 import type { Product } from '../../../src/modules/products';
-import { createProductsService, type CategoryLookup } from '../../../src/modules/products/product.service';
+import {
+  createProductsService,
+  type Actor,
+  type CategoryLookup,
+} from '../../../src/modules/products/product.service';
 
 interface Row {
   _id: string;
@@ -18,6 +23,18 @@ interface Row {
 
 const EDITOR = 'editor-id';
 const CATEGORY = 'category-id';
+
+// AM-M6-5: CATALOG_ROLES; an owner is a plain authenticated role acting on their own row.
+const OWNER: Actor = { id: EDITOR, role: 'USER_ROLE' };
+const OTHER: Actor = { id: 'someone-else-id', role: 'USER_ROLE' };
+const ADMIN: Actor = { id: 'admin-id', role: 'ADMIN_ROLE' };
+const SALES: Actor = { id: 'sales-id', role: 'VENTAS_ROLE' };
+const FORBIDDEN_UPDATE = new ForbiddenError(
+  'Only the creator, an administrator or VENTAS_ROLE may update this product',
+);
+const FORBIDDEN_DELETE = new ForbiddenError(
+  'Only the creator, an administrator or VENTAS_ROLE may delete this product',
+);
 
 /** A query stand-in: chainable like a Mongoose query, and resolves when awaited (applying skip/limit to lists). */
 class FakeQuery<T> implements PromiseLike<T> {
@@ -187,62 +204,145 @@ describe('createProductsService', () => {
   });
 
   describe('update', () => {
-    test('renames with the name uppercased and records the editor', async () => {
+    test('the owner renames their own product; the name is uppercased', async () => {
       const { service, productRows } = makeService([
-        { _id: '1', name: 'KEYBOARD', state: true, category: CATEGORY },
+        { _id: '1', name: 'KEYBOARD', state: true, category: CATEGORY, user: EDITOR },
       ]);
 
-      const updated = await service.update('1', { name: 'mouse' }, EDITOR);
+      const updated = await service.update('1', { name: 'mouse' }, OWNER);
 
       expect(updated).toMatchObject({ name: 'MOUSE', user: EDITOR });
       expect(productRows[0]).toMatchObject({ name: 'MOUSE', user: EDITOR, state: true });
     });
 
-    test.each([
-      ['missing', 'missing'],
-      ['soft-deleted', '2'],
-    ])('a %s product is a NotFoundError and nothing is written', async (_case, id) => {
+    // ADR-041: the fix. Before M6, every editor (admin included) silently became the new owner.
+    test('never reassigns the product to the editor (ADR-041), whoever writes it', async () => {
       const { service, productRows } = makeService([
-        { _id: '2', name: 'MOUSE', state: false, category: CATEGORY },
+        { _id: '1', name: 'KEYBOARD', state: true, category: CATEGORY, user: EDITOR },
       ]);
 
-      await expect(service.update(id, { name: 'x' }, EDITOR)).rejects.toEqual(
-        new NotFoundError('Product not found'),
-      );
-      expect(productRows).toEqual([{ _id: '2', name: 'MOUSE', state: false, category: CATEGORY }]);
+      await service.update('1', { name: 'mouse' }, ADMIN);
+
+      expect(productRows[0]).toMatchObject({ user: EDITOR });
     });
 
-    test('a category that is not active is a NotFoundError and nothing is written', async () => {
+    test.each([
+      ['an administrator', ADMIN],
+      ['VENTAS_ROLE', SALES],
+    ])('%s updates any item, not only their own (ADR-040)', async (_case, actor) => {
+      const { service, productRows } = makeService([
+        { _id: '1', name: 'KEYBOARD', state: true, category: CATEGORY, user: EDITOR },
+      ]);
+
+      const updated = await service.update('1', { name: 'mouse' }, actor);
+
+      expect(updated).toMatchObject({ name: 'MOUSE' });
+      expect(productRows[0]).toMatchObject({ name: 'MOUSE', user: EDITOR });
+    });
+
+    test('a non-owner who is not privileged is a ForbiddenError, and nothing is written (ADR-039)', async () => {
+      const { service, productRows } = makeService([
+        { _id: '1', name: 'KEYBOARD', state: true, category: CATEGORY, user: EDITOR },
+      ]);
+
+      await expect(service.update('1', { name: 'mouse' }, OTHER)).rejects.toEqual(FORBIDDEN_UPDATE);
+      expect(productRows[0]).toMatchObject({ name: 'KEYBOARD', user: EDITOR });
+    });
+
+    test.each([
+      ['the owner', OWNER],
+      ['a non-owner, non-privileged caller', OTHER],
+      ['an administrator', ADMIN],
+    ])('a soft-deleted product is a NotFoundError for %s, never a ForbiddenError', async (_case, actor) => {
+      const { service, productRows } = makeService([
+        { _id: '2', name: 'MOUSE', state: false, category: CATEGORY, user: EDITOR },
+      ]);
+
+      await expect(service.update('2', { name: 'x' }, actor)).rejects.toEqual(
+        new NotFoundError('Product not found'),
+      );
+      expect(productRows).toEqual([
+        { _id: '2', name: 'MOUSE', state: false, category: CATEGORY, user: EDITOR },
+      ]);
+    });
+
+    test('a missing product is a NotFoundError', async () => {
+      const { service } = makeService([]);
+
+      await expect(service.update('missing', { name: 'x' }, ADMIN)).rejects.toEqual(
+        new NotFoundError('Product not found'),
+      );
+    });
+
+    // AM-M6-8: accepted residual — the category's own 404 outranks the ownership 403, for anyone.
+    test('a category that is not active is a NotFoundError and nothing is written, even for a non-owner', async () => {
       const { service, productRows } = makeService(
-        [{ _id: '1', name: 'KEYBOARD', state: true, category: CATEGORY }],
+        [{ _id: '1', name: 'KEYBOARD', state: true, category: CATEGORY, user: EDITOR }],
         [{ _id: CATEGORY, state: false }],
       );
 
-      await expect(service.update('1', { category: CATEGORY }, EDITOR)).rejects.toEqual(
+      await expect(service.update('1', { category: CATEGORY }, OTHER)).rejects.toEqual(
         new NotFoundError('Category not found'),
       );
-      expect(productRows).toEqual([{ _id: '1', name: 'KEYBOARD', state: true, category: CATEGORY }]);
+      expect(productRows).toEqual([
+        { _id: '1', name: 'KEYBOARD', state: true, category: CATEGORY, user: EDITOR },
+      ]);
     });
   });
 
   describe('softDelete', () => {
-    test('sets state to false and keeps the record', async () => {
+    test('the owner deletes their own product', async () => {
       const { service, productRows } = makeService([
-        { _id: '1', name: 'KEYBOARD', state: true, category: CATEGORY },
+        { _id: '1', name: 'KEYBOARD', state: true, category: CATEGORY, user: EDITOR },
       ]);
 
-      await service.softDelete('1');
+      await service.softDelete('1', OWNER);
 
-      expect(productRows).toEqual([{ _id: '1', name: 'KEYBOARD', state: false, category: CATEGORY }]);
+      expect(productRows).toEqual([
+        { _id: '1', name: 'KEYBOARD', state: false, category: CATEGORY, user: EDITOR },
+      ]);
     });
 
     test.each([
-      ['missing', 'missing'],
-      ['already deleted', '2'],
-    ])('a %s product is a NotFoundError', async (_case, id) => {
-      const { service } = makeService([{ _id: '2', name: 'MOUSE', state: false, category: CATEGORY }]);
+      ['an administrator', ADMIN],
+      ['VENTAS_ROLE', SALES],
+    ])('%s deletes any item, not only their own (ADR-040)', async (_case, actor) => {
+      const { service, productRows } = makeService([
+        { _id: '1', name: 'KEYBOARD', state: true, category: CATEGORY, user: EDITOR },
+      ]);
 
-      await expect(service.softDelete(id)).rejects.toEqual(new NotFoundError('Product not found'));
+      await service.softDelete('1', actor);
+
+      expect(productRows[0]).toMatchObject({ state: false, user: EDITOR });
+    });
+
+    test('a non-owner who is not privileged is a ForbiddenError, and the product stays active', async () => {
+      const { service, productRows } = makeService([
+        { _id: '1', name: 'KEYBOARD', state: true, category: CATEGORY, user: EDITOR },
+      ]);
+
+      await expect(service.softDelete('1', OTHER)).rejects.toEqual(FORBIDDEN_DELETE);
+      expect(productRows[0]).toMatchObject({ state: true });
+    });
+
+    test.each([
+      ['the owner', OWNER],
+      ['a non-owner, non-privileged caller', OTHER],
+      ['an administrator', ADMIN],
+    ])('an already soft-deleted product is a NotFoundError for %s', async (_case, actor) => {
+      const { service } = makeService([
+        { _id: '2', name: 'MOUSE', state: false, category: CATEGORY, user: EDITOR },
+      ]);
+
+      await expect(service.softDelete('2', actor)).rejects.toEqual(new NotFoundError('Product not found'));
+    });
+
+    test('a missing product is a NotFoundError', async () => {
+      const { service } = makeService([]);
+
+      await expect(service.softDelete('missing', ADMIN)).rejects.toEqual(
+        new NotFoundError('Product not found'),
+      );
     });
   });
 });
