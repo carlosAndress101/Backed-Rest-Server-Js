@@ -7,6 +7,7 @@ import { ConflictError, ForbiddenError, NotFoundError, ValidationError } from '.
 import type { User } from '../../../src/modules/users';
 import { createUsersService } from '../../../src/modules/users/user.service';
 import type { CreateUserDto, UpdateUserDto } from '../../../src/modules/users/user.schemas';
+import { salesActor } from '../../helpers/actors';
 
 interface Row {
   _id: string;
@@ -193,7 +194,7 @@ describe('createUsersService', () => {
 
     test.each([
       ['a user on their own account', '1', SELF],
-      ['a sales user on their own account', '1', { id: '1', role: 'VENTAS_ROLE' }],
+      ['a sales user on their own account', '1', salesActor('1')],
       ['an administrator on their own account', 'admin', ADMIN],
       ['an administrator on their own id spelled in uppercase', 'ADMIN', ADMIN],
       ['a non-administrator on another account (routes forbid it; the service refuses too)', 'admin', SELF],

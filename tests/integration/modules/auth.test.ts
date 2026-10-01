@@ -10,7 +10,7 @@ import { afterAll, beforeEach, describe, expect, test, vi, type MockInstance } f
 import { UserModel } from '../../../src/modules/users';
 import { clearDatabase, startTestApp, stopTestApp } from '../../helpers/app';
 import { expectStatus } from '../../helpers/assert';
-import { stubGoogleClient } from '../../helpers/auth';
+import { logoutAll as postLogoutAll, stubGoogleClient } from '../../helpers/auth';
 import { authHeader, createUser, hashPassword, tokenFor } from '../../helpers/factories';
 
 const SECRET = 'test-secret-at-least-32-characters-long'; // SECRET_KEY in vitest.config.mts
@@ -363,7 +363,7 @@ describe('auth module (§6 #2–#3)', () => {
       const other = await createUser({ password: hashPassword(PASSWORD) });
       const otherToken = (await login(other.email)).body.data.token as string;
 
-      await logoutAll((await login(user.email)).body.data.token);
+      await postLogoutAll(app, authHeader((await login(user.email)).body.data.token));
 
       expectStatus(await rename(other.id, otherToken), 200);
     });

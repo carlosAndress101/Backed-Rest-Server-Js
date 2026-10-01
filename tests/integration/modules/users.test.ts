@@ -9,7 +9,14 @@ import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'vitest'
 
 import { UserModel, type UserDocument } from '../../../src/modules/users';
 import { clearDatabase, startTestApp, stopTestApp } from '../../helpers/app';
-import { TEST_PASSWORD, authHeader, createAdmin, createUser, tokenFor } from '../../helpers/factories';
+import {
+  TEST_PASSWORD,
+  authHeader,
+  createAdmin,
+  createUser,
+  createVentas,
+  tokenFor,
+} from '../../helpers/factories';
 
 const MISSING_ID = new mongoose.Types.ObjectId().toHexString();
 const BAD_ID = 'not-an-id';
@@ -406,7 +413,7 @@ describe('users module (§6 #4–#8)', () => {
 
     // ADR-040: breaking. VENTAS_ROLE is now a catalog manager only; it lost user-management rights.
     test('VENTAS_ROLE is 403 and nothing is deleted (ADR-040)', async () => {
-      const sales = await createUser({ role: 'VENTAS_ROLE' });
+      const sales = await createVentas();
 
       const res = await request(app)
         .delete(`/api/user/${user.id}`)
