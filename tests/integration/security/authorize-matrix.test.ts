@@ -57,21 +57,102 @@ function mountedRouters(): RouteLayer[] {
   return app.router.stack.filter((layer) => layer.name === 'router');
 }
 
-/** Every (METHOD, full path) the live app actually registers, pairing each router with MOUNT_PREFIXES by mount
- * order (AM-M6-6: the live prefix cannot be read off the layer, so this pairing is an assumption the router-count
- * assertion below checks — but not one this test can verify path-by-path if app.ts ever reorders its app.use()s). */
-function registeredRoutes(routers: RouteLayer[]): Set<string> {
-  const routes = new Set<string>();
-  routers.forEach((layer, index) => {
-    const prefix = MOUNT_PREFIXES[index];
-    for (const sub of layer.handle.stack ?? []) {
-      if (!sub.route) continue;
-      const suffix = sub.route.path === '/' ? '' : sub.route.path;
-      for (const [method, enabled] of Object.entries(sub.route.methods)) {
-        if (enabled) routes.add(`${method.toUpperCase()} ${prefix}${suffix}`);
-      }
+/** The (METHOD, router-local suffix) pairs one mounted router registers. The mount prefix itself is
+ * not readable off the Express 5 layer (path-to-regexp v8 matcher closure), so the TEST-05 pairing
+ * below recovers it by suffix-set bijection instead. */
+function routerSuffixes(router: RouteLayer): Array<{ method: string; suffix: string }> {
+  const pairs: Array<{ method: string; suffix: string }> = [];
+  for (const sub of router.handle.stack ?? []) {
+    if (!sub.route) continue;
+    const suffix = sub.route.path === '/' ? '' : sub.route.path;
+    for (const [method, enabled] of Object.entries(sub.route.methods)) {
+      if (enabled) pairs.push({ method: method.toUpperCase(), suffix });
     }
-  });
+  }
+  return pairs;
+}
+
+/** Order-independent router-to-prefix pairing (TEST-05): a prefix is a candidate for a router iff
+ * every live (METHOD, prefix + suffix) pair is in the fixture set; the routers are then bound to
+ * distinct prefixes — an exact bijection where every router is matched and every prefix is used
+ * exactly once. Throws with a diff when a router matches no prefix or when no exact bijection
+ * exists, so added/removed routes fail closed. Deterministic: routers bind fewest-candidates-first,
+ * prefixes in listed order. The category/product twin routers share one suffix set and are
+ * interchangeable by construction — either assignment yields the same live pair set, which the
+ * sorted-set equality assertion below checks as the backstop. */
+function pairRouters<P extends string>(
+  routers: RouteLayer[],
+  prefixes: readonly P[],
+  fixturePairs: Set<string>,
+): Map<RouteLayer, P> {
+  if (routers.length !== prefixes.length) {
+    throw new Error(
+      `pairRouters: router/prefix count mismatch (fail-closed): ${routers.length} router(s) vs ${prefixes.length} prefixes (${prefixes.join(', ')})`,
+    );
+  }
+  const candidatesOf = new Map<RouteLayer, P[]>();
+  const suffixesOf = new Map<RouteLayer, Array<{ method: string; suffix: string }>>();
+  for (const router of routers) {
+    const suffixes = routerSuffixes(router);
+    suffixesOf.set(router, suffixes);
+    candidatesOf.set(
+      router,
+      prefixes.filter((prefix) =>
+        suffixes.every(({ method, suffix }) => fixturePairs.has(`${method} ${prefix}${suffix}`)),
+      ),
+    );
+  }
+
+  const orphaned = routers.filter((router) => candidatesOf.get(router)!.length === 0);
+  if (orphaned.length > 0) {
+    const detail = orphaned.map((router) => JSON.stringify(suffixesOf.get(router))).join('\n');
+    throw new Error(
+      `pairRouters: ${orphaned.length} router(s) match no known prefix (fail-closed) — live routes drifted from the fixture:\n${detail}\nKnown prefixes: ${prefixes.join(', ')}`,
+    );
+  }
+
+  const ordered = [...routers].sort((a, b) => candidatesOf.get(a)!.length - candidatesOf.get(b)!.length);
+  const assignment = new Map<RouteLayer, P>();
+  const used = new Set<P>();
+  const solve = (index: number): boolean => {
+    if (index === ordered.length) return true;
+    const router = ordered[index];
+    if (!router) return false;
+    for (const prefix of candidatesOf.get(router)!) {
+      if (used.has(prefix)) continue;
+      used.add(prefix);
+      assignment.set(router, prefix);
+      if (solve(index + 1)) return true;
+      used.delete(prefix);
+      assignment.delete(router);
+    }
+    return false;
+  };
+  if (!solve(0)) {
+    const detail = routers
+      .map(
+        (router, index) =>
+          `router[${index}] suffixes=${JSON.stringify(suffixesOf.get(router))} candidates=[${candidatesOf.get(router)!.join(', ')}]`,
+      )
+      .join('\n');
+    throw new Error(
+      `pairRouters: no exact router-to-prefix bijection (fail-closed) — live routes drifted from the fixture:\n${detail}`,
+    );
+  }
+  return assignment;
+}
+
+/** Every (METHOD, full path) the live app actually registers, pairing each router with its prefix
+ * by suffix-set bijection — independent of `app.use()` order in `src/app.ts` (read-only). */
+function registeredRoutes(routers: RouteLayer[]): Set<string> {
+  const fixturePairs = new Set(MATRIX.map((row) => `${row.method.toUpperCase()} ${row.path}`));
+  const pairing = pairRouters(routers, MOUNT_PREFIXES, fixturePairs);
+  const routes = new Set<string>();
+  for (const [router, prefix] of pairing) {
+    for (const { method, suffix } of routerSuffixes(router)) {
+      routes.add(`${method} ${prefix}${suffix}`);
+    }
+  }
   return routes;
 }
 
@@ -84,6 +165,92 @@ describe('the fixture is the single source of truth (AM-M6-6, P30): it drifts fr
     const fixturePairs = new Set(MATRIX.map((row) => `${row.method.toUpperCase()} ${row.path}`));
     const livePairs = registeredRoutes(mountedRouters());
     expect([...fixturePairs].sort()).toEqual([...livePairs].sort());
+  });
+});
+
+describe('pairRouters is order-independent (TEST-05)', () => {
+  const fixturePairs = () => new Set(MATRIX.map((row) => `${row.method.toUpperCase()} ${row.path}`));
+
+  /** Plain-object rebuild of a mounted router's route table — a synthetic RouteLayer carrying the
+   * live suffix set, so the permutation checks prove the pairing logic, not the layer identity. */
+  function syntheticRouter(router: RouteLayer): RouteLayer {
+    return {
+      name: 'router',
+      handle: {
+        stack: routerSuffixes(router).map(({ method, suffix }) => ({
+          route: { path: suffix === '' ? '/' : suffix, methods: { [method.toLowerCase()]: true } },
+        })),
+      },
+    };
+  }
+
+  const syntheticRouters = () => mountedRouters().map(syntheticRouter);
+
+  /** Reorder routers by a fixed index permutation (throws on an out-of-range index). */
+  function inOrder(routers: RouteLayer[], order: number[]): RouteLayer[] {
+    return order.map((index) => {
+      const router = routers[index];
+      if (!router) throw new Error(`shuffle order references missing router index ${index}`);
+      return router;
+    });
+  }
+
+  function expectExactBijection(routers: RouteLayer[]) {
+    const pairing = pairRouters(routers, MOUNT_PREFIXES, fixturePairs());
+    expect(pairing.size).toBe(MOUNT_PREFIXES.length);
+    // Every prefix matched exactly once, every router matched.
+    expect([...pairing.values()].sort()).toEqual([...MOUNT_PREFIXES].sort());
+    expect(new Set(pairing.keys()).size).toBe(routers.length);
+    return pairing;
+  }
+
+  test('reversed mount order pairs every prefix exactly once', () => {
+    expectExactBijection(syntheticRouters().reverse());
+  });
+
+  // Deterministic sampled shuffles of the live mount order (no randomness: fixed index orders).
+  const SHUFFLES: Array<[string, number[]]> = [
+    ['rotate-1', [1, 2, 3, 4, 5, 0]],
+    ['rotate-3', [3, 4, 5, 0, 1, 2]],
+    ['swap-halves', [3, 4, 5, 0, 1, 2].reverse()],
+    ['interleave', [0, 3, 1, 4, 2, 5]],
+    ['twins-swapped', [1, 0, 2, 3, 4, 5]],
+    ['ends-inward', [5, 0, 4, 1, 3, 2]],
+  ];
+
+  for (const [name, order] of SHUFFLES) {
+    test(`shuffle ${name} pairs every prefix exactly once`, () => {
+      expectExactBijection(inOrder(syntheticRouters(), order));
+    });
+  }
+
+  test('shuffled mounts still recover the full fixture pair set', () => {
+    const shuffled = inOrder(syntheticRouters(), [4, 2, 0, 5, 1, 3]);
+    const pairing = pairRouters(shuffled, MOUNT_PREFIXES, fixturePairs());
+    const livePairs = new Set<string>();
+    for (const [router, prefix] of pairing) {
+      for (const { method, suffix } of routerSuffixes(router)) {
+        livePairs.add(`${method} ${prefix}${suffix}`);
+      }
+    }
+    expect([...livePairs].sort()).toEqual([...fixturePairs()].sort());
+  });
+
+  test('a router with no matching prefix throws fail-closed', () => {
+    const routers = mountedRouters().reverse();
+    const bogus: RouteLayer = {
+      name: 'router',
+      handle: { stack: [{ route: { path: '/no-such-route', methods: { get: true } } }] },
+    };
+    expect(() => pairRouters([...routers.slice(1), bogus], MOUNT_PREFIXES, fixturePairs())).toThrow(
+      /match no known prefix/,
+    );
+  });
+
+  test('a router/prefix count mismatch throws fail-closed', () => {
+    expect(() => pairRouters(mountedRouters().slice(1), MOUNT_PREFIXES, fixturePairs())).toThrow(
+      /count mismatch/,
+    );
   });
 });
 
