@@ -16,6 +16,7 @@ import {
   createCategory,
   createProduct,
   createUser,
+  createVentas,
   tokenFor,
   uniqueSuffix,
 } from '../../helpers/factories';
@@ -363,7 +364,7 @@ describe('M6 adversarial suite (§6.3)', () => {
 
   describe('ADR-040: VENTAS_ROLE gains catalog rights, loses user-delete', () => {
     test('PUT and DELETE succeed on a category it did not create', async () => {
-      const ventas = await createUser({ role: 'VENTAS_ROLE' });
+      const ventas = await createVentas();
       const token = await tokenFor(ventas);
       const toUpdate = await createCategory();
       const toDelete = await createCategory();
@@ -379,7 +380,7 @@ describe('M6 adversarial suite (§6.3)', () => {
     });
 
     test('PUT and DELETE succeed on a product it did not create', async () => {
-      const ventas = await createUser({ role: 'VENTAS_ROLE' });
+      const ventas = await createVentas();
       const token = await tokenFor(ventas);
       const toUpdate = await createProduct();
       const toDelete = await createProduct();
@@ -395,7 +396,7 @@ describe('M6 adversarial suite (§6.3)', () => {
     });
 
     test('PUT /api/uploads/product/:id succeeds', async () => {
-      const ventas = await createUser({ role: 'VENTAS_ROLE' });
+      const ventas = await createVentas();
       const token = await tokenFor(ventas);
       const product = await createProduct();
       stubMediaClient('https://example.test/img.png');
@@ -409,7 +410,7 @@ describe('M6 adversarial suite (§6.3)', () => {
     });
 
     test('DELETE /api/user/:id is refused (breaking, ADR-040)', async () => {
-      const ventas = await createUser({ role: 'VENTAS_ROLE' });
+      const ventas = await createVentas();
       const token = await tokenFor(ventas);
       const target = await createUser();
 

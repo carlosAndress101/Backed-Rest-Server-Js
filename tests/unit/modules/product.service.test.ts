@@ -10,6 +10,7 @@ import {
   type Actor,
   type CategoryLookup,
 } from '../../../src/modules/products/product.service';
+import { adminActor, salesActor, userActor } from '../../helpers/actors';
 
 interface Row {
   _id: string;
@@ -25,10 +26,10 @@ const EDITOR = 'editor-id';
 const CATEGORY = 'category-id';
 
 // AM-M6-5: CATALOG_ROLES; an owner is a plain authenticated role acting on their own row.
-const OWNER: Actor = { id: EDITOR, role: 'USER_ROLE' };
-const OTHER: Actor = { id: 'someone-else-id', role: 'USER_ROLE' };
-const ADMIN: Actor = { id: 'admin-id', role: 'ADMIN_ROLE' };
-const SALES: Actor = { id: 'sales-id', role: 'VENTAS_ROLE' };
+const OWNER: Actor = userActor(EDITOR);
+const OTHER: Actor = userActor('someone-else-id');
+const ADMIN: Actor = adminActor('admin-id');
+const SALES: Actor = salesActor('sales-id');
 const FORBIDDEN_UPDATE = new ForbiddenError(
   'Only the creator, an administrator or VENTAS_ROLE may update this product',
 );

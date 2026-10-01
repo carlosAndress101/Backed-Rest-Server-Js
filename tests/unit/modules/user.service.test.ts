@@ -7,7 +7,7 @@ import { ConflictError, ForbiddenError, NotFoundError, ValidationError } from '.
 import type { User } from '../../../src/modules/users';
 import { createUsersService } from '../../../src/modules/users/user.service';
 import type { CreateUserDto, UpdateUserDto } from '../../../src/modules/users/user.schemas';
-import { salesActor } from '../../helpers/actors';
+import { adminActor, salesActor, userActor } from '../../helpers/actors';
 
 interface Row {
   _id: string;
@@ -22,8 +22,8 @@ interface Row {
 }
 
 // Actors carry their own id (AM-M5-10): SELF acts on its own row '1'; ADMIN's own row is 'admin'.
-const ADMIN = { id: 'admin', role: 'ADMIN_ROLE' };
-const SELF = { id: '1', role: 'USER_ROLE' };
+const ADMIN = adminActor('admin');
+const SELF = userActor('1');
 const OWN_PASSWORD = new ValidationError([
   { path: 'password', message: 'change your own password with PUT /api/auth/password' },
 ]);
