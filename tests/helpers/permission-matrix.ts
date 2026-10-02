@@ -28,9 +28,11 @@ export interface MatrixRow {
 }
 
 /**
- * src/app.ts's app.use() order. AM-M6-6: mount prefixes cannot be read off the live app (Express 5's
- * path-to-regexp v8 layers expose a matcher closure, not a path or regexp string) — the drift check takes them
- * from here and only asserts that the number of mounted routers equals this list's length.
+ * Mount prefixes by intent, not by src/app.ts's app.use() order. AM-M6-6: mount prefixes cannot be
+ * read off the live app (Express 5's path-to-regexp v8 layers expose a matcher closure, not a path
+ * or regexp string) — the drift check takes the prefix universe from here and pairs each mounted
+ * router to its prefix by suffix-set bijection (TEST-05: order-independent; the router-count
+ * assertion stays as a backstop). Reordering app.use()s must not break the pairing.
  */
 export const MOUNT_PREFIXES = [
   '/api/category',
