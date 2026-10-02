@@ -21,7 +21,14 @@ export default defineConfig({
       include: ['src/**/*.ts'],
       exclude: ['src/server.ts'], // exercised by a spawned process (§5.4), invisible to in-process V8 coverage
       reporter: ['text-summary', 'text', 'lcov'],
-      thresholds: { 'src/**/*.ts': { lines: 90, functions: 90, branches: 80, statements: 90 } },
+      thresholds: {
+        // The global floor (M7): the whole of src/ together, beside the per-file bar below, which stays binding.
+        lines: 80,
+        functions: 80,
+        branches: 80,
+        statements: 80,
+        'src/**/*.ts': { lines: 90, functions: 90, branches: 80, statements: 90 },
+      },
     },
   },
 });
