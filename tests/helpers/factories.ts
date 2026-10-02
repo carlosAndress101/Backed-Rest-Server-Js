@@ -29,6 +29,15 @@ export const createUser = async (overrides: Record<string, unknown> = {}): Promi
 export const createAdmin = async (overrides: Record<string, unknown> = {}): Promise<UserDocument> =>
   createUser({ name: 'Admin User', role: 'ADMIN_ROLE', ...overrides });
 
+/** A user of any role; the named helpers below delegate here so each role literal lives in one place. */
+export const createUserWithRole = async (
+  role: 'USER_ROLE' | 'VENTAS_ROLE' | 'ADMIN_ROLE',
+  overrides: Record<string, unknown> = {},
+): Promise<UserDocument> => createUser({ name: `${role} User`, role, ...overrides });
+
+export const createVentas = async (overrides: Record<string, unknown> = {}): Promise<UserDocument> =>
+  createUserWithRole('VENTAS_ROLE', { name: 'Ventas User', ...overrides });
+
 export const createCategory = async (overrides: Record<string, unknown> = {}): Promise<CategoryDocument> => {
   const { user, ...rest } = overrides as { user?: UserDocument };
   const owner = user || (await createUser());

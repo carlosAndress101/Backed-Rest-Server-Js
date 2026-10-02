@@ -12,7 +12,7 @@ import { loadConfig } from '../../../src/config';
 import { createLogger } from '../../../src/core/logger';
 import type { UserDocument } from '../../../src/modules/users';
 import { clearDatabase, startTestApp, stopTestApp } from '../../helpers/app';
-import { stubGoogleClient } from '../../helpers/auth';
+import { changePassword, logoutAll, stubGoogleClient } from '../../helpers/auth';
 import {
   TEST_PASSWORD,
   authHeader,
@@ -407,14 +407,14 @@ async function fire(app: Server, row: MatrixRow, kase: MatrixCase): Promise<numb
       return res.statusCode;
     }
     case '#24': {
-      const res = await request(app).post('/api/auth/logout-all').set(header);
+      const res = await logoutAll(app, header);
       return res.statusCode;
     }
     case '#25': {
-      const res = await request(app)
-        .put('/api/auth/password')
-        .set(header)
-        .send({ currentPassword: TEST_PASSWORD, newPassword: `new-password-${uniqueSuffix()}` });
+      const res = await changePassword(app, header, {
+        currentPassword: TEST_PASSWORD,
+        newPassword: `new-password-${uniqueSuffix()}`,
+      });
       return res.statusCode;
     }
     default:

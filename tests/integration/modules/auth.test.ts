@@ -10,7 +10,7 @@ import { afterAll, beforeEach, describe, expect, test, vi, type MockInstance } f
 import { UserModel } from '../../../src/modules/users';
 import { clearDatabase, startTestApp, stopTestApp } from '../../helpers/app';
 import { expectStatus } from '../../helpers/assert';
-import { stubGoogleClient } from '../../helpers/auth';
+import { changePassword, logoutAll, stubGoogleClient } from '../../helpers/auth';
 import { authHeader, createUser, hashPassword, tokenFor } from '../../helpers/factories';
 
 const SECRET = 'test-secret-at-least-32-characters-long'; // SECRET_KEY in vitest.config.mts
@@ -318,10 +318,6 @@ describe('auth module (§6 #2–#3)', () => {
     const INVALID_TOKEN = { error: { code: 'UNAUTHORIZED', message: 'Invalid token' } };
     const login = (email: string, password = PASSWORD) =>
       request(app).post('/api/auth/login').send({ email, password });
-    const logoutAll = (token?: string) => {
-      const req = request(app).post('/api/auth/logout-all');
-      return token ? req.set(authHeader(token)) : req;
-    };
     /** A protected route the caller may use on itself. */
     const rename = (id: string, token: string) =>
       request(app).put(`/api/user/${id}`).set(authHeader(token)).send({ name: 'Renamed' });
@@ -332,7 +328,7 @@ describe('auth module (§6 #2–#3)', () => {
       const first = (await login(user.email)).body.data.token as string;
       const second = (await login(user.email)).body.data.token as string;
 
-      const res = await logoutAll(first);
+      const res = await logoutAll(app, authHeader(first));
 
       expect(res.status).toBe(204);
       expect(res.text).toBe('');
@@ -341,14 +337,14 @@ describe('auth module (§6 #2–#3)', () => {
         expect(replay.status).toBe(401);
         expect(replay.body).toEqual(INVALID_TOKEN); // the same answer as any other invalid token (P23)
       }
-      expect((await logoutAll(first)).status).toBe(401);
+      expect((await logoutAll(app, authHeader(first))).status).toBe(401);
     });
 
     // AM-M5-9: login signs the user's own tokenVersion, or a logout-all would lock the user out for good.
     test('a login after it is 200 with the new tv, and that token works', async () => {
       const user = await createUser({ password: hashPassword(PASSWORD) });
       const before = (await login(user.email)).body.data.token as string;
-      await logoutAll(before);
+      await logoutAll(app, authHeader(before));
 
       const res = await login(user.email);
 
@@ -363,13 +359,13 @@ describe('auth module (§6 #2–#3)', () => {
       const other = await createUser({ password: hashPassword(PASSWORD) });
       const otherToken = (await login(other.email)).body.data.token as string;
 
-      await logoutAll((await login(user.email)).body.data.token);
+      await logoutAll(app, authHeader((await login(user.email)).body.data.token));
 
       expectStatus(await rename(other.id, otherToken), 200);
     });
 
     test('without a token is 401', async () => {
-      const res = await logoutAll();
+      const res = await logoutAll(app, {});
 
       expect(res.status).toBe(401);
       expect(res.body).toEqual({ error: { code: 'UNAUTHORIZED', message: 'No token in the request' } });
@@ -382,10 +378,6 @@ describe('auth module (§6 #2–#3)', () => {
     const NEW_PASSWORD = 'a-brand-new-password';
     const login = (email: string, password = PASSWORD) =>
       request(app).post('/api/auth/login').send({ email, password });
-    const changePassword = (token: string | undefined, body: object) => {
-      const req = request(app).put('/api/auth/password');
-      return (token ? req.set(authHeader(token)) : req).send(body);
-    };
     const rename = (id: string, token: string) =>
       request(app).put(`/api/user/${id}`).set(authHeader(token)).send({ name: 'Renamed' });
 
@@ -394,7 +386,10 @@ describe('auth module (§6 #2–#3)', () => {
       const current = (await login(user.email)).body.data.token as string;
       const elsewhere = (await login(user.email)).body.data.token as string;
 
-      const res = await changePassword(current, { currentPassword: PASSWORD, newPassword: NEW_PASSWORD });
+      const res = await changePassword(app, authHeader(current), {
+        currentPassword: PASSWORD,
+        newPassword: NEW_PASSWORD,
+      });
 
       expectStatus(res, 200);
       expect(Object.keys(res.body)).toEqual(['data']);
@@ -412,7 +407,7 @@ describe('auth module (§6 #2–#3)', () => {
       const user = await createUser({ password: hashPassword(PASSWORD) });
       const token = (await login(user.email)).body.data.token as string;
 
-      const res = await changePassword(token, {
+      const res = await changePassword(app, authHeader(token), {
         currentPassword: 'not-the-password',
         newPassword: NEW_PASSWORD,
       });
@@ -427,7 +422,7 @@ describe('auth module (§6 #2–#3)', () => {
       const google = await createUser({ google: true, password: undefined });
       const token = await tokenFor(google);
 
-      const res = await changePassword(token, {
+      const res = await changePassword(app, authHeader(token), {
         currentPassword: 'anything-at-all',
         newPassword: NEW_PASSWORD,
       });
@@ -451,7 +446,7 @@ describe('auth module (§6 #2–#3)', () => {
       const user = await createUser({ password: hashPassword(PASSWORD) });
       const token = await tokenFor(user);
 
-      const res = await changePassword(token, body);
+      const res = await changePassword(app, authHeader(token), body);
 
       expect(res.status).toBe(422);
       expect(detailPaths(res.body)).toEqual(paths);
@@ -459,7 +454,7 @@ describe('auth module (§6 #2–#3)', () => {
     });
 
     test('without a token is 401, and the body is never read', async () => {
-      const res = await changePassword(undefined, { currentPassword: PASSWORD, newPassword: NEW_PASSWORD });
+      const res = await changePassword(app, {}, { currentPassword: PASSWORD, newPassword: NEW_PASSWORD });
 
       expect(res.status).toBe(401);
       expect(res.body).toEqual({ error: { code: 'UNAUTHORIZED', message: 'No token in the request' } });
@@ -472,7 +467,12 @@ describe('auth module (§6 #2–#3)', () => {
       const statuses: number[] = [];
       for (let i = 0; i < 12; i++) {
         statuses.push(
-          (await changePassword(token, { currentPassword: 'wrong', newPassword: NEW_PASSWORD })).status,
+          (
+            await changePassword(app, authHeader(token), {
+              currentPassword: 'wrong',
+              newPassword: NEW_PASSWORD,
+            })
+          ).status,
         );
       }
 
