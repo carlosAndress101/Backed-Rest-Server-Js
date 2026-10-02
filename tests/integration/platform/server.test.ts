@@ -53,7 +53,7 @@ const validEnv = (port: number): NodeJS.ProcessEnv => ({
   LOG_LEVEL: 'info',
   PORT: String(port),
   MONGO_CLOUD: `${inject('mongoUri')}server-${randomUUID()}`,
-  SECRET_KEY: 'test-secret',
+  SECRET_KEY: 'test-secret-at-least-32-characters-long',
   GOOGLE_CLIENT_ID: 'test-client-id',
   CLOUDINARY_URL: 'cloudinary://key:secret@demo',
 });
@@ -90,7 +90,7 @@ describe('src/server.ts', () => {
         timeout: BOOT_TIMEOUT_MS,
       });
 
-      const res = await fetch(`http://127.0.0.1:${port}/hello`);
+      const res = await fetch(`http://127.0.0.1:${port}/`);
       expect(res.status).toBe(200);
       expect(res.headers.get('x-request-id')).toBeTruthy();
 

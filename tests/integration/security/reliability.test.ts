@@ -4,15 +4,15 @@ import mongoose from 'mongoose';
 import request from 'supertest';
 import { afterAll, beforeAll, beforeEach, describe, expect, test, vi } from 'vitest';
 
+import { CategoryModel as Category } from '../../../src/modules/categories';
+import { ProductModel as Product } from '../../../src/modules/products';
+import type { UserDocument } from '../../../src/modules/users';
 import { clearDatabase, startTestApp, stopTestApp } from '../../helpers/app';
 import { authHeader, createCategory, createUser, tokenFor } from '../../helpers/factories';
-import { legacyModels, type LegacyDoc } from '../../helpers/legacy';
-
-const { Category, Product } = legacyModels();
 
 describe('crash safety and HTTP error handling', () => {
   let app: Server;
-  let admin: LegacyDoc;
+  let admin: UserDocument;
   let adminToken: string;
 
   beforeAll(async () => {
@@ -33,24 +33,24 @@ describe('crash safety and HTTP error handling', () => {
   });
 
   describe('C2 unknown routes return a JSON 404', () => {
-    test('an unknown path is 404 {msg:"Route not found"}', async () => {
+    test('an unknown path is 404 NOT_FOUND "Route not found"', async () => {
       const res = await request(app).get('/api/definitely-not-a-route');
 
       expect(res.statusCode).toBe(404);
       expect(res.headers['content-type']).toMatch(/json/);
-      expect(res.body).toEqual({ msg: 'Route not found' });
+      expect(res.body).toEqual({ error: { code: 'NOT_FOUND', message: 'Route not found' } });
     });
 
     test('an unknown non-api path is also a JSON 404', async () => {
       const res = await request(app).get('/nope/nope');
 
       expect(res.statusCode).toBe(404);
-      expect(res.body).toEqual({ msg: 'Route not found' });
+      expect(res.body).toEqual({ error: { code: 'NOT_FOUND', message: 'Route not found' } });
     });
   });
 
   describe('C1 the error middleware maps Mongoose errors', () => {
-    test('a duplicate key error is 409 {msg:"Resource already exists"}', async () => {
+    test('a duplicate key error is 409 CONFLICT', async () => {
       await createCategory({ name: 'DUP ONE' });
       const second = await createCategory({ name: 'DUP TWO' });
 
@@ -61,10 +61,10 @@ describe('crash safety and HTTP error handling', () => {
 
       expect(res.statusCode).toBe(409);
       expect(res.headers['content-type']).toMatch(/json/);
-      expect(res.body).toEqual({ msg: 'Resource already exists' });
+      expect(res.body).toEqual({ error: { code: 'CONFLICT', message: 'Resource already exists' } });
     });
 
-    test('a CastError is 400 {msg:"Invalid request data"}', async () => {
+    test('an invalid product price is rejected by the DTO: 422 VALIDATION_FAILED (AM-M3-5)', async () => {
       const category = await createCategory();
 
       const res = await request(app)
@@ -72,23 +72,29 @@ describe('crash safety and HTTP error handling', () => {
         .set(authHeader(adminToken))
         .send({ name: 'CAST-ERROR', price: 'not-a-number', category: category.id });
 
-      expect(res.statusCode).toBe(400);
+      expect(res.statusCode).toBe(422);
       expect(res.headers['content-type']).toMatch(/json/);
-      expect(res.body).toEqual({ msg: 'Invalid request data' });
+      expect(res.body.error.code).toBe('VALIDATION_FAILED');
+      expect(res.body.error.details).toEqual(
+        expect.arrayContaining([expect.objectContaining({ path: 'price' })]),
+      );
     });
 
-    test('a ValidationError is 400 {msg:"Invalid request data"}', async () => {
+    test('a product without a category is rejected by the DTO: 422 VALIDATION_FAILED (AM-M3-5)', async () => {
       const res = await request(app)
         .post('/api/product')
         .set(authHeader(adminToken))
         .send({ name: 'MISSING-CATEGORY' });
 
-      expect(res.statusCode).toBe(400);
+      expect(res.statusCode).toBe(422);
       expect(res.headers['content-type']).toMatch(/json/);
-      expect(res.body).toEqual({ msg: 'Invalid request data' });
+      expect(res.body.error.code).toBe('VALIDATION_FAILED');
+      expect(res.body.error.details).toEqual(
+        expect.arrayContaining([expect.objectContaining({ path: 'category' })]),
+      );
     });
 
-    test('an unexpected error is 500 {msg:"Internal server error"} without a stack', async () => {
+    test('an unexpected error is 500 INTERNAL without a stack', async () => {
       const spy = vi.spyOn(Category, 'find').mockImplementationOnce(() => {
         throw new Error('simulated database outage');
       });
@@ -99,25 +105,25 @@ describe('crash safety and HTTP error handling', () => {
 
       expect(res.statusCode).toBe(500);
       expect(res.headers['content-type']).toMatch(/json/);
-      expect(res.body).toEqual({ msg: 'Internal server error' });
+      expect(res.body).toEqual({ error: { code: 'INTERNAL', message: 'Internal server error' } });
     });
   });
 
   describe('C1 errors never leak a stack trace or a raw Mongoose object', () => {
-    test('the 404 body has only a msg key', async () => {
+    test('the 404 body has only an error key', async () => {
       const res = await request(app).get('/api/unknown');
 
-      expect(Object.keys(res.body)).toEqual(['msg']);
-      expect(typeof res.body.msg).toBe('string');
+      expect(Object.keys(res.body)).toEqual(['error']);
+      expect(typeof res.body.error.message).toBe('string');
     });
 
-    test('a ValidationError response has only a msg key', async () => {
+    test('a ValidationError response has only an error key', async () => {
       const res = await request(app)
         .post('/api/product')
         .set(authHeader(adminToken))
         .send({ name: 'NO-CATEGORY-LEAK' });
 
-      expect(Object.keys(res.body)).toEqual(['msg']);
+      expect(Object.keys(res.body)).toEqual(['error']);
       expect(JSON.stringify(res.body)).not.toMatch(/ValidationError|CastError|\bat \b/);
     });
   });
@@ -133,7 +139,7 @@ describe('crash safety and HTTP error handling', () => {
 
       const followUp = await request(app).get('/api/search/category/LAPTOP');
       expect(followUp.statusCode).toBe(200);
-      expect(followUp.body.results).toHaveLength(1);
+      expect(followUp.body.data).toHaveLength(1);
     });
 
     test('a well-formed id that does not exist returns a response and the next request works', async () => {
@@ -143,7 +149,7 @@ describe('crash safety and HTTP error handling', () => {
       const res = await request(app).get(`/api/search/category/${missing}`);
 
       expect(res.statusCode).toBe(200);
-      expect(res.body.results).toEqual([]);
+      expect(res.body.data).toEqual([]);
 
       const followUp = await request(app).get('/api/search/category/LAPTOP');
       expect(followUp.statusCode).toBe(200);
@@ -178,7 +184,7 @@ describe('crash safety and HTTP error handling', () => {
       expect(typeof res.statusCode).toBe('number');
       expect(res.headers['content-type']).toMatch(/json/);
 
-      const followUp = await request(app).get('/hello');
+      const followUp = await request(app).get('/');
       expect(followUp.statusCode).toBe(200);
     });
 
@@ -197,7 +203,7 @@ describe('crash safety and HTTP error handling', () => {
 
       const followUp = await request(app).get('/api/search/category/LAPTOP');
       expect(followUp.statusCode).toBe(200);
-      expect(followUp.body.results).toHaveLength(1);
+      expect(followUp.body.data).toHaveLength(1);
     });
   });
 });

@@ -14,10 +14,19 @@ export interface Config {
   readonly cors: { readonly origins: '*' | readonly string[] };
   /** C9: reverse-proxy hops to trust for req.ip (and so the C5 limiter key); undefined keeps Express's default. */
   readonly trustProxy: number | undefined;
-  /** Consumed by the auth and users modules in M3; legacy JS reads the same variables directly until then. */
-  readonly auth: { readonly jwtSecret: string; readonly googleClientId: string };
+  /** Consumed by the auth module and by authenticate's token service. */
+  readonly auth: {
+    readonly jwtSecret: string;
+    readonly googleClientId: string;
+    /** JWT_TTL, converted to seconds. */
+    readonly jwtTtlSeconds: number;
+    /** BCRYPT_COST: the cost every new password hash uses (T5.2). */
+    readonly bcryptCost: number;
+  };
   /** Consumed by the media module in M3. */
   readonly media: { readonly cloudinaryUrl: string };
+  /** Read only by `pnpm seed` (M4 design §6, D-14). `adminPassword` is never logged (P20). */
+  readonly seed: { readonly adminEmail?: string; readonly adminPassword?: string };
 }
 
 export class ConfigError extends Error {
@@ -45,7 +54,13 @@ export function loadConfig(source: NodeJS.ProcessEnv = process.env): Config {
     mongoUri: env.MONGO_CLOUD,
     cors: { origins: origins.length === 0 || origins.includes('*') ? '*' : origins },
     trustProxy: env.TRUST_PROXY,
-    auth: { jwtSecret: env.SECRET_KEY, googleClientId: env.GOOGLE_CLIENT_ID },
+    auth: {
+      jwtSecret: env.SECRET_KEY,
+      googleClientId: env.GOOGLE_CLIENT_ID,
+      jwtTtlSeconds: env.JWT_TTL,
+      bcryptCost: env.BCRYPT_COST,
+    },
     media: { cloudinaryUrl: env.CLOUDINARY_URL },
+    seed: { adminEmail: env.SEED_ADMIN_EMAIL, adminPassword: env.SEED_ADMIN_PASSWORD },
   });
 }

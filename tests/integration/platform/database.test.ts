@@ -3,9 +3,9 @@ import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'vitest'
 
 import { clearDatabase, startTestApp, stopTestApp } from '../../helpers/app';
 
-describe('SEC-14: query hardening applies to every model, legacy included', () => {
+describe('SEC-14: query hardening applies to every model', () => {
   beforeAll(async () => {
-    await startTestApp(); // registers the legacy models
+    await startTestApp(); // loads src/app, which registers every model
   });
 
   beforeEach(clearDatabase);

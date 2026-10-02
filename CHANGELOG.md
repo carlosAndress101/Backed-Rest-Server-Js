@@ -6,6 +6,125 @@ Client-visible contract changes are always listed under **Breaking** and mirrore
 
 ## [Unreleased]
 
+The 3.0 line accumulates on the `next` branch: M3–M6 ship together as **3.0.0** (ADR-024, ADR-026). `master` stays on 2.x for hotfixes.
+
+### M6: Authorization (on `next`)
+
+#### Breaking
+- **`VENTAS_ROLE` can no longer delete users:** `DELETE /api/user/:id` is 403 for it. The role is now the catalog manager (see Changed).
+- **An administrator can no longer change their own role or deactivate themself** through `PUT /api/user/:id` (403); resending the current role or `state: true` is still accepted. Ask another administrator. **Nobody can delete their own account** through `DELETE /api/user/:id` (403).
+- **Editing a product or a category no longer makes the editor its creator:** its `user` stays whoever created it.
+- **Every authorization 403 says `Not allowed`**, except the product-ownership refusal (`Only the creator, an administrator or VENTAS_ROLE may update this product`, or `delete`). A product `PUT`/`DELETE` by someone who is not its creator, with a malformed id, is now 422 (was 403).
+
+#### Changed
+- **`VENTAS_ROLE` is the catalog manager:** it may update and delete **any** product or category, and replace a product's image (`PUT /api/uploads/product/:id`).
+- **A product's creator may update and delete their own active product** (was administrators only). Categories are shared by every product, so only `ADMIN_ROLE` and `VENTAS_ROLE` may edit or delete one; any signed-in user may still create one.
+- A request on your own account whose id is written in upper-case hex is accepted (was 403).
+- Internal: one `authorize(policy)` middleware replaces the interim `requireAdmin`/`requireSelfOrAdmin`/`requireRole` guards, and the permission matrix in API_PROGRESS is tested cell by cell; a route with no matrix row fails the test suite.
+
+#### Security
+- SEC-13 closed: every route's rule comes from one reviewed permission matrix, with ownership checked inside the same database write it protects (no check-then-write window).
+
+#### Operational
+- **No new deploy step:** M6 changes no token, schema or data, and its rules apply from the first request served. A deployment with a single administrator should create a second one before it ever needs to change the first one's role. If two administrators demote each other at the same moment and none is left, run `pnpm seed` with a new `SEED_ADMIN_EMAIL` ([M6-authz](docs/design/M6-authz.md) §12).
+
+### M5: Authentication hardening (on `next`)
+
+#### Breaking
+- **Every token issued before M5 stops working** on deploy, over both transports: tokens now carry `iss`, `aud` and a `tv` (token version) claim and are verified as HS256 only. The client gets the ordinary 401 and signs in again (`POST /api/auth/login` or `/google`).
+- **`Authorization: Bearer <token>` is the transport.** `x-token` is still accepted, but only when the request has no `Authorization` header at all. Such responses carry `Deprecation: true` (RFC 9745), and `x-token` is removed in 4.0.0. A malformed `Authorization` header is 401; it never falls back to `x-token`. The scheme is case-insensitive.
+- **`SECRET_KEY` must be at least 32 characters**, or the process refuses to boot.
+- **Passwords are 8 characters to 72 bytes (UTF-8)** at sign-up, on every password change and in the seed. A longer one is 422; before, bcrypt silently ignored everything past byte 72.
+- **A Google sign-in whose email belongs to an existing password account is refused** (the generic 401), where 2.x signed the caller into that account. An address Google has not verified (`email_verified`) is refused the same way.
+- **`PUT /api/user/:id` no longer changes your own password**, whatever your role: a `password` for your own account is 422, and you use `PUT /api/auth/password` instead. An administrator can still reset **another** user's password there, and doing so signs that user out everywhere.
+
+#### Added
+- `POST /api/auth/logout-all` (204): every token of the caller stops working, the one used for the request included.
+- `PUT /api/auth/password` with `{ currentPassword, newPassword }` (200 `{ data: { token } }`): it checks the current password (the same generic 401 as a failed login), revokes every earlier token and returns a fresh one.
+- `JWT_TTL` (seconds, or `<n>s|m|h|d`; default `4h`) and `BCRYPT_COST` (10–14; default 10).
+
+#### Changed
+- Password hashing is asynchronous and uses `BCRYPT_COST`. A stored hash of another cost is rehashed in the background after that account's next successful login, without delaying the response.
+- A first Google sign-in creates an account with no password at all (no placeholder); M006 removes the old placeholder from existing Google-only accounts.
+
+#### Security
+- `/api/auth/login` is also limited **per account**: 10 attempts per 15 minutes on the same email, whatever the client IP, with case and padding normalized. The per-IP budget shared with `/google` is unchanged.
+- A token is refused once its `tv` no longer matches the account's `tokenVersion` (logout-all, a password change, an administrator reset), with the same 401 as any other invalid token.
+- Every credential failure on login and on the password change still costs one bcrypt compare at the configured cost, Google-only accounts included (F1).
+
+#### Operational
+- **Before deploying M5:** set `SECRET_KEY` to at least 32 characters (rotating it costs nothing extra, since every session ends anyway), warn clients that everyone must sign in again, then run `pnpm build && pnpm migrate up` (M005 backfills `tokenVersion`, M006 drops the placeholder password). See the runbook in [M5-auth](docs/design/M5-auth.md) §10.1.
+
+### M4: Database (on `next`)
+
+#### Added
+- `createdAt` and `updatedAt` on every resource.
+- Database migrations: `pnpm migrate up|down|status [--dry-run]`, an in-repo runner with a `migrations` ledger (M001–M004). Every migration aborts on its data check before writing.
+- `pnpm seed`: a create-only, idempotent first-admin bootstrap from `SEED_ADMIN_EMAIL` and `SEED_ADMIN_PASSWORD`.
+- A hidden `tokenVersion` on users, in preparation for M5.
+
+#### Changed
+- Email is trimmed and lowercased, and matched **case-insensitively** at sign-up, login and Google sign-in. A case-variant duplicate sign-up is 409 `Email already registered`; look-alike characters are rejected with 422.
+- Length limits: user `name` ≤ 120, `email` ≤ 254, category and product `name` ≤ 120, product `description` ≤ 2000. `price` must be ≥ 0. Anything outside these is 422.
+- A name that only a soft-deleted category or product holds can be reused (**201**; 3.0-line M3 answered 409). An active duplicate is still 409, whatever its case.
+
+#### Security
+- The password hash is never selected unless a read asks for it (`select: false`). Login keeps one constant-time bcrypt check per attempt.
+- Validation error messages never contain the rejected value, and rejected values and the seed secret are redacted from logs.
+
+#### Removed (data)
+- The 2.x `roles` collection (M004). Roles are a code enum (ADR-007).
+
+#### Operational
+- **Run `pnpm build && pnpm migrate up` to completion before the new code serves traffic.** Until M001 has normalized existing emails, a case-variant sign-up can create a second account and lock the original one out (M4 design §7.1 step 0).
+- `autoIndex` is off in production: the migrations build every index.
+- Back up before migrating: M001's `down` cannot restore the original email casing.
+
+### M3: Feature modules and DTOs (on `next`)
+
+#### Breaking
+- **Response envelope.** Every success body is `{ "data": ... }`, and lists are `{ "data": [...], "meta": { "total", "limit", "offset" } }`. This replaces the bare document, `{ total, users }`-style lists, `{ user, token }` and `{ results }`. Every error body is `{ "error": { "code", "message", "details"? } }` instead of `{ "msg" }` (ADR-021).
+- **Status codes.**
+  - Reads return 200 (category and product reads returned 201).
+  - Sign-up returns 201 (was 200).
+  - DELETE returns **204** with no body (was 200/201 with a body; the `{ userDelete, userAuthenticated }` body is gone).
+  - Invalid input returns **422** `VALIDATION_FAILED` with `details: [{ path, message }]` (was 400).
+  - A missing or soft-deleted resource returns **404**.
+- **Pagination.** A `limit` outside 1–50, or a non-integer `limit` or `offset`, returns 422. 2.x silently clamped it.
+- **Ids.** Every resource has `id`; `_id` and `__v` are never exposed. Users keep `uid` as a deprecated alias of `id`, removed in 4.0.0.
+- **Removed routes (404):** `GET /hello`, `PATCH /api/user` (a stub) and `POST /api/uploads` (local-disk upload, ADR-008/ADR-030).
+- **Media.**
+  - `GET /api/uploads/:collection/:id` now **302-redirects** to the record's image when it is an asset of this app's own Cloudinary cloud. Anything else (no image, another host, a Google avatar, a legacy filename) is 404. 2.x served a local file or a placeholder image.
+  - `PUT /api/uploads/:collection/:id` accepts one PNG, JPEG or GIF, checked by content (anything else is 400). A malformed multipart body is 400, and a file over 5 MB is **413** with the JSON envelope.
+- **Error codes.** Rate limiting is 429 `RATE_LIMITED`, with the envelope. A payload over a limit is 413 `PAYLOAD_TOO_LARGE`; JSON bodies over 100 kb now say `Payload too large` (was 413 `Invalid request data`).
+- **Search** returns `{ "data": [...] }`, not `{ "results": [...] }`.
+
+#### Added
+- Product responses include `state`, as category and user responses do (AM-M3-9).
+
+#### Changed
+- An administrator's `PUT /api/user/:id` also reaches a soft-deleted user, so `state: true` reactivates it; every other read or write treats a soft-deleted resource as missing (AM-M3-7).
+
+#### Removed
+- Local-disk media: `uploads/`, `assets/notFound.jpg` and the 2.x upload helpers.
+- The `Role` model. Roles are a code enum (`ADMIN_ROLE`, `USER_ROLE`, `VENTAS_ROLE`, ADR-007); nothing reads a 2.x `roles` collection any more, and M4 drops it.
+- `express-validator`, the legacy JavaScript and the strangler seam.
+
+#### Security
+- The request body DTOs close mass assignment on products: `_id`, `user`, `image` and `state` are no longer writable (VAL-02). Non-string inputs are rejected with 422 instead of reaching the database (REL-01, F3).
+- Media hardening:
+  - uploads are checked by magic bytes, not extension (SEC-08);
+  - the redirect only targets this app's own cloud, with an allowlisted path (AM-M3-1, no open redirect);
+  - only an own-cloud previous image is ever destroyed;
+  - the per-request temp folder is removed synchronously on every exit path.
+- A signed token whose `uid` is not an ObjectId is a 401, not a 400.
+- A rejected password never appears in validation error messages or logs (LOG-02).
+
+#### Changed (internal)
+- Feature-first TypeScript modules (`src/modules/{auth,users,categories,products,search,media}`), each composed as model → service → controller → routes, and wired in `createApp` (ADR-005, ADR-027…ADR-030). The legacy JavaScript, the strangler seam (`src/legacy.ts`) and `express-validator` are gone; the codebase is TypeScript only.
+- One zod `validate(part, schema)` middleware replaces express-validator (ADR-029). Interim `authenticate` and role guards replace the legacy middlewares (ADR-028); the roles are a code enum (ADR-007), and the `Role` model is gone.
+- Tests: 746 (was 248), including a contract test and service unit tests per module. `src/**` coverage is about 99 %.
+
 ## [2.1.0] - 2026-09-24 (M2: Foundation)
 
 Internal platform release (ADR-024). The HTTP contract of 2.0.0 is unchanged, apart from the additive and security items below.

@@ -1,5 +1,13 @@
 export type ErrorCode =
-  'BAD_REQUEST' | 'UNAUTHORIZED' | 'FORBIDDEN' | 'NOT_FOUND' | 'CONFLICT' | 'VALIDATION_FAILED' | 'INTERNAL';
+  | 'BAD_REQUEST'
+  | 'UNAUTHORIZED'
+  | 'FORBIDDEN'
+  | 'NOT_FOUND'
+  | 'CONFLICT'
+  | 'PAYLOAD_TOO_LARGE'
+  | 'VALIDATION_FAILED'
+  | 'RATE_LIMITED'
+  | 'INTERNAL';
 
 export interface ValidationIssue {
   readonly path: string;
@@ -51,9 +59,23 @@ export class ConflictError extends AppError {
   }
 }
 
+/** A body over a size limit: express.json's 100 kb, or the media upload's 5 MB (AM-M3-10). */
+export class PayloadTooLargeError extends AppError {
+  constructor(message = 'Payload too large', cause?: unknown) {
+    super(413, 'PAYLOAD_TOO_LARGE', message, { cause });
+  }
+}
+
 export class ValidationError extends AppError {
   constructor(details: readonly ValidationIssue[], message = 'Validation failed') {
     super(422, 'VALIDATION_FAILED', message, { details });
+  }
+}
+
+/** The auth limiter's 429 (C5), so its body is the envelope too (M3 §5.2). */
+export class RateLimitedError extends AppError {
+  constructor(message = 'Too many requests, please try again later') {
+    super(429, 'RATE_LIMITED', message);
   }
 }
 

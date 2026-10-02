@@ -14,18 +14,22 @@ import {
   type MockInstance,
 } from 'vitest';
 
+import { UserModel } from '../../../src/modules/users';
 import { clearDatabase, startTestApp, stopTestApp } from '../../helpers/app';
 import { expectStatus } from '../../helpers/assert';
-import { createUser, hashPassword } from '../../helpers/factories';
-import { googleTicket, stubGoogleVerify } from '../../helpers/legacy';
+import { stubGoogleClient } from '../../helpers/auth';
+import { authHeader, createUser, hashPassword, tokenFor } from '../../helpers/factories';
 
 const login = (app: Server, body: object) => request(app).post('/api/auth/login').send(body);
 const googleSignin = (app: Server, idToken = 'fake-id-token') =>
   request(app).post('/api/auth/google').send({ id_token: idToken });
 
+// C5: the one answer every credential failure gets (3.0.0: the error envelope).
+const INVALID_CREDENTIALS = { error: { code: 'UNAUTHORIZED', message: 'Invalid credentials' } };
+
 describe('auth surface', () => {
   let app: Server;
-  let googleVerify: ReturnType<typeof stubGoogleVerify>;
+  let googleVerify: ReturnType<typeof stubGoogleClient>;
 
   beforeAll(async () => {
     app = await startTestApp();
@@ -37,7 +41,7 @@ describe('auth surface', () => {
 
   beforeEach(async () => {
     await clearDatabase();
-    googleVerify = stubGoogleVerify();
+    googleVerify = stubGoogleClient();
   });
 
   describe('C5 credential failures return a generic 401', () => {
@@ -45,7 +49,7 @@ describe('auth surface', () => {
       const res = await login(app, { email: 'nobody@example.com', password: 'whatever-123' });
 
       expect(res.statusCode).toBe(401);
-      expect(res.body).toEqual({ msg: 'Invalid credentials' });
+      expect(res.body).toEqual(INVALID_CREDENTIALS);
     });
 
     test('a disabled account is 401 with the same generic message', async () => {
@@ -58,7 +62,7 @@ describe('auth surface', () => {
       const res = await login(app, { email: disabled.email, password: 'correct-password' });
 
       expect(res.statusCode).toBe(401);
-      expect(res.body).toEqual({ msg: 'Invalid credentials' });
+      expect(res.body).toEqual(INVALID_CREDENTIALS);
     });
 
     test('a wrong password is 401 with the same generic message', async () => {
@@ -70,7 +74,7 @@ describe('auth surface', () => {
       const res = await login(app, { email: user.email, password: 'not-the-password' });
 
       expect(res.statusCode).toBe(401);
-      expect(res.body).toEqual({ msg: 'Invalid credentials' });
+      expect(res.body).toEqual(INVALID_CREDENTIALS);
     });
 
     test('valid credentials still return a token (positive control)', async () => {
@@ -82,7 +86,7 @@ describe('auth surface', () => {
       const res = await login(app, { email: user.email, password: 'correct-password' });
 
       expectStatus(res, 200);
-      expect(typeof res.body.token).toBe('string');
+      expect(typeof res.body.data.token).toBe('string');
     });
 
     test('google sign-in for a disabled user is 401 with the generic message', async () => {
@@ -91,18 +95,17 @@ describe('auth surface', () => {
         state: false,
         google: true,
       });
-      googleVerify.mockResolvedValueOnce(
-        googleTicket({
-          name: 'Disabled Google',
-          picture: 'https://example.com/p.png',
-          email: disabled.email,
-        }),
-      );
+      googleVerify.mockResolvedValueOnce({
+        name: 'Disabled Google',
+        picture: 'https://example.com/p.png',
+        email: disabled.email,
+        emailVerified: true,
+      });
 
       const res = await googleSignin(app);
 
       expect(res.statusCode).toBe(401);
-      expect(res.body).toEqual({ msg: 'Invalid credentials' });
+      expect(res.body).toEqual(INVALID_CREDENTIALS);
     });
   });
 
@@ -124,18 +127,18 @@ describe('auth surface', () => {
 
       [unknownEmail, disabledUser, wrongPassword].forEach((res) => {
         expect(res.statusCode).toBe(401);
-        expect(res.body).toEqual({ msg: 'Invalid credentials' });
+        expect(res.body).toEqual(INVALID_CREDENTIALS);
       });
       expect(unknownEmail.body).toEqual(disabledUser.body);
       expect(disabledUser.body).toEqual(wrongPassword.body);
     });
 
     // Timing: every failure must cost one full bcrypt comparison at the production
-    // cost (10), whatever the account stores. Asserted on the compareSync call, not on
+    // cost (10), whatever the account stores. Asserted on the bcrypt.compare call (async, ADR-035), not on
     // wall-clock time. The accounts use real cost-10 hashes, not the helper's cost 4.
     describe('every failure costs exactly one cost-10 bcrypt comparison', () => {
       const COST_10_HASH = /^\$2[ab]\$10\$[./A-Za-z0-9]{53}$/;
-      let compareSync: MockInstance<typeof bcrypt.compareSync>;
+      let compare: MockInstance<typeof bcrypt.compare>;
 
       // This file shares one C5 budget (10 auth requests per IP) that the tests above
       // almost use up. Here every login comes from its own client behind a trusted
@@ -150,11 +153,11 @@ describe('auth surface', () => {
       });
 
       beforeEach(() => {
-        compareSync = vi.spyOn(bcrypt, 'compareSync');
+        compare = vi.spyOn(bcrypt, 'compare');
       });
 
       afterEach(() => {
-        compareSync.mockRestore();
+        compare.mockRestore();
       });
 
       const cases: Array<[string, () => Promise<{ email: string; password: string }>]> = [
@@ -194,19 +197,30 @@ describe('auth surface', () => {
             return { email: user.email, password: 'any-password-123' };
           },
         ],
+        [
+          'any password on a Google-only account with no password at all (ADR-036)',
+          async () => {
+            const user = await createUser({
+              email: 'timing-google-m5@example.com',
+              password: undefined,
+              google: true,
+            });
+            return { email: user.email, password: 'any-password-123' };
+          },
+        ],
       ];
 
       test.each(cases)('%s', async (name, setup) => {
         const body = await setup();
-        compareSync.mockClear();
+        compare.mockClear();
 
         const res = await loginAsNewClient(body);
 
         expect(res.statusCode).toBe(401);
-        expect(res.body).toEqual({ msg: 'Invalid credentials' });
-        expect(Object.keys(res.body)).toEqual(['msg']);
-        expect(compareSync).toHaveBeenCalledTimes(1);
-        expect(compareSync.mock.calls[0]![1]).toMatch(COST_10_HASH);
+        expect(res.body).toEqual(INVALID_CREDENTIALS);
+        expect(Object.keys(res.body)).toEqual(['error']);
+        expect(compare).toHaveBeenCalledTimes(1);
+        expect(compare.mock.calls[0]![1]).toMatch(COST_10_HASH);
       });
 
       test('a Google-created account answers exactly like an unknown email', async () => {
@@ -234,9 +248,87 @@ describe('auth surface', () => {
           const res = await loginAsNewClient({ email: google.email, password });
 
           expect(res.statusCode).toBe(401);
-          expect(res.body).toEqual({ msg: 'Invalid credentials' });
+          expect(res.body).toEqual(INVALID_CREDENTIALS);
         }
       });
+    });
+  });
+
+  // F1 extended to PUT /api/auth/password (§5.1): a wrong current password, an account with no password (Google-only)
+  // and one with the old placeholder all cost exactly one cost-10 compare and get the one generic 401.
+  describe('F1 on the password change', () => {
+    const COST_10_HASH = /^\$2[ab]\$10\$[./A-Za-z0-9]{53}$/;
+    const change = (token: string, currentPassword: string) =>
+      request(app)
+        .put('/api/auth/password')
+        .set(authHeader(token))
+        .send({ currentPassword, newPassword: 'a-brand-new-password' });
+
+    test.each<[string, Record<string, unknown>, string]>([
+      ['a wrong current password', { password: bcrypt.hashSync('correct-password', 10) }, 'wrong-password'],
+      ['a Google-only account with no password', { password: undefined, google: true }, 'any-password-123'],
+      ["an account with the old ':D' placeholder", { password: ':D', google: true }, ':D'],
+      [
+        'the dummy password on a Google-only account',
+        { password: undefined, google: true },
+        'dummy-password',
+      ],
+    ])('%s: one cost-10 compare, the generic 401', async (_case, account, currentPassword) => {
+      const user = await createUser(account);
+      const token = await tokenFor(user);
+      const compare = vi.spyOn(bcrypt, 'compare');
+
+      const res = await change(token, currentPassword);
+
+      expect(res.status).toBe(401);
+      expect(res.body).toEqual(INVALID_CREDENTIALS);
+      expect(compare).toHaveBeenCalledTimes(1);
+      expect(compare.mock.calls[0]![1]).toMatch(COST_10_HASH);
+    });
+  });
+
+  // ADR-035 / P25: a hash of another cost converges to config.auth.bcryptCost (10 here) on the first successful
+  // login, after the answer. From then on a wrong password on that account costs what it costs on any other.
+  describe('rehash-on-login (ADR-035, the SEC-07 residual)', () => {
+    const COST_4_HASH = /^\$2[ab]\$04\$/;
+    const COST_10_HASH = /^\$2[ab]\$10\$[./A-Za-z0-9]{53}$/;
+    let proxiedApp: Server;
+    let client = 0;
+    const loginAsNewClient = (body: object) =>
+      login(proxiedApp, body).set('X-Forwarded-For', `192.0.2.${(client += 1)}`);
+    const storedHash = async (id: string) => (await UserModel.findById(id, '+password').lean())?.password;
+
+    beforeAll(async () => {
+      proxiedApp = await startTestApp({ TRUST_PROXY: '1' });
+    });
+
+    test('a cost-4 hash becomes a cost-10 one after a successful login, and a later failure compares at cost 10', async () => {
+      const user = await createUser({
+        email: 'rehash@example.com',
+        password: bcrypt.hashSync('correct-password', 4),
+      });
+
+      expectStatus(await loginAsNewClient({ email: user.email, password: 'correct-password' }), 200);
+
+      await vi.waitFor(async () => expect(await storedHash(user.id)).toMatch(COST_10_HASH));
+      const compare = vi.spyOn(bcrypt, 'compare');
+      const wrong = await loginAsNewClient({ email: user.email, password: 'wrong-password' });
+      expect(wrong.status).toBe(401);
+      expect(compare.mock.calls[0]![1]).toMatch(COST_10_HASH);
+      // the new hash is the same password
+      expectStatus(await loginAsNewClient({ email: user.email, password: 'correct-password' }), 200);
+    });
+
+    test('a failed login never rehashes', async () => {
+      const user = await createUser({
+        email: 'no-rehash@example.com',
+        password: bcrypt.hashSync('correct-password', 4),
+      });
+
+      expect((await loginAsNewClient({ email: user.email, password: 'wrong-password' })).status).toBe(401);
+
+      await new Promise((resolve) => setTimeout(resolve, 150)); // a rehash would have landed by now
+      expect(await storedHash(user.id)).toMatch(COST_4_HASH);
     });
   });
 });

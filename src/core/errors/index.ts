@@ -5,6 +5,8 @@ export {
   ForbiddenError,
   InternalError,
   NotFoundError,
+  PayloadTooLargeError,
+  RateLimitedError,
   UnauthorizedError,
   ValidationError,
   type ErrorCode,

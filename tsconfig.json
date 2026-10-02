@@ -12,18 +12,7 @@
     "isolatedModules": true, // tsx and Vitest transpile per file
     "esModuleInterop": true, // `false` is deprecated in TS 6
     "skipLibCheck": true,
-    "allowJs": true, // ADR-002: legacy JS is part of the program…
-    "checkJs": false, // …but is not type-checked
     "noEmit": true
   },
-  "include": [
-    "src",
-    "tests",
-    "routes",
-    "controllers",
-    "middlewares",
-    "helpers",
-    "models",
-    "vitest.config.mts"
-  ]
+  "include": ["src", "tests", "vitest.config.mts"]
 }

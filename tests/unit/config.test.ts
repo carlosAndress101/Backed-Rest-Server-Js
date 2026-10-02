@@ -6,7 +6,7 @@ const REQUIRED = ['MONGO_CLOUD', 'SECRET_KEY', 'GOOGLE_CLIENT_ID', 'CLOUDINARY_U
 
 const VALID: NodeJS.ProcessEnv = {
   MONGO_CLOUD: 'mongodb://127.0.0.1:27017/cafe',
-  SECRET_KEY: 'jwt-secret',
+  SECRET_KEY: 'jwt-secret-at-least-32-characters-long',
   GOOGLE_CLIENT_ID: 'client-id.apps.googleusercontent.com',
   CLOUDINARY_URL: 'cloudinary://key:secret@demo',
 };
@@ -39,8 +39,14 @@ describe('loadConfig defaults', () => {
       mongoUri: VALID.MONGO_CLOUD,
       cors: { origins: '*' },
       trustProxy: undefined,
-      auth: { jwtSecret: VALID.SECRET_KEY, googleClientId: VALID.GOOGLE_CLIENT_ID },
+      auth: {
+        jwtSecret: VALID.SECRET_KEY,
+        googleClientId: VALID.GOOGLE_CLIENT_ID,
+        jwtTtlSeconds: 4 * 60 * 60,
+        bcryptCost: 10,
+      },
       media: { cloudinaryUrl: VALID.CLOUDINARY_URL },
+      seed: { adminEmail: undefined, adminPassword: undefined },
     });
   });
 
@@ -166,4 +172,103 @@ describe('CORS_ORIGINS', () => {
   test('a list of only separators means any origin', () => {
     expect(load({ CORS_ORIGINS: ' , ,' }).cors.origins).toBe('*');
   });
+});
+
+describe('SEED_ADMIN_* (M4 design §6, D-14)', () => {
+  const PASSWORD = 'seed-admin-secret-9f3c';
+
+  test('both set: config.seed carries them as given (the seed trims and lowercases the email)', () => {
+    expect(load({ SEED_ADMIN_EMAIL: ' Admin@Example.com ', SEED_ADMIN_PASSWORD: PASSWORD }).seed).toEqual({
+      adminEmail: ' Admin@Example.com ',
+      adminPassword: PASSWORD,
+    });
+  });
+
+  test('both are optional, and an empty value counts as unset', () => {
+    expect(load({ SEED_ADMIN_EMAIL: '', SEED_ADMIN_PASSWORD: '' }).seed).toEqual({
+      adminEmail: undefined,
+      adminPassword: undefined,
+    });
+  });
+
+  test("any value loads: a weak password or a malformed email is the seed's to refuse, never a boot failure", () => {
+    expect(load({ SEED_ADMIN_EMAIL: 'not-an-email', SEED_ADMIN_PASSWORD: 'short' }).seed).toEqual({
+      adminEmail: 'not-an-email',
+      adminPassword: 'short',
+    });
+  });
+
+  test('P20: a ConfigError never echoes SEED_ADMIN_PASSWORD, or any other value', () => {
+    const { message } = configError({
+      SEED_ADMIN_EMAIL: 'admin@example.com',
+      SEED_ADMIN_PASSWORD: PASSWORD,
+      PORT: 'not-a-port',
+      NODE_ENV: 'staging',
+    });
+
+    expect(message).toMatch(/→ at MONGO_CLOUD$/m);
+    expect(message).not.toContain(PASSWORD);
+    expect(message).not.toContain('not-a-port');
+    expect(message).not.toContain('staging');
+  });
+});
+
+describe('SECRET_KEY must hold 256 bits for HS256 (ADR-034)', () => {
+  test.each([
+    ['31 characters', 'x'.repeat(31)],
+    ['10 characters, the M4 test value', 'jwt-secret'],
+  ])('a secret of %s is a ConfigError naming SECRET_KEY, never its value', (_case, secret) => {
+    const { message } = configError({ ...VALID, SECRET_KEY: secret });
+
+    expect(message).toMatch(/must be at least 32 characters \(256 bits\) for HS256\n\s+→ at SECRET_KEY$/m);
+    expect(message).not.toContain(secret);
+  });
+
+  test('32 characters is enough', () => {
+    expect(load({ SECRET_KEY: 'y'.repeat(32) }).auth.jwtSecret).toBe('y'.repeat(32));
+  });
+});
+
+describe('JWT_TTL (AM-M5-2)', () => {
+  test('defaults to 4h, as seconds', () => {
+    expect(load().auth.jwtTtlSeconds).toBe(14_400);
+  });
+
+  test.each([
+    ['3600', 3600], // a bare integer is seconds, never jsonwebtoken's milliseconds
+    ['90s', 90],
+    ['15m', 900],
+    ['4h', 14_400],
+    ['7d', 604_800],
+  ])('%s is %i seconds', (ttl, seconds) => {
+    expect(load({ JWT_TTL: ttl }).auth.jwtTtlSeconds).toBe(seconds);
+  });
+
+  test.each(['0', '0h', '-1h', '4 h', '1.5h', '4w', 'h', '4H', 'forever'])(
+    'JWT_TTL=%j is a ConfigError naming JWT_TTL',
+    (ttl) => {
+      expect(configError({ ...VALID, JWT_TTL: ttl }).message).toMatch(/→ at JWT_TTL$/m);
+    },
+  );
+});
+
+describe('BCRYPT_COST (AM-M5-3)', () => {
+  test('defaults to 10, the 2.x cost', () => {
+    expect(load().auth.bcryptCost).toBe(10);
+  });
+
+  test.each([
+    ['10', 10],
+    ['12', 12],
+    ['14', 14],
+  ])('%s is accepted', (cost, expected) => {
+    expect(load({ BCRYPT_COST: cost }).auth.bcryptCost).toBe(expected);
+  });
+
+  test.each(['9', '15', '31', '10.5', 'ten'])(
+    'BCRYPT_COST=%j is a ConfigError naming BCRYPT_COST',
+    (cost) => {
+      expect(configError({ ...VALID, BCRYPT_COST: cost }).message).toMatch(/→ at BCRYPT_COST$/m);
+    },
+  );
 });

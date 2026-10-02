@@ -13,7 +13,7 @@ export interface SignedIn {
   readonly token: string;
 }
 
-/** Creates a user with PASSWORD straight in the file's database (legacy models register on the first createApp). */
+/** Creates a user with PASSWORD straight in the file's database (the models register when src/app loads). */
 export async function createUser(
   role: 'USER_ROLE' | 'ADMIN_ROLE' = 'USER_ROLE',
 ): Promise<{ id: string; email: string }> {
@@ -28,8 +28,8 @@ export async function createUser(
 }
 
 /**
- * Creates a user and signs in through the real login route. Each call spends one request of the
- * per-process login limiter (10 per window), so a file signs in sparingly.
+ * Creates a user and signs in through the real login route. Each call spends one request of the app's
+ * login limiter (10 per window), so a file signs in sparingly.
  */
 export async function signIn(
   server: Server,
@@ -38,7 +38,7 @@ export async function signIn(
   const { id, email } = await createUser(role);
   const res = await request(server).post('/api/auth/login').send({ email, password: PASSWORD });
   if (res.status !== 200) throw new Error(`login failed: ${res.status} ${JSON.stringify(res.body)}`);
-  return { id, token: res.body.token };
+  return { id, token: res.body.data.token };
 }
 
 export type AppRequest = IncomingMessage & { body?: unknown; app: Express };
