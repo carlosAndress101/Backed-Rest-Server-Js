@@ -275,6 +275,21 @@ describe('createProductsService', () => {
       );
     });
 
+    test('moving to another active category stores it, and keeps the owner', async () => {
+      const { service, productRows } = makeService(
+        [{ _id: '1', name: 'KEYBOARD', state: true, category: CATEGORY, user: EDITOR }],
+        [
+          { _id: CATEGORY, state: true },
+          { _id: 'other-category-id', state: true },
+        ],
+      );
+
+      const updated = await service.update('1', { category: 'other-category-id' }, OWNER);
+
+      expect(updated).toMatchObject({ category: 'other-category-id', user: EDITOR });
+      expect(productRows[0]).toMatchObject({ name: 'KEYBOARD', category: 'other-category-id', user: EDITOR });
+    });
+
     // AM-M6-8: accepted residual — the category's own 404 outranks the ownership 403, for anyone.
     test('a category that is not active is a NotFoundError and nothing is written, even for a non-owner', async () => {
       const { service, productRows } = makeService(
