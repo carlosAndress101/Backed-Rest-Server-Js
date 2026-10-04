@@ -170,6 +170,5 @@ $RECYCLE.BIN/
 *.lnk
 
 # End of https://www.toptal.com/developers/gitignore/api/node,windows,dotenv
-.atl/.skill-registry.cache.json
-.gitignore
 .atl/skill-registry.md
+.atl/.skill-registry.cache.json
