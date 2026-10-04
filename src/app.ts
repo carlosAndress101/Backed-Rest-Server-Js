@@ -6,6 +6,7 @@ import { isObjectIdOrHexString } from 'mongoose';
 import type { Config } from './config';
 import type { Logger } from './core/logger';
 import { createTokenService } from './core/security/jwt';
+import { docsModule } from './docs';
 import { authenticate, type UserLookup } from './middlewares/authenticate';
 import { errorHandler } from './middlewares/error-handler';
 import { notFound } from './middlewares/not-found';
@@ -74,6 +75,9 @@ export function createApp({ config, logger }: AppDeps): Express {
       cloudinaryUrl: config.media.cloudinaryUrl,
     }),
   );
+
+  // D5 (ADR-047): when disabled, /docs is absent (the standard 404), never a distinct refusal.
+  if (config.docs.enabled) app.use('/docs', docsModule());
 
   app.use(notFound);
   app.use(errorHandler);
