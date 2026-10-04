@@ -19,7 +19,7 @@ const GLOBAL_CSP =
   "style-src 'self' https: 'unsafe-inline';upgrade-insecure-requests";
 const DOCS_CSP =
   "default-src 'self';base-uri 'self';font-src 'self' https: data:;form-action 'self';frame-ancestors 'self';" +
-  `img-src 'self' data:;object-src 'none';script-src ${UI_BUNDLE_URL};script-src-attr 'none';` +
+  `img-src 'self' data: https://cdn.redoc.ly;object-src 'none';script-src ${UI_BUNDLE_URL};script-src-attr 'none';` +
   "style-src 'self' https: 'unsafe-inline';worker-src blob:";
 const ROUTE_NOT_FOUND = { error: { code: 'NOT_FOUND', message: 'Route not found' } };
 
