@@ -146,9 +146,12 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 ```
-Superseded PR pushes still cancel; every `push` to `master` (and `main`, rename-safe) runs to
-completion. Validate YAML parses and the expression is static-review correct (no runtime CI to
-observe from here; behavior confirms on the next PR + push).
+Superseded PR pushes still cancel; a `push` run on `master` (and `main`, rename-safe) is never
+canceled once started. Precision (RDD advisory R3-001): GitHub keeps one running plus at most one
+pending run per concurrency group, so a newer `master` push replaces an older run that is still
+pending — the guarantee is that every *started* run completes, not that every push gets its own
+run. Validate YAML parses and the expression is static-review correct (no runtime CI to observe
+from here; behavior confirms on the next PR + push).
 
 **Alternatives considered**:
 - *Branch-scoped groups (`ci-pr-…` vs `ci-master-…`)* — rejected: more YAML for identical semantics.

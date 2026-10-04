@@ -86,7 +86,13 @@ MUST be centralized in the helpers for reuse.
 
 - GIVEN the factory helper exists
 - WHEN the test suite is searched for hand-rolled `role: 'VENTAS_ROLE'` literals
-- THEN no hand-rolled occurrences remain outside the factory itself
+- THEN no hand-rolled occurrences remain outside the factory itself, exempting
+  data-under-test sites (fixtures whose role literal is the value being asserted)
+  and the DB-seed suites (`tests/integration/database/indexes.test.ts`,
+  `tests/integration/database/migrations.test.ts`), which stay raw because the
+  stored role value is the system under test (see task 1.4); the factory itself
+  passes the role as an argument, so the `role: 'VENTAS_ROLE'` key shape at those
+  exempt sites is expected and the grep check is read against this allowlist
 
 #### Scenario: Shared fakes are reusable
 
