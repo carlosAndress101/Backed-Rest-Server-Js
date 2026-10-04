@@ -25,6 +25,8 @@ export interface Config {
   };
   /** Consumed by the media module in M3. */
   readonly media: { readonly cloudinaryUrl: string };
+  /** D5 (ADR-047): /docs and /docs/openapi.json are mounted only when true. */
+  readonly docs: { readonly enabled: boolean };
   /** Read only by `pnpm seed` (M4 design §6, D-14). `adminPassword` is never logged (P20). */
   readonly seed: { readonly adminEmail?: string; readonly adminPassword?: string };
 }
@@ -61,6 +63,7 @@ export function loadConfig(source: NodeJS.ProcessEnv = process.env): Config {
       bcryptCost: env.BCRYPT_COST,
     },
     media: { cloudinaryUrl: env.CLOUDINARY_URL },
+    docs: { enabled: env.DOCS_ENABLED ?? env.NODE_ENV !== 'production' },
     seed: { adminEmail: env.SEED_ADMIN_EMAIL, adminPassword: env.SEED_ADMIN_PASSWORD },
   });
 }

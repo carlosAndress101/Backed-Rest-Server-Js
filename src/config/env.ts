@@ -41,6 +41,11 @@ export const envSchema = z.object({
     .regex(/^\d+$/, 'must be a non-negative integer hop count (C9)')
     .transform(Number)
     .optional(),
+  // D5 (ADR-047). Strict: never z.coerce.boolean(), which reads the string 'false' as true.
+  DOCS_ENABLED: z
+    .enum(['true', 'false'], "must be 'true' or 'false'")
+    .transform((value) => value === 'true')
+    .optional(),
   // The first admin `pnpm seed` creates (M4 design §6). Plain strings: the seed checks them, not the boot.
   SEED_ADMIN_EMAIL: z.string().optional(),
   SEED_ADMIN_PASSWORD: z.string().optional(), // never logged (P20)
