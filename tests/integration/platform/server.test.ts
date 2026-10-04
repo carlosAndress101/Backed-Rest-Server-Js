@@ -38,6 +38,20 @@ function boot(env: NodeJS.ProcessEnv): Booted {
   };
 }
 
+/** Runs `src/cli.ts` with exactly `env` (plus PATH and HOME); resolves to the exit code. */
+async function runCli(env: NodeJS.ProcessEnv, args: readonly string[]): Promise<number> {
+  const child = spawn(process.execPath, ['--import', 'tsx', 'src/cli.ts', ...args], {
+    cwd: ROOT,
+    env: { PATH: process.env.PATH, HOME: process.env.HOME, ...env },
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+  running.add(child);
+  child.once('exit', () => running.delete(child));
+  child.stdout.resume();
+  child.stderr.resume();
+  return once(child, 'exit').then(([code]) => (code as number | null) ?? 1);
+}
+
 /** A port that is free on 127.0.0.1 right now. */
 async function freePort(): Promise<number> {
   const probe = createServer().listen(0, '127.0.0.1');
@@ -86,12 +100,14 @@ describe('src/server.ts', () => {
     'in production, DOCS_ENABLED=true warns at boot and serves /docs/openapi.json (D5)',
     async () => {
       const port = await freePort();
-      const server = boot({
+      const env = {
         ...validEnv(port),
         NODE_ENV: 'production',
         CORS_ORIGINS: 'https://shop.example',
         DOCS_ENABLED: 'true',
-      });
+      };
+      expect(await runCli(env, ['migrate', 'up'])).toBe(0); // OPS-05: a production boot needs M001
+      const server = boot(env);
       await vi.waitFor(() => expect(server.output().stdout).toContain('server listening'), {
         timeout: BOOT_TIMEOUT_MS,
       });
@@ -131,5 +147,42 @@ describe('src/server.ts', () => {
       expect(server.output().stdout).toContain('shutting down');
     },
     BOOT_TIMEOUT_MS * 2,
+  );
+
+  test(
+    'in production, a database without M001 refuses to serve (OPS-05)',
+    async () => {
+      const port = await freePort();
+      const server = boot({ ...validEnv(port), NODE_ENV: 'production' });
+
+      expect(await server.exited).toBe(1);
+      const { stdout } = server.output();
+      expect(stdout).toContain('M001-normalize-email is not applied');
+      expect(stdout).toContain('pnpm migrate up');
+      expect(stdout).not.toContain('server listening');
+    },
+    BOOT_TIMEOUT_MS,
+  );
+
+  test(
+    'in production, after `migrate up` the same database boots and serves /health (OPS-05)',
+    async () => {
+      const port = await freePort();
+      const env = { ...validEnv(port), NODE_ENV: 'production' };
+      expect(await runCli(env, ['migrate', 'up'])).toBe(0);
+
+      const server = boot(env);
+      await vi.waitFor(() => expect(server.output().stdout).toContain('server listening'), {
+        timeout: BOOT_TIMEOUT_MS,
+      });
+
+      const res = await fetch(`http://127.0.0.1:${port}/health`);
+      expect(res.status).toBe(200);
+      expect(await res.json()).toEqual({ data: { status: 'ok' } });
+
+      server.signal('SIGTERM');
+      expect(await server.exited).toBe(0);
+    },
+    BOOT_TIMEOUT_MS * 3,
   );
 });

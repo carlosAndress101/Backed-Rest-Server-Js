@@ -41,3 +41,29 @@ jobs:
       - run: pnpm build
       - run: pnpm test:coverage
       - run: pnpm audit --prod
+
+  docker:
+    name: Docker build and compose smoke test
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Build the production image
+        run: docker build --target runtime --tag backed-rest-server-js:ci .
+      - name: Validate compose configuration
+        run: docker compose config
+      - name: Build the development compose target
+        run: docker compose build api
+      - name: Start the local stack
+        run: docker compose up -d
+      - name: Check liveness
+        # The published port accepts and resets connections until the app listens: retry every error.
+        run: curl --fail --silent --show-error --retry 24 --retry-delay 5 --retry-all-errors http://127.0.0.1:1500/health
+      - name: Show the api logs
+        if: failure()
+        run: docker compose logs api
+      - name: Stop the local stack
+        if: always()
+        run: docker compose down -v --remove-orphans

@@ -37,8 +37,10 @@ Every route is a TypeScript feature module (`src/modules/<feature>`). "Auth" = w
 | 25 | PUT | `/api/auth/password` | JWT | `{ currentPassword, newPassword }` (8 characters to 72 bytes) | 200 `{ data: { token } }` (a fresh token; every earlier one is revoked) | — | 🟢 | — |
 | 26 | GET | `/docs` | none; mounted only when `DOCS_ENABLED` is on (default off in production, ADR-047) | — | 200 HTML (the Redoc page, with its own CSP, ADR-046); otherwise 404 | — | 🟢 | — |
 | 27 | GET | `/docs/openapi.json` | none; the same flag | — | 200 the OpenAPI 3.1 document (`Cache-Control: no-cache`, ETag); otherwise 404 | — | 🟢 | — |
+| 28 | GET | `/health` | none (platform liveness) | — | 200 `{ data: { status: 'ok' } }`, no database touch | — | 🟢 | — |
+| 29 | GET | `/ready` | none (platform readiness) | — | 200 `{ data: { status: 'ok' } }` after a DB ping; otherwise 500 `INTERNAL` | — | 🟢 | — |
 
-**Totals:** 27 entry points · 🔴 0 · 🟠 0 (after M6: 1) · 🟢 23 (after M6: 21) · ✂️ 4 removed
+**Totals:** 29 entry points · 🔴 0 · 🟠 0 (after M6: 1) · 🟢 25 (after M6: 21) · ✂️ 4 removed
 
 ## Planned contract changes (breaking-change ledger)
 
@@ -85,3 +87,5 @@ Every change clients can observe is listed here before it ships, and in CHANGELO
 | M6 | **Messages and order:** every authorization 403 says `Not allowed` (product ownership: `Only the creator, an administrator or VENTAS_ROLE may …`). A non-creator's product `PUT`/`DELETE` with a malformed id is **422** (was 403), and with a missing `category` 404 (AM-M6-8). A request on your own account with an upper-case id is accepted (was 403, AM-M6-7) | #4, #6, #7, #12, #13, #17, #18, #19, #21 |
 | M8 | **Removed:** `GET /` no longer serves the `public/` demo page (**404**). Its Google sign-in allowances leave the global headers: every response now carries helmet's default CSP and `Cross-Origin-Opener-Policy: same-origin`; `Cross-Origin-Resource-Policy: cross-origin` stays (ADR-050) | #23, all |
 | M8 | **Added:** `GET /docs` and `GET /docs/openapi.json`, mounted only when `DOCS_ENABLED` is on (default off in production) | #26, #27 |
+| M9 | **Added:** `GET /health` (liveness, always 200 when serving) and `GET /ready` (200 after a DB ping, otherwise 500 `INTERNAL`); both anonymous platform routes, outside the OpenAPI catalog | #28, #29 |
+| M9 | **Operational:** a production boot without `M001-normalize-email` in the ledger exits 1 — run `pnpm migrate up` first; deploy order is build image, migrate, serve (no target yet) | — |

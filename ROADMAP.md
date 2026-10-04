@@ -16,7 +16,7 @@ Complexity scale: **S** (≤1 agent-day) · **M** (2–3) · **L** (4–6) · **
 | M6 | Authorization (RBAC + ownership) | M | M5 | ✅ Accepted 2026-09-25 (T6.4 review: ACCEPT), release **3.0.0** ([design](docs/design/M6-authz.md)) |
 | M7 | Testing Hardening | M | M6 | ✅ Accepted 2026-10-01, release **3.0.0** ([change](openspec/changes/m7-testing-hardening/proposal.md)) |
 | M8 | API Documentation | S–M | M3, M6 | ✅ Delivered 2026-10-04 (slices S1–S7), release **3.1.0** ([change](openspec/changes/m8-api-documentation/proposal.md)) |
-| M9 | Docker & Production Readiness | M | M2, M4 | Planned |
+| M9 | Docker & Production Readiness | M | M2, M4 | ✅ Delivered 2026-10-04 (slices S0–S4), release **3.2.0** pending, not yet released ([change](openspec/changes/m9-docker-production/proposal.md)) |
 | M10 | CI/CD | M | M9 (basic CI lands in M2) | Planned |
 
 Why this order differs from the default template: **security first** (ADR-001) because Critical, unauthenticated exploits exist in a public repo. The deployment it referenced (Zeabur) is gone (owner, 2026-09-23), but anyone can still run the public code. **Foundation before refactor**, so the refactor lands on typed config, errors, and tests. **Database before auth**, because auth hardening needs `tokenVersion` and normalised emails. **Validation is folded into the refactor**, because every validation chain moves anyway, and doing it twice would violate DRY.
@@ -96,7 +96,8 @@ Why this order differs from the default template: **security first** (ADR-001) b
 - **Risks:** Spec drift, mitigated by generating from code rather than writing by hand.
 - **Complexity:** S–M · **Dependencies:** M3, M6.
 
-## M9: Docker & Production Readiness
+## M9: Docker & Production Readiness ✅ (delivered 2026-10-04, release 3.2.0 pending)
+- **Outcome:** a three-stage Node 24 alpine production image (non-root, prod deps only, direct `node` PID 1, `/health` healthcheck) plus dev-local compose; anonymous `GET /health` and `GET /ready` (matrix #28/#29, 500 `INTERNAL` when the DB ping fails); a production-only boot guard on `M001-normalize-email` (OPS-05); a README production checklist. OPS-03 (remainder), OPS-04, OPS-05 closed; ADR-051…ADR-053. Multi-instance rate-limiter store deferred (no target, YAGNI); image build/push pipeline is M10.
 - **Goal:** A deployable, operable, stateless service.
 - **Deliverables:** a multi-stage Dockerfile (Node 24 alpine, non-root, prod deps only); docker-compose with API and Mongo for local dev; `/health` (liveness) and `/ready` (DB ping); graceful shutdown on SIGTERM; `trust proxy` config; stdout JSON logs; a production config checklist.
 - **Risks:** Docker isn't installed on the dev machine, so Docker Desktop, OrbStack, or Colima is needed. There is no deployment target: the Zeabur deployment is retired (owner, 2026-09-23). M9 ships a platform-agnostic container plus `TRUST_PROXY` guidance, and the target is chosen then.
