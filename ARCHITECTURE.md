@@ -347,6 +347,25 @@ tests/{setup,helpers,unit,unit/modules,integration/{modules,platform,security}}
 
 **Next:** release **3.0.0** from `next` into `master` (ADR-024, ADR-026): the CHANGELOG `[3.0.0]` consolidation, the combined runbook (M6 design §10) and the tag. Then M7.
 
+### 1.14 State after M8 (unreleased, planned as 3.1.0, 2026-10-04)
+
+**API documentation** (change [m8-api-documentation](openspec/changes/m8-api-documentation/design.md), owner decisions D1–D6, ADR-045…ADR-050):
+- **`src/docs/`** sits at the composition level, beside `src/app.ts`: `error-catalog.ts` (every `ErrorCode` with its status), `components.ts` (docs-only response schemas and the Bearer scheme), `openapi.ts` (`toJsonSchema` and the pure `buildOpenApiDocument`), `operations.ts` (`API_OPERATIONS`, the 21 operations, with each module's request schemas by identity), `page.ts` (the pinned Redoc bundle and its CSP) and `index.ts` (`docsModule()`). It reads module contracts only (§2.3 rule 6).
+- **Serving (ADR-046, ADR-047):** `createApp` mounts `/docs` as a Router when `config.docs.enabled`. The document is built and serialized once per app; `GET /docs/openapi.json` and `GET /docs` answer `Cache-Control: no-cache` with an ETag, and only `GET /docs` gets its own CSP.
+- **Drift guards:** the catalog equals the permission matrix's `/api` rows, every module DTO is wired in, `info.version` equals `package.json`, and `README.md`, `.env.example`, `ERROR_CODES.md` and `api.http` are each checked against the code they describe.
+- **Matrix (ADR-044):** the `/docs` prefix and rows #26 and #27; the drift check and the TEST-05 permutations now pair 7 routers.
+- **Headers (ADR-050):** the `public/` demo page is gone, so the global headers are helmet's defaults plus CORP `cross-origin` and the referrer policy.
+
+**Config:** `DOCS_ENABLED` (`true` | `false`; unset means on in development and test, off in production).
+
+**Data:** none. `M001`–`M006` remain the complete migration set.
+
+**Deploy:** no new step. Set `DOCS_ENABLED=true` to serve the docs in production; the boot then logs a warning.
+
+**Tests:** 1567 (1 more, an opt-in remote SRI check, is skipped by default), including the OpenAPI builder and catalog drift guards, the docs integration suite and the doc-drift suite.
+
+**Next:** release **3.1.0** (ADR-024): the CHANGELOG `[3.1.0]` cut and the tag, with `API_VERSION` bumped alongside `package.json`. Then M9.
+
 ---
 
 ## 2. To-be (target)
@@ -395,6 +414,7 @@ routes ──► controller ──► service ──► model (Mongoose) / exter
 3. **Services** own business rules and persistence calls. They receive dependencies (models, clients, config) through a factory: `createUsersService({ User, passwordHasher, config })`. They throw `AppError`s and never import Express.
 4. **Modules** never import another module. A sibling's model reaches a module through the composition root, as a narrow interface (M3, lint-enforced).
 5. **Cross-cutting code** lives in `core/` and must not import from `modules/`.
+6. **`src/docs/`** reads module contracts only: `*.schemas.ts` exports and named constants (`SEARCH_COLLECTIONS`, `MAX_FILE_BYTES`). It never imports routes, controllers, models, middlewares or the database (M8, lint-enforced, ADR-045).
 
 ---
 
@@ -448,3 +468,9 @@ Status: **Accepted** = Orchestrator decision, binding on agents. **Proposed** = 
 | ADR-042 | **Self-lockout guard:** an administrator cannot change their own role or deactivate themself (resending the current values is accepted, AM-M6-3), and nobody can delete their own account. No administrator count, no query | Accepted 2026-09-25 (D6 review, AM-M6-3, reversible); implemented in M6 (T6.1 3ff7788) | Removes the unrecoverable self-lockout. Residual: concurrent mutual demotion (SEC-18), recovered with the seed. |
 | ADR-043 | **A role or state change does not bump `tokenVersion`** | Accepted 2026-09-25 (D6 review) | `authenticate` reads role and state from the database on every request, so there is no window to close; a bump would only force a re-login. |
 | ADR-044 | **The permission matrix is test data, not production code:** `tests/helpers/permission-matrix.ts` is the single source; a drift check against every registered route plus one HTTP request per cell (amended by AM-M6-6: no `ROUTE_POLICIES` exports) | Accepted 2026-09-25 (D6 review, AM-M6-6); implemented in M6 (T6.2A a32485a, T6.2B 64fb937, T6.2C 0d52042) | A route added without a matrix row fails `pnpm test`. Mount prefixes come from the fixture (Express 5 exposes none; TEST-05). |
+| ADR-045 | **The OpenAPI document is generated from the modules' own zod schemas with the native `z.toJSONSchema`** (`io: 'input'` everywhere, draft 2020-12), over a static operation catalog (`API_OPERATIONS`) in a new composition-level folder `src/docs/`, with its own lint layer (§2.3 rule 6) | Accepted 2026-10-03 (owner decision D2, M8); implemented in M8 (S2 1fc73bc, S3 a325608, S4 b9cbc16) | Zero new dependencies (ADR-025), and request schemas are referenced by identity, never retyped. Output mode would throw on `.transform`. `src/core/` cannot import modules (rule 5), and a module cannot import its siblings (rule 4), hence `src/docs/`. Drift tests tie the catalog to the permission matrix (ADR-044) and to every module DTO. Known fidelity limit: `format: email` and the 72-byte password rule are stated in prose. |
+| ADR-046 | **`/docs` is a static page that loads one pinned Redoc bundle from jsDelivr with an SRI hash**, under a CSP applied to `GET /docs` only; the global helmet options are never widened. `/docs` is a Router, so the permission matrix gains rows #26 and #27 | Accepted 2026-10-03 (owner decision D3, M8); implemented in M8 (S5 532cb9b, Redoc 2.5.4) | No npm dependency, no inline script or style, and an exact-URL `script-src`: the smallest CSP surface (Swagger UI needs an inline init script; Scalar loads fonts from its own CDN). `/docs/openapi.json` never depends on the CDN. A version bump needs a new integrity hash. |
+| ADR-047 | **`DOCS_ENABLED` is a strict `'true'` / `'false'` value**: unset or empty means on in development and test and off in production; forcing it on in production logs a warning; any other value stops the boot. When off, `/docs` is not mounted at all (the standard 404) | Accepted 2026-10-03 (owner decision D5, M8); implemented in M8 (S2 1fc73bc, S5 532cb9b) | `z.coerce.boolean()` reads the string `'false'` as `true`, and `z.stringbool()` accepts `1`/`yes`/`on`. The default lives in `loadConfig` with every other default. |
+| ADR-048 | **The search route is documented from the exported `SEARCH_COLLECTIONS`** through a documentation-only schema; `src/modules/search/` is unchanged and still validates nothing, so an unknown collection stays its 400 and no 422 is promised | Accepted 2026-10-03 (owner decision D4, M8); implemented in M8 (S4 b9cbc16) | Keeps the legacy 400 behavior and the "no module change" rule. A drift test pins the documented enum to the constant. The 20-result cap is restated in the catalog because `MAX_RESULTS` is not exported. |
+| ADR-049 | **The error-code catalogue lives in a root `ERROR_CODES.md`**, linked from the README, not copied into it. `ERROR_CATALOG` (`satisfies Record<ErrorCode, …>`) feeds the documented `code` enum, the error responses and the catalogue's drift test | Accepted 2026-10-03 (owner decision D6, M8); implemented in M8 (S2 1fc73bc, S6 c872bf0) | Matches the root-ledger convention (API_PROGRESS, TECH_DEBT). Adding or removing an `ErrorCode` fails to compile until the catalog follows, and the test fails until the file does. |
+| ADR-050 | **The `public/` demo page is removed** (CQ-07), with `express.static` and its Google sign-in CSP and COOP allowances. The global helmet options keep only `crossOriginResourcePolicy: 'cross-origin'` and the referrer policy | Accepted 2026-10-03 (owner decision D1, M8); implemented in M8 (S1 bde2491) | The page pointed at a dead deployment with a hardcoded client id. CORP stays because `GET /api/uploads/:collection/:id` is a public 302 that other origins embed as an image, and helmet's default `same-origin` would block it. `GET /` is now the standard 404, a non-API asset change. |

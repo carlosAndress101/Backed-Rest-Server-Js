@@ -1,10 +1,10 @@
 # API Progress
 
-> Baseline: commit `2f18dce` · Updated 2026-09-25 (M3, M4, M5 and M6 closed on `next`: the 3.0 line, unreleased; `master` is 2.1.0 and still serves the 2.x contract)
+> Baseline: commit `2f18dce` · Updated 2026-10-04 (M8: `/docs` added and the demo page removed, unreleased, planned as 3.1.0; M3–M7 released as 3.0.0 on 2026-10-03)
 > Status legend: 🔴 blocking defect · 🟠 works with defects · 🟢 target met · ⚪ to remove · ✂️ removed
 > Debt IDs link to [TECH_DEBT.md](TECH_DEBT.md). Contract source of truth: [docs/design/M3-modules.md](docs/design/M3-modules.md) §6.
 
-## Route inventory (after M6, 3.0 line)
+## Route inventory (after M8, 3.x line)
 
 Every route is a TypeScript feature module (`src/modules/<feature>`). "Auth" = what is **enforced**; "JWT" is `Authorization: Bearer <token>` (`x-token` is still accepted, deprecated, until 4.0.0). Every success body is `{ data }` or, for lists, `{ data, meta: { total, limit, offset } }`. Every error body is `{ error: { code, message, details? } }`. "Auth" is the M6 permission matrix ([M6-authz](docs/design/M6-authz.md) §2.2 as ruled in §11), enforced by one `authorize(policy)` and tested cell by cell (`tests/helpers/permission-matrix.ts`). 401 = no valid token; 403 = authenticated but not allowed (message `Not allowed`); 404 = missing or soft-deleted, whoever asks.
 
@@ -32,11 +32,13 @@ Every route is a TypeScript feature module (`src/modules/<feature>`). "Auth" = w
 | 20 | POST | `/api/uploads` | — | — | ✂️ 404 | — | ✂️ | Removed (ADR-008, ADR-030) |
 | 21 | PUT | `/api/uploads/:collection/:id` | JWT; `user`: self (either hex case) or `ADMIN_ROLE`; `product`: `ADMIN_ROLE`\|`VENTAS_ROLE` (no creator rights) | `:collection` ∈ {user, product}, `:id`; one PNG/JPEG/GIF ≤ 5 MB (magic bytes) | 200 `{ data: record }` | TEST-04 (test-only) | 🟢 | — |
 | 22 | GET | `/api/uploads/:collection/:id` | none | `:collection`, `:id` | **302** to this app's own Cloudinary asset; otherwise 404 (AM-M3-1) | — | 🟢 | — |
-| 23 | GET | `/` (static `public/`) | none | — | 200 | CQ-07 (dead demo URL) | 🟠 | M8 decide |
+| 23 | GET | `/` (static `public/`) | — | — | ✂️ 404 | — | ✂️ | Removed (CQ-07, owner decision D1, ADR-050) |
 | 24 | POST | `/api/auth/logout-all` | JWT | — | **204** | — | 🟢 | — |
 | 25 | PUT | `/api/auth/password` | JWT | `{ currentPassword, newPassword }` (8 characters to 72 bytes) | 200 `{ data: { token } }` (a fresh token; every earlier one is revoked) | — | 🟢 | — |
+| 26 | GET | `/docs` | none; mounted only when `DOCS_ENABLED` is on (default off in production, ADR-047) | — | 200 HTML (the Redoc page, with its own CSP, ADR-046); otherwise 404 | — | 🟢 | — |
+| 27 | GET | `/docs/openapi.json` | none; the same flag | — | 200 the OpenAPI 3.1 document (`Cache-Control: no-cache`, ETag); otherwise 404 | — | 🟢 | — |
 
-**Totals:** 25 entry points · 🔴 0 · 🟠 1 (after M5: 3) · 🟢 21 (after M5: 19) · ✂️ 3 removed
+**Totals:** 27 entry points · 🔴 0 · 🟠 0 (after M6: 1) · 🟢 23 (after M6: 21) · ✂️ 4 removed
 
 ## Planned contract changes (breaking-change ledger)
 
@@ -81,3 +83,5 @@ Every change clients can observe is listed here before it ships, and in CHANGELO
 | M6 | **Product ownership:** a product's creator may update and delete their own active product (200/204, was 403). Categories stay `ADMIN_ROLE`/`VENTAS_ROLE` only. Editing a product or category no longer makes the editor its creator | #12, #13, #17, #18 |
 | M6 | **Self-lockout guard:** an administrator can no longer change their own role or deactivate themself through `PUT /api/user/:id` (**403**; resending the current values is accepted), and nobody can delete their own account (**403**) | #6, #7 |
 | M6 | **Messages and order:** every authorization 403 says `Not allowed` (product ownership: `Only the creator, an administrator or VENTAS_ROLE may …`). A non-creator's product `PUT`/`DELETE` with a malformed id is **422** (was 403), and with a missing `category` 404 (AM-M6-8). A request on your own account with an upper-case id is accepted (was 403, AM-M6-7) | #4, #6, #7, #12, #13, #17, #18, #19, #21 |
+| M8 | **Removed:** `GET /` no longer serves the `public/` demo page (**404**). Its Google sign-in allowances leave the global headers: every response now carries helmet's default CSP and `Cross-Origin-Opener-Policy: same-origin`; `Cross-Origin-Resource-Policy: cross-origin` stays (ADR-050) | #23, all |
+| M8 | **Added:** `GET /docs` and `GET /docs/openapi.json`, mounted only when `DOCS_ENABLED` is on (default off in production) | #26, #27 |

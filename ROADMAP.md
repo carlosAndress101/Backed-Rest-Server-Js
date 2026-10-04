@@ -1,7 +1,7 @@
 # Roadmap
 
 > Owner: CarlosH / SH1FT3R
-> Updated 2026-10-03 · **3.0.0** released 2026-10-03 on `master` (M3–M7) · Current milestone: **M8**
+> Updated 2026-10-04 · **3.0.0** released 2026-10-03 on `master` (M3–M7) · M8 delivered, release **3.1.0** pending · Next milestone: **M9**
 
 Complexity scale: **S** (≤1 agent-day) · **M** (2–3) · **L** (4–6) · **XL** (>6). Tests are a quality gate in **every** milestone (ADR-013); M7 closes the remaining gaps.
 
@@ -15,7 +15,7 @@ Complexity scale: **S** (≤1 agent-day) · **M** (2–3) · **L** (4–6) · **
 | M5 | Authentication Hardening | M | M4 | ✅ Accepted 2026-09-24 (T5.4 review: ACCEPT), release **3.0.0** ([design](docs/design/M5-auth.md)) |
 | M6 | Authorization (RBAC + ownership) | M | M5 | ✅ Accepted 2026-09-25 (T6.4 review: ACCEPT), release **3.0.0** ([design](docs/design/M6-authz.md)) |
 | M7 | Testing Hardening | M | M6 | ✅ Accepted 2026-10-01, release **3.0.0** ([change](openspec/changes/m7-testing-hardening/proposal.md)) |
-| M8 | API Documentation | S–M | M3, M6 | Planned |
+| M8 | API Documentation | S–M | M3, M6 | ✅ Delivered 2026-10-04 (slices S1–S7), release **3.1.0** pending, not yet released ([change](openspec/changes/m8-api-documentation/proposal.md)) |
 | M9 | Docker & Production Readiness | M | M2, M4 | Planned |
 | M10 | CI/CD | M | M9 (basic CI lands in M2) | Planned |
 
@@ -89,7 +89,8 @@ Why this order differs from the default template: **security first** (ADR-001) b
 - **Risks:** Flaky DB tests, mitigated by an isolated in-memory DB per worker.
 - **Complexity:** M · **Dependencies:** M6.
 
-## M8: API Documentation
+## M8: API Documentation ✅ (delivered 2026-10-04, release 3.1.0 pending)
+- **Outcome:** an OpenAPI 3.1 document generated from the modules' own zod DTOs (no hand-retyped schema, no new dependency), served at `/docs/openapi.json` with a Redoc page at `/docs` (pinned bundle with SRI, a CSP scoped to that page) behind `DOCS_ENABLED`, off in production by default; drift tests tie the 21 documented operations to the permission matrix and every module DTO. A root `README.md`, `.env.example`, `ERROR_CODES.md` and `api.http`, each bound by a drift test. CQ-07 resolved by removing the `public/` demo page (D1). DOC-01 and CQ-07 closed; ADR-045…ADR-050.
 - **Goal:** A self-serve API for consumers and future agents.
 - **Deliverables:** OpenAPI 3.1 generated from the zod DTOs and served at `/docs` (disabled in production unless flagged); a README covering setup, env, scripts, and architecture summary; an `.http`/curl example collection; an error-code catalogue; a decision on the `public/` demo page (CQ-07).
 - **Risks:** Spec drift, mitigated by generating from code rather than writing by hand.
