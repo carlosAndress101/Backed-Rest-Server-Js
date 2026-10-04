@@ -53,6 +53,9 @@ async function main(): Promise<void> {
   if (config.env === 'production' && config.cors.origins === '*') {
     logger.warn('CORS_ORIGINS is not set: every origin may call this API');
   }
+  if (config.env === 'production' && config.docs.enabled) {
+    logger.warn('DOCS_ENABLED=true: /docs serves the API description in production');
+  }
   // The database before any traffic (C3 / REL-03). Production builds indexes with `pnpm migrate`, not on boot (§10.1).
   await connectDatabase(config.mongoUri, { autoIndex: config.env !== 'production' });
   logger.info('database connected');

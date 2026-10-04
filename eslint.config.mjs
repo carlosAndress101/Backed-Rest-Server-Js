@@ -64,6 +64,14 @@ export default tseslint.config(
     rule('core stays framework-agnostic.', '^express($|-)', true),
   ),
   layer(['src/middlewares/**/*.ts', 'src/database/**/*.ts'], FEATURE_MODULES, COMPOSITION),
+  layer(
+    ['src/docs/**/*.ts'],
+    COMPOSITION,
+    rule(
+      'docs reads module contracts only: never routes, controllers, models, middlewares or the database (§2.3 rule 6).',
+      '\\.(routes|controller|model)$|^mongoose$|(^|/)(middlewares|database)(/|$)',
+    ),
+  ),
   layer(['src/modules/**/*.ts'], SIBLING_MODULE, COMPOSITION),
   layer(
     ['src/modules/**/*.routes.ts'],
