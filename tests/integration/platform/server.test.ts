@@ -90,7 +90,7 @@ describe('src/server.ts', () => {
         timeout: BOOT_TIMEOUT_MS,
       });
 
-      const res = await fetch(`http://127.0.0.1:${port}/`);
+      const res = await fetch(`http://127.0.0.1:${port}/api/category`);
       expect(res.status).toBe(200);
       expect(res.headers.get('x-request-id')).toBeTruthy();
 

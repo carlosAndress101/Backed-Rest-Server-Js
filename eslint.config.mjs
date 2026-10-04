@@ -34,7 +34,7 @@ const layer = (files, ...patterns) => ({
 });
 
 export default tseslint.config(
-  { ignores: ['dist/', 'coverage/', 'public/', 'node_modules/'] },
+  { ignores: ['dist/', 'coverage/', 'node_modules/'] },
   {
     files: ['**/*.ts', '**/*.mts'],
     extends: [js.configs.recommended, ...tseslint.configs.recommendedTypeChecked],
