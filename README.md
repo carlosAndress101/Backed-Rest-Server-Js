@@ -127,3 +127,20 @@ is §3) and [`API_PROGRESS.md`](API_PROGRESS.md). Planning and history: [`ROADMA
   80 % for the whole of `src/`. `src/server.ts` runs in a spawned process and is excluded.
 - No `vi.mock`: tests inject fakes through each module's factory, or spy on the shared instance the code uses. A lint
   rule enforces it.
+
+## Production checklist
+
+Deploy the container (`Dockerfile`), not a dev process: PID 1 must be `node dist/server.js` so SIGTERM reaches
+the graceful shutdown (running `pnpm start` as PID 1 skips it, OPS-04). Before the first serve:
+
+- `SECRET_KEY`: at least 32 characters, never committed, unique per environment.
+- `MONGO_CLOUD`: the production database, reachable from the container.
+- `pnpm migrate up`: run to completion before serving (a production boot without `M001-normalize-email` exits 1,
+  OPS-05). Migrations also build the indexes (`autoIndex` is off in production).
+- `CORS_ORIGINS`: an explicit allowlist, never `*` (the boot only warns).
+- `TRUST_PROXY`: the real reverse-proxy hop count, so the login rate limit keys on client IPs. Unset keeps
+  `req.ip` as the socket address.
+- `DOCS_ENABLED`: leave unset (stays off in production). `NODE_ENV=production`.
+- `pnpm seed`: only to create the first admin on a fresh database, never on boot.
+- Reused 2.x databases: review rogue admins and tampered `image` values (M1 T1.6) before migrating.
+- Health: liveness `GET /health`, readiness `GET /ready` (200 when the database pings, otherwise 500).

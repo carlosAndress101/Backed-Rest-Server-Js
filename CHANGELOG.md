@@ -4,6 +4,23 @@ All notable changes to this project are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) · Versioning: [SemVer](https://semver.org/).
 Client-visible contract changes are always listed under **Breaking** and mirrored in [API_PROGRESS.md](API_PROGRESS.md).
 
+## [Unreleased]
+
+### M9: Docker & Production Readiness
+
+Planned as **3.2.0** (MINOR, ADR-024): additive only — two new anonymous platform routes, container files, and a production-only boot refusal on an undeployed hazard. No existing contract changes.
+
+#### Added
+- `GET /health`: liveness, always 200 `{ data: { status: 'ok' } }` when the process serves, with no database touch (ADR-052).
+- `GET /ready`: readiness, 200 `{ data: { status: 'ok' } }` after a real database ping, otherwise 500 `INTERNAL` through the standard envelope (ADR-052).
+- `Dockerfile`: a three-stage `node:24-alpine` production image (non-root `USER node`, prod dependencies only, direct `node dist/server.js` PID 1, `/health` healthcheck), plus `.dockerignore` (ADR-051, OPS-04).
+- `docker-compose.yml`: API + Mongo for local development only, with placeholder values (ADR-051).
+- A README production checklist (secrets, `migrate up` before serving, CORS allowlist, `TRUST_PROXY` hops, docs off, seed discipline, 2.x data warning).
+
+#### Operational
+- Production refuses to serve (exit 1) until `M001-normalize-email` is recorded in the `migrations` ledger: run `pnpm migrate up` first (OPS-05, ADR-053). Dev and test boots are unchanged.
+- Deploy order: build the image, `pnpm migrate up` to completion, then serve. No deployment target yet.
+
 ## [3.1.0] - 2026-10-04
 
 ### M8: API Documentation

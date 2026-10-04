@@ -366,6 +366,25 @@ tests/{setup,helpers,unit,unit/modules,integration/{modules,platform,security}}
 
 **Next:** release **3.1.0** (ADR-024): the CHANGELOG `[3.1.0]` cut and the tag, with `API_VERSION` bumped alongside `package.json`. Then M9.
 
+### 1.15 State after M9 (unreleased, planned as 3.2.0, 2026-10-04)
+
+**Production readiness** (change [m9-docker-production](openspec/changes/m9-docker-production/design.md), decisions D1–D7, ADR-051…ADR-053):
+- **Container (ADR-051):** a three-stage `Dockerfile` on `node:24-alpine`: prod-deps with C toolchain, full build, runtime with prod-only `node_modules` + `dist/` as `USER node`, `CMD ["node", "dist/server.js"]` (OPS-04) and a `/health` `HEALTHCHECK` honoring `$PORT`. `.dockerignore` keeps the context to manifests, sources and configs. `docker-compose.yml` runs api (dev) + `mongo:8` for local work only.
+- **Platform routes (ADR-052):** `src/platform/health.ts` (`healthRouter()`, `readyRouter({ checkDb })`) mounted at `/health` and `/ready`, anonymous matrix rows #28 and #29; `/ready` answers 500 `INTERNAL` when the DB ping fails. The OpenAPI catalog still covers the 21 `/api/*` operations only.
+- **Boot guard (ADR-053):** production refuses to serve before `M001-normalize-email` is recorded (OPS-05); dev/test unchanged.
+- **Matrix (ADR-044):** the `/health` and `/ready` prefixes and rows #28 and #29; the drift check and the TEST-05 permutations now pair 9 routers.
+- **Checklist:** a README production checklist (SECRET_KEY, MONGO_CLOUD + `migrate up`, CORS allowlist, `TRUST_PROXY` hops, DOCS off, seed discipline, 2.x data warning).
+
+**Config:** none new. The compose file supplies the existing variables with placeholder values.
+
+**Data:** none. `M001`–`M006` remain the complete migration set.
+
+**Deploy:** build the image, `pnpm migrate up`, then serve. No target yet (platform-agnostic).
+
+**Tests:** 1576 (1 skipped, the opt-in remote SRI check), including platform-route and boot-guard suites.
+
+**Next:** release **3.2.0** (ADR-024, additive MINOR): the CHANGELOG `[3.2.0]` cut and the tag. Then M10.
+
 ---
 
 ## 2. To-be (target)
@@ -474,3 +493,6 @@ Status: **Accepted** = Orchestrator decision, binding on agents. **Proposed** = 
 | ADR-048 | **The search route is documented from the exported `SEARCH_COLLECTIONS`** through a documentation-only schema; `src/modules/search/` is unchanged and still validates nothing, so an unknown collection stays its 400 and no 422 is promised | Accepted 2026-10-03 (owner decision D4, M8); implemented in M8 (S4 b9cbc16) | Keeps the legacy 400 behavior and the "no module change" rule. A drift test pins the documented enum to the constant. The 20-result cap is restated in the catalog because `MAX_RESULTS` is not exported. |
 | ADR-049 | **The error-code catalogue lives in a root `ERROR_CODES.md`**, linked from the README, not copied into it. `ERROR_CATALOG` (`satisfies Record<ErrorCode, …>`) feeds the documented `code` enum, the error responses and the catalogue's drift test | Accepted 2026-10-03 (owner decision D6, M8); implemented in M8 (S2 1fc73bc, S6 c872bf0) | Matches the root-ledger convention (API_PROGRESS, TECH_DEBT). Adding or removing an `ErrorCode` fails to compile until the catalog follows, and the test fails until the file does. |
 | ADR-050 | **The `public/` demo page is removed** (CQ-07), with `express.static` and its Google sign-in CSP and COOP allowances. The global helmet options keep only `crossOriginResourcePolicy: 'cross-origin'` and the referrer policy | Accepted 2026-10-03 (owner decision D1, M8); implemented in M8 (S1 bde2491) | The page pointed at a dead deployment with a hardcoded client id. CORP stays because `GET /api/uploads/:collection/:id` is a public 302 that other origins embed as an image, and helmet's default `same-origin` would block it. `GET /` is now the standard 404, a non-API asset change. |
+| ADR-051 | **The production image is a three-stage `node:24-alpine` build** (deps with C toolchain for bcrypt → full build → runtime with prod-only `node_modules` + `dist/`, `USER node`), running `CMD ["node", "dist/server.js"]` as PID 1 with a `HEALTHCHECK` on `/health` honoring `$PORT`. `docker-compose.yml` is dev-local only (api + `mongo:8`, placeholders, never a production template) | Accepted 2026-10-04 (M9); implemented in M9 (S2 5784432) | Direct `node` exec is what OPS-04 prescribes: PID 1 receives SIGTERM, so the existing graceful shutdown runs. No new binary (tini/PM2), no new dependency. Image build/push pipeline is M10. |
+| ADR-052 | **`GET /health` (liveness, no DB touch) and `GET /ready` (readiness, a real `db.admin().ping()`) live in `src/platform/health.ts` as `healthRouter()` / `readyRouter({ checkDb })`**, mounted at `/health` and `/ready` as anonymous permission-matrix rows #28 and #29 (the `/docs` #26/#27 precedent). A failed check answers 500 `INTERNAL` through the standard envelope — no new `ErrorCode`, no 503 | Accepted 2026-10-04 (owner decision, M9 S0; M9 D1–D3); implemented in M9 (S1 029ecc7) | Orchestrators treat any non-2xx as not-ready, so 500 carries the signal with zero error-catalog churn. `checkDb` injection keeps the 500 path testable with no `vi.mock`. Excluded from the 21-operation OpenAPI catalog, which covers `/api/*` only. |
+| ADR-053 | **A production-only boot guard refuses to serve (exit 1) until `M001-normalize-email` is recorded in the `migrations` ledger**, checked via the read-only `migrationStatus` after connect and before listen, reusing `MIGRATIONS` from `src/cli.ts`. Dev/test boots are untouched; M005/M006 absence is not gated | Accepted 2026-10-04 (M9 D4); implemented in M9 (S3 00c2e0e) | M001 is the sole hard deploy-order gate (the 2.x mixed-case-email lockout, T4.5); M005/M006 absence is tolerated by M5 design. Gating dev/test would break every test boot for no benefit. |
