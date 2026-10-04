@@ -1304,16 +1304,16 @@ Sequencing rationale:
 - **T2.5 ‖ T2.6 are developed in parallel and merged back to back.** T2.5 deletes `models/server.js` (which breaks the Jest suite) and T2.6 replaces that suite. T2.6 needs `tests/helpers/app.ts` (P6) to run, so it verifies after rebasing onto the integration branch once T2.5 is merged locally. Nothing is pushed between the two merges, and the M2 gate (full suite 3×) runs on the combined result.
 - **AM-6 (Orchestrator, 2026-09-24): T2.3 (Mongoose 9) moves after T2.5 + T2.6.** T2.3 was blocked because MongoDB driver 7.6, pulled in by Mongoose 9, loads its `os` runtime adapter with `await import('os')`. Jest 29's CommonJS VM rejects that without `--experimental-vm-modules`, so the handshake metadata is empty and mongod 8.2 refuses the connection (`Missing required sub-document 'driver'`). That makes 91 of 104 Jest tests fail. Plain Node and Vitest are unaffected (verified: Mongoose 9.10.2 connects under this repo's Vitest harness). Rather than patch Jest or add a test-only `runtimeAdapters` option to application code, the order becomes: T2.2 → (T2.4) → **T2.5 ‖ T2.6** on Mongoose 7 → **T2.3** on the Vitest suite. Every §4 API T2.5 uses exists unchanged on Mongoose 7 and 9 (`connect`, `disconnect`, `set('strictQuery'|'sanitizeFilter')`, and `returnDocument`, all verified in Appendix C). The revert units are unchanged. T2.3's gate becomes `pnpm test` (the ported suite) instead of `pnpm e2e`.
 
-| Task | Agent | Model | Depends on |
-|---|---|---|---|
-| T2.1 | BACKEND ENGINEER | Claude Code · Opus 5.5 | ADR-017…024 accepted (dispatched off `m2/foundation` @ `a29c539`) |
-| T2.2 | BACKEND ENGINEER | Claude Code · Opus 5.5 | T2.1, forward merge of M1 |
-| T2.3 | DATABASE AGENT | OpenCode · DeepSeek V4 Flash | T2.5 + T2.6 merged (AM-6) |
-| T2.4 | SECURITY & QA AGENT | Claude Code · Opus 5.5 | T2.1, forward merge of M1 |
-| T2.5 | BACKEND ENGINEER | Claude Code · Opus 5.5 | T2.2, T2.4 (AM-6) |
-| T2.6 | DATABASE AGENT | OpenCode · DeepSeek V4 Flash | T2.3 (codes against P6; runs after T2.5) |
-| T2.7 | SECURITY & QA AGENT | Claude Code · Opus 5.5 | T2.4 |
-| T2.8 | ARCHITECT | Claude Code · Opus 5.5 | T2.1–T2.7 merged |
+| Task | Agent | Depends on |
+|---|---|---|
+| T2.1 | BACKEND ENGINEER | ADR-017…024 accepted (dispatched off `m2/foundation` @ `a29c539`) |
+| T2.2 | BACKEND ENGINEER | T2.1, forward merge of M1 |
+| T2.3 | DATABASE AGENT | T2.5 + T2.6 merged (AM-6) |
+| T2.4 | SECURITY & QA AGENT | T2.1, forward merge of M1 |
+| T2.5 | BACKEND ENGINEER | T2.2, T2.4 (AM-6) |
+| T2.6 | DATABASE AGENT | T2.3 (codes against P6; runs after T2.5) |
+| T2.7 | SECURITY & QA AGENT | T2.4 |
+| T2.8 | ARCHITECT | T2.1–T2.7 merged |
 
 ---
 

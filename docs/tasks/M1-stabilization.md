@@ -39,12 +39,12 @@ master ──► m1/stabilization (integration, includes M0 docs)
                         Orchestrator: docs update → milestone gate → owner approves push/PR
 ```
 
-| Task | Assigned node | Agent CLI / model |
-|---|---|---|
-| T1.1, T1.3 | BACKEND ENGINEER | Claude Code · Opus 5.5 |
-| T1.2, T1.7 | SECURITY & QA AGENT | Claude Code · Opus 5.5 |
-| T1.4 | DATABASE AGENT | OpenCode · DeepSeek V4 Flash |
-| T1.5 | ARCHITECT | Claude Code · Opus 5.5 |
+| Task | Assigned node |
+|---|---|
+| T1.1, T1.3 | BACKEND ENGINEER |
+| T1.2, T1.7 | SECURITY & QA AGENT |
+| T1.4 | DATABASE AGENT |
+| T1.5 | ARCHITECT |
 
 ## Shared contracts (binding across T1.2 / T1.3 / T1.4)
 

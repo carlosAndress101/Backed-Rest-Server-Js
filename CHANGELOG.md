@@ -6,9 +6,23 @@ Client-visible contract changes are always listed under **Breaking** and mirrore
 
 ## [Unreleased]
 
-The 3.0 line accumulates on the `next` branch: M3–M6 ship together as **3.0.0** (ADR-024, ADR-026). `master` stays on 2.x for hotfixes.
+## [3.0.0] - 2026-10-03
 
-### M6: Authorization (on `next`)
+The 3.0 line: M3–M7 ship together as **3.0.0** (ADR-024, ADR-026), developed on the `next` branch and released on `master`.
+
+### M7: Testing Hardening
+
+No client-visible change: M7 touches only tests and CI.
+
+#### Changed (internal)
+- TEST-04 and TEST-05 closed: the three "413 > 5 MB" tests run on a keep-alive transport with strict 413 assertions, and the permission-matrix drift check pairs routers with prefixes regardless of `app.use()` order.
+- Shared test helpers: role factories (`createUserWithRole`, `createVentas`), plain actors for service unit tests, and request builders for the session routes replace per-suite copies.
+- A global coverage floor of 80 % (lines, functions, branches, statements) now sits beside the per-file gate. Tests: 1274; `src/**` line coverage is about 99 %.
+
+#### Operational
+- CI cancels a superseded run only on pull requests: a run on `master` is never canceled once started.
+
+### M6: Authorization
 
 #### Breaking
 - **`VENTAS_ROLE` can no longer delete users:** `DELETE /api/user/:id` is 403 for it. The role is now the catalog manager (see Changed).
@@ -28,7 +42,7 @@ The 3.0 line accumulates on the `next` branch: M3–M6 ship together as **3.0.0*
 #### Operational
 - **No new deploy step:** M6 changes no token, schema or data, and its rules apply from the first request served. A deployment with a single administrator should create a second one before it ever needs to change the first one's role. If two administrators demote each other at the same moment and none is left, run `pnpm seed` with a new `SEED_ADMIN_EMAIL` ([M6-authz](docs/design/M6-authz.md) §12).
 
-### M5: Authentication hardening (on `next`)
+### M5: Authentication hardening
 
 #### Breaking
 - **Every token issued before M5 stops working** on deploy, over both transports: tokens now carry `iss`, `aud` and a `tv` (token version) claim and are verified as HS256 only. The client gets the ordinary 401 and signs in again (`POST /api/auth/login` or `/google`).
@@ -55,7 +69,7 @@ The 3.0 line accumulates on the `next` branch: M3–M6 ship together as **3.0.0*
 #### Operational
 - **Before deploying M5:** set `SECRET_KEY` to at least 32 characters (rotating it costs nothing extra, since every session ends anyway), warn clients that everyone must sign in again, then run `pnpm build && pnpm migrate up` (M005 backfills `tokenVersion`, M006 drops the placeholder password). See the runbook in [M5-auth](docs/design/M5-auth.md) §10.1.
 
-### M4: Database (on `next`)
+### M4: Database
 
 #### Added
 - `createdAt` and `updatedAt` on every resource.
@@ -80,7 +94,7 @@ The 3.0 line accumulates on the `next` branch: M3–M6 ship together as **3.0.0*
 - `autoIndex` is off in production: the migrations build every index.
 - Back up before migrating: M001's `down` cannot restore the original email casing.
 
-### M3: Feature modules and DTOs (on `next`)
+### M3: Feature modules and DTOs
 
 #### Breaking
 - **Response envelope.** Every success body is `{ "data": ... }`, and lists are `{ "data": [...], "meta": { "total", "limit", "offset" } }`. This replaces the bare document, `{ total, users }`-style lists, `{ user, token }` and `{ results }`. Every error body is `{ "error": { "code", "message", "details"? } }` instead of `{ "msg" }` (ADR-021).
