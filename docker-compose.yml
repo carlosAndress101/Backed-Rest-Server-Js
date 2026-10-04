@@ -3,7 +3,9 @@
 # Behind a reverse proxy, set TRUST_PROXY to the real hop count (README production checklist).
 services:
   api:
-    build: .
+    build:
+      context: .
+      target: build
     # Development entrypoint: tsx watch on source. Production runs `node dist/server.js`
     # (the Dockerfile CMD), never this command.
     command: ['pnpm', 'dev']

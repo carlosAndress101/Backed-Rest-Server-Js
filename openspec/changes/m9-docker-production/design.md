@@ -10,9 +10,9 @@ The `ErrorCode` union (`src/core/errors/app-error.ts`) has no `SERVICE_UNAVAILAB
 
 `healthRouter({ checkDb }: { checkDb: () => Promise<void> })` performs no import of mongoose or models, so the 500 path is testable with a rejecting fake and no `vi.mock` (ADR-023). `createApp` (composition root, may import anything) wires the real check: `readyState === 1` plus `db.admin().ping()`, a real round-trip rather than a possibly stale flag. A failed ping and a missing `db` handle both reject, and the route answers D1. No new lint layer is needed: no existing `layer()` pattern matches `src/platform/**`, so the generic `src/**` rules (no `console`, no `process.env`) apply; the file imports only `express` and the error class.
 
-### D3 — One router mounted at root, paths inside
+### D3 — Two platform routers mounted at root
 
-`app.use(healthRouter({ checkDb }))` with `router.get('/health', …)` and `router.get('/ready', …)` keeps both platform paths visible in one place and mirrors `docsModule()`'s factory shape. No auth, no limiter (limiters are per-route in auth only — there is no global limiter to exempt), helmet + CORS apply as on every route. Response shapes follow the success envelope: `GET /health` → `200 { data: { status: 'ok' } }`; `GET /ready` → `200 { data: { status: 'ok' } }`, else D1.
+`app.use('/health', healthRouter())` and `app.use('/ready', readyRouter({ checkDb }))` keep the two platform paths explicit while each router owns its local `/` handler. This mirrors `docsModule()`'s factory shape and keeps liveness independent from readiness. No auth, no limiter (limiters are per-route in auth only — there is no global limiter to exempt), helmet + CORS apply as on every route. Response shapes follow the success envelope: `GET /health` → `200 { data: { status: 'ok' } }`; `GET /ready` → `200 { data: { status: 'ok' } }`, else D1.
 
 ### D4 — Boot guard is production-only and M001-only
 

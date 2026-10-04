@@ -10,14 +10,15 @@ RUN apk add --no-cache python3 make g++
 # corepack honors package.json#packageManager (pnpm 12.3.4): no version drift, no global install.
 RUN corepack enable
 WORKDIR /app
-COPY package.json pnpm-lock.yaml ./
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 RUN pnpm install --prod --frozen-lockfile
 
 # Stage 2: compile TypeScript. A full install (dev dependencies included) that is discarded after.
 FROM ${NODE_IMAGE} AS build
+RUN apk add --no-cache python3 make g++
 RUN corepack enable
 WORKDIR /app
-COPY package.json pnpm-lock.yaml ./
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 RUN pnpm install --frozen-lockfile
 COPY tsconfig.json tsconfig.build.json ./
 COPY src/ ./src/
