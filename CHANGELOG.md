@@ -4,11 +4,11 @@ All notable changes to this project are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) · Versioning: [SemVer](https://semver.org/).
 Client-visible contract changes are always listed under **Breaking** and mirrored in [API_PROGRESS.md](API_PROGRESS.md).
 
-## [Unreleased]
+## [3.1.0] - 2026-10-04
 
 ### M8: API Documentation
 
-Planned as **3.1.0** (MINOR, ADR-024): no API operation changes its contract, and the additions sit behind a new optional flag.
+**3.1.0** is MINOR (ADR-024): no API operation changes its contract, and the additions sit behind a new optional flag.
 
 #### Added
 - `GET /docs/openapi.json`: an OpenAPI 3.1 document built once at boot from the modules' own zod request schemas (`z.toJSONSchema`, no new dependency). It describes all 21 operations, the error envelope and Bearer authentication (ADR-045).
