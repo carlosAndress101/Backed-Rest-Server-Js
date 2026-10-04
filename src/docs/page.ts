@@ -17,10 +17,15 @@ export const UI_BUNDLE_URL = `https://cdn.jsdelivr.net/npm/redoc@${UI_BUNDLE.ver
  * script-src is the exact bundle URL, not the CDN host. Redoc's search runs in a blob: worker. No
  * upgrade-insecure-requests: the page loads only its own origin and an https: URL, and that directive would break
  * the page on a plain-HTTP development host.
+ * img-src adds exactly cdn.redoc.ly: the bundle fetches its default mini logo from there (observed in the 5.12
+ * browser check, per the adjust-only-on-observed-violations rule). The bundle's jsDelivr source map stays blocked
+ * on purpose: only open devtools request it, it has no runtime role, and allowing it would widen connect-src to a
+ * whole CDN host — expected console noise, not a defect.
  */
 export const DOCS_CSP_DIRECTIVES = {
   'script-src': [UI_BUNDLE_URL],
   'worker-src': ['blob:'],
+  'img-src': ["'self'", 'data:', 'https://cdn.redoc.ly'],
   'upgrade-insecure-requests': null,
 };
 

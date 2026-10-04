@@ -62,10 +62,11 @@ describe('DOCS_PAGE_HTML', () => {
 });
 
 describe('DOCS_CSP_DIRECTIVES', () => {
-  test('allows exactly the bundle URL as a script, blob: workers, and drops upgrade-insecure-requests', () => {
+  test('allows exactly the bundle URL as a script, blob: workers, the redoc.ly logo host for images, and drops upgrade-insecure-requests', () => {
     expect(DOCS_CSP_DIRECTIVES).toEqual({
       'script-src': [UI_BUNDLE_URL],
       'worker-src': ['blob:'],
+      'img-src': ["'self'", 'data:', 'https://cdn.redoc.ly'],
       'upgrade-insecure-requests': null,
     });
   });
