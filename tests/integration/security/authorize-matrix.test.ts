@@ -213,13 +213,14 @@ describe('pairRouters is order-independent (TEST-05)', () => {
   });
 
   // Deterministic sampled shuffles of the live mount order (no randomness: fixed index orders).
+  // Nine routers since M9 (6 feature + /docs + /health + /ready): every order covers all nine indices.
   const SHUFFLES: Array<[string, number[]]> = [
-    ['rotate-1', [1, 2, 3, 4, 5, 6, 0]],
-    ['rotate-3', [3, 4, 5, 6, 0, 1, 2]],
-    ['swap-halves', [3, 4, 5, 6, 0, 1, 2].reverse()],
-    ['interleave', [0, 4, 1, 5, 2, 6, 3]],
-    ['twins-swapped', [1, 0, 2, 3, 4, 5, 6]],
-    ['ends-inward', [6, 0, 5, 1, 4, 2, 3]],
+    ['rotate-1', [1, 2, 3, 4, 5, 6, 7, 8, 0]],
+    ['rotate-3', [3, 4, 5, 6, 7, 8, 0, 1, 2]],
+    ['swap-halves', [3, 4, 5, 6, 7, 8, 0, 1, 2].reverse()],
+    ['interleave', [0, 5, 1, 6, 2, 7, 3, 8, 4]],
+    ['twins-swapped', [1, 0, 2, 3, 4, 5, 6, 7, 8]],
+    ['ends-inward', [8, 0, 7, 1, 6, 2, 5, 3, 4]],
   ];
 
   for (const [name, order] of SHUFFLES) {
@@ -229,7 +230,7 @@ describe('pairRouters is order-independent (TEST-05)', () => {
   }
 
   test('shuffled mounts still recover the full fixture pair set', () => {
-    const shuffled = inOrder(syntheticRouters(), [4, 2, 0, 6, 5, 1, 3]);
+    const shuffled = inOrder(syntheticRouters(), [4, 2, 0, 8, 6, 1, 7, 3, 5]);
     const pairing = pairRouters(shuffled, MOUNT_PREFIXES, fixturePairs());
     const livePairs = new Set<string>();
     for (const [router, prefix] of pairing) {
@@ -427,6 +428,14 @@ async function fire(app: Server, row: MatrixRow, kase: MatrixCase): Promise<numb
     }
     case '#27': {
       const res = await request(app).get('/docs/openapi.json').set(header);
+      return res.statusCode;
+    }
+    case '#28': {
+      const res = await request(app).get('/health').set(header);
+      return res.statusCode;
+    }
+    case '#29': {
+      const res = await request(app).get('/ready').set(header);
       return res.statusCode;
     }
     default:

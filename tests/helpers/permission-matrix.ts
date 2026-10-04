@@ -42,6 +42,8 @@ export const MOUNT_PREFIXES = [
   '/api/auth',
   '/api/uploads',
   '/docs', // M8 (ADR-044 accommodation): mounted only when DOCS_ENABLED; the matrix tests pin it on
+  '/health', // M9 (ADR-052): liveness, always mounted
+  '/ready', // M9 (ADR-052): readiness, always mounted
 ] as const;
 
 export const MATRIX: MatrixRow[] = [
@@ -328,6 +330,19 @@ export const MATRIX: MatrixRow[] = [
     id: '#27',
     method: 'get',
     path: '/docs/openapi.json',
+    cases: [{ caller: 'anonymous', status: 200 }],
+  },
+  // #28, #29 — M9 (ADR-052): platform routes, public and representative of every caller, like #22.
+  {
+    id: '#28',
+    method: 'get',
+    path: '/health',
+    cases: [{ caller: 'anonymous', status: 200 }],
+  },
+  {
+    id: '#29',
+    method: 'get',
+    path: '/ready',
     cases: [{ caller: 'anonymous', status: 200 }],
   },
 ];

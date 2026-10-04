@@ -37,8 +37,10 @@ Every route is a TypeScript feature module (`src/modules/<feature>`). "Auth" = w
 | 25 | PUT | `/api/auth/password` | JWT | `{ currentPassword, newPassword }` (8 characters to 72 bytes) | 200 `{ data: { token } }` (a fresh token; every earlier one is revoked) | — | 🟢 | — |
 | 26 | GET | `/docs` | none; mounted only when `DOCS_ENABLED` is on (default off in production, ADR-047) | — | 200 HTML (the Redoc page, with its own CSP, ADR-046); otherwise 404 | — | 🟢 | — |
 | 27 | GET | `/docs/openapi.json` | none; the same flag | — | 200 the OpenAPI 3.1 document (`Cache-Control: no-cache`, ETag); otherwise 404 | — | 🟢 | — |
+| 28 | GET | `/health` | none (platform liveness) | — | 200 `{ data: { status: 'ok' } }`, no database touch | — | 🟢 | — |
+| 29 | GET | `/ready` | none (platform readiness) | — | 200 `{ data: { status: 'ok' } }` after a DB ping; otherwise 500 `INTERNAL` | — | 🟢 | — |
 
-**Totals:** 27 entry points · 🔴 0 · 🟠 0 (after M6: 1) · 🟢 23 (after M6: 21) · ✂️ 4 removed
+**Totals:** 29 entry points · 🔴 0 · 🟠 0 (after M6: 1) · 🟢 25 (after M6: 21) · ✂️ 4 removed
 
 ## Planned contract changes (breaking-change ledger)
 
