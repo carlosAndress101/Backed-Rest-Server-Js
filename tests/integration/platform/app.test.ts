@@ -200,16 +200,18 @@ describe('createApp', () => {
       expect(res.headers).not.toHaveProperty('x-powered-by');
     });
 
-    test('the CSP and COOP keep the T1.3 Google sign-in and font sources', async () => {
+    test('the global headers are helmet defaults plus CORP cross-origin, with no demo-page allowances (CQ-07)', async () => {
       const res = await request(server).get('/');
       const csp = res.headers['content-security-policy'];
 
-      expect(csp).toContain("script-src 'self' https://accounts.google.com/gsi/client");
-      expect(csp).toContain('https://accounts.google.com/gsi/style https://fonts.googleapis.com');
-      expect(csp).toContain("font-src 'self' https://fonts.gstatic.com");
-      expect(csp).toContain('frame-src https://accounts.google.com/gsi/');
-      expect(csp).toContain("connect-src 'self' https://accounts.google.com/gsi/");
-      expect(res.headers['cross-origin-opener-policy']).toBe('same-origin-allow-popups');
+      expect(csp).toBe(
+        "default-src 'self';base-uri 'self';font-src 'self' https: data:;form-action 'self';frame-ancestors 'self';" +
+          "img-src 'self' data:;object-src 'none';script-src 'self';script-src-attr 'none';" +
+          "style-src 'self' https: 'unsafe-inline';upgrade-insecure-requests",
+      );
+      expect(csp).not.toContain('accounts.google.com');
+      expect(csp).not.toContain('fonts.g');
+      expect(res.headers['cross-origin-opener-policy']).toBe('same-origin');
       expect(res.headers['cross-origin-resource-policy']).toBe('cross-origin');
       expect(res.headers['referrer-policy']).toBe('strict-origin-when-cross-origin');
     });
@@ -231,7 +233,7 @@ describe('createApp', () => {
     });
   });
 
-  describe('the 2.x surface: the demo page, removed routes and request bodies', () => {
+  describe('the 2.x surface: removed routes and request bodies', () => {
     test('GET /hello is removed: 404 (CQ-02, §6 #1)', async () => {
       const res = await request(server).get('/hello');
 
@@ -239,12 +241,11 @@ describe('createApp', () => {
       expect(res.body).toEqual({ error: { code: 'NOT_FOUND', message: 'Route not found' } });
     });
 
-    test('GET / serves the demo page from public/', async () => {
+    test('GET / is 404 NOT_FOUND: the demo page is removed (CQ-07)', async () => {
       const res = await request(server).get('/');
 
-      expect(res.status).toBe(200);
-      expect(res.headers['content-type']).toMatch(/^text\/html/);
-      expect(res.text).toContain('<title>Login Google</title>');
+      expect(res.status).toBe(404);
+      expect(res.body).toEqual({ error: { code: 'NOT_FOUND', message: 'Route not found' } });
     });
 
     test('a bodiless PUT /api/user/:id by the owner is a 200 no-op (Express 4 parity)', async () => {

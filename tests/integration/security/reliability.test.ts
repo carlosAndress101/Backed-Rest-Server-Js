@@ -184,7 +184,7 @@ describe('crash safety and HTTP error handling', () => {
       expect(typeof res.statusCode).toBe('number');
       expect(res.headers['content-type']).toMatch(/json/);
 
-      const followUp = await request(app).get('/');
+      const followUp = await request(app).get('/api/category');
       expect(followUp.statusCode).toBe(200);
     });
 
