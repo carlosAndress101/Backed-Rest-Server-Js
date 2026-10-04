@@ -1,0 +1,170 @@
+# One request per API operation, for the VS Code REST Client and the JetBrains HTTP Client.
+# Start the API with `pnpm dev`, then run the requests from top to bottom. `/docs` describes each one in full.
+#
+# Variables: paste the token that `login` returns into @token, and the ids the create requests return into
+# @categoryId, @productId and @userId. Log in as the administrator `pnpm seed` creates (SEED_ADMIN_EMAIL), so
+# every request is allowed; `signUp`'s account is the one the user requests act on.
+
+@baseUrl = http://localhost:1500
+@token = paste-the-login-token
+@categoryId = paste-a-category-id
+@productId = paste-a-product-id
+@userId = paste-the-sign-up-user-id
+
+### Sign up (public): copy data.id into @userId
+# @name createUser
+POST {{baseUrl}}/api/user
+Content-Type: application/json
+
+{
+  "name": "Ada Lovelace",
+  "email": "ada@example.com",
+  "password": "correct-horse-1"
+}
+
+### Log in as the seeded administrator: copy data.token into @token
+# @name login
+POST {{baseUrl}}/api/auth/login
+Content-Type: application/json
+
+{
+  "email": "admin@example.com",
+  "password": "the-seed-admin-password"
+}
+
+### Create a category: copy data.id into @categoryId
+# @name createCategory
+POST {{baseUrl}}/api/category
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "name": "Keyboards"
+}
+
+### List categories (public, paginated)
+# @name listCategories
+GET {{baseUrl}}/api/category?limit=5&offset=0
+
+### Get a category (public)
+# @name getCategory
+GET {{baseUrl}}/api/category/{{categoryId}}
+
+### Rename a category (ADMIN_ROLE or VENTAS_ROLE)
+# @name updateCategory
+PUT {{baseUrl}}/api/category/{{categoryId}}
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "name": "Mechanical keyboards"
+}
+
+### Create a product: copy data.id into @productId
+# @name createProduct
+POST {{baseUrl}}/api/product
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "name": "Split keyboard",
+  "price": 199,
+  "category": "{{categoryId}}",
+  "description": "Two halves, hot-swap switches"
+}
+
+### List products (public, paginated)
+# @name listProducts
+GET {{baseUrl}}/api/product?limit=5&offset=0
+
+### Get a product (public)
+# @name getProduct
+GET {{baseUrl}}/api/product/{{productId}}
+
+### Update a product (ADMIN_ROLE, VENTAS_ROLE or its creator)
+# @name updateProduct
+PUT {{baseUrl}}/api/product/{{productId}}
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "price": 179,
+  "available": true
+}
+
+### Search a collection: user, category or product (users need an ADMIN_ROLE token)
+# @name search
+GET {{baseUrl}}/api/search/product/keyboard
+Authorization: Bearer {{token}}
+
+### Replace a product's image with a local PNG, JPEG or GIF of at most 5 MB
+# @name replaceImage
+PUT {{baseUrl}}/api/uploads/product/{{productId}}
+Authorization: Bearer {{token}}
+Content-Type: multipart/form-data; boundary=ApiHttpBoundary
+
+--ApiHttpBoundary
+Content-Disposition: form-data; name="file"; filename="image.png"
+Content-Type: image/png
+
+< ./image.png
+--ApiHttpBoundary--
+
+### Redirect to a product's image (public, 302)
+# @name showImage
+GET {{baseUrl}}/api/uploads/product/{{productId}}
+
+### List users (ADMIN_ROLE)
+# @name listUsers
+GET {{baseUrl}}/api/user?limit=5&offset=0
+Authorization: Bearer {{token}}
+
+### Update a user (ADMIN_ROLE, or the account itself)
+# @name updateUser
+PUT {{baseUrl}}/api/user/{{userId}}
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "name": "Ada King"
+}
+
+### Change the caller's password: every earlier token is revoked, so copy data.token into @token
+# @name changePassword
+PUT {{baseUrl}}/api/auth/password
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "currentPassword": "the-seed-admin-password",
+  "newPassword": "a-new-admin-password-1"
+}
+
+### Deactivate a product (ADMIN_ROLE, VENTAS_ROLE or its creator)
+# @name deleteProduct
+DELETE {{baseUrl}}/api/product/{{productId}}
+Authorization: Bearer {{token}}
+
+### Deactivate a category (ADMIN_ROLE or VENTAS_ROLE)
+# @name deleteCategory
+DELETE {{baseUrl}}/api/category/{{categoryId}}
+Authorization: Bearer {{token}}
+
+### Deactivate a user (ADMIN_ROLE, never your own account)
+# @name deleteUser
+DELETE {{baseUrl}}/api/user/{{userId}}
+Authorization: Bearer {{token}}
+
+### Sign in with a Google ID token issued for GOOGLE_CLIENT_ID (see README, "Manual Google sign-in")
+# @name googleSignIn
+POST {{baseUrl}}/api/auth/google
+Content-Type: application/json
+
+{
+  "id_token": "paste-a-google-id-token"
+}
+
+### Revoke every session of the caller: run it last, it revokes @token
+# @name logoutAll
+POST {{baseUrl}}/api/auth/logout-all
+Authorization: Bearer {{token}}

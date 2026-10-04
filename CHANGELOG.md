@@ -6,6 +6,25 @@ Client-visible contract changes are always listed under **Breaking** and mirrore
 
 ## [Unreleased]
 
+### M8: API Documentation
+
+Planned as **3.1.0** (MINOR, ADR-024): no API operation changes its contract, and the additions sit behind a new optional flag.
+
+#### Added
+- `GET /docs/openapi.json`: an OpenAPI 3.1 document built once at boot from the modules' own zod request schemas (`z.toJSONSchema`, no new dependency). It describes all 21 operations, the error envelope and Bearer authentication (ADR-045).
+- `GET /docs`: a Redoc page that loads one pinned bundle with an integrity hash, under a Content-Security-Policy scoped to that page (ADR-046).
+- `DOCS_ENABLED` (`true` | `false`): both routes are mounted only when it is on. It defaults to on in development and test and off in production; forcing it on in production logs a warning at boot. Any other value stops the boot (ADR-047).
+- Developer documentation: a root `README.md` (setup, environment, scripts, links to the architecture), `.env.example` (renamed from `.example.env`, now with `DOCS_ENABLED`), `ERROR_CODES.md` (every error code and when it is returned, ADR-049) and `api.http` (one request per operation). Drift tests keep each of them in step with the code.
+
+#### Removed
+- The `public/` demo page (CQ-07, owner decision D1, ADR-050), a non-API asset whose Google sign-in pointed at a dead deployment: `GET /` is now the standard 404. The README documents how to sign in with Google by hand.
+
+#### Changed
+- The global security headers drop the demo page's allowances: every response carries helmet's default Content-Security-Policy (no Google sign-in or Google Fonts sources) and `Cross-Origin-Opener-Policy: same-origin` (was `same-origin-allow-popups`). `Cross-Origin-Resource-Policy: cross-origin` stays, so other origins can still embed the images `GET /api/uploads/:collection/:id` redirects to (ADR-050).
+
+#### Operational
+- No new deploy step. To serve the docs in production, set `DOCS_ENABLED=true`.
+
 ## [3.0.0] - 2026-10-03
 
 The 3.0 line: M3–M7 ship together as **3.0.0** (ADR-024, ADR-026), developed on the `next` branch and released on `master`.

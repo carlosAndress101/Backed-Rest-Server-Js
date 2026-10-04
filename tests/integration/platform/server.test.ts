@@ -67,6 +67,7 @@ describe('src/server.ts', () => {
   test.each([
     ['a required variable is missing', { SECRET_KEY: undefined }, 'SECRET_KEY'],
     ['TRUST_PROXY is not a hop count (C9)', { TRUST_PROXY: 'abc' }, 'TRUST_PROXY'],
+    ["DOCS_ENABLED is not 'true' or 'false' (D5)", { DOCS_ENABLED: 'yes' }, 'DOCS_ENABLED'],
   ])(
     'exits 1 before listening when %s',
     async (_case, overrides, variable) => {
@@ -79,6 +80,33 @@ describe('src/server.ts', () => {
       expect(stdout).not.toContain('server listening');
     },
     BOOT_TIMEOUT_MS,
+  );
+
+  test(
+    'in production, DOCS_ENABLED=true warns at boot and serves /docs/openapi.json (D5)',
+    async () => {
+      const port = await freePort();
+      const server = boot({
+        ...validEnv(port),
+        NODE_ENV: 'production',
+        CORS_ORIGINS: 'https://shop.example',
+        DOCS_ENABLED: 'true',
+      });
+      await vi.waitFor(() => expect(server.output().stdout).toContain('server listening'), {
+        timeout: BOOT_TIMEOUT_MS,
+      });
+
+      expect(server.output().stdout).toContain(
+        'DOCS_ENABLED=true: /docs serves the API description in production',
+      );
+      const res = await fetch(`http://127.0.0.1:${port}/docs/openapi.json`);
+      expect(res.status).toBe(200);
+      expect(((await res.json()) as { openapi: string }).openapi).toMatch(/^3\.1\./);
+
+      server.signal('SIGTERM');
+      expect(await server.exited).toBe(0);
+    },
+    BOOT_TIMEOUT_MS * 2,
   );
 
   test(

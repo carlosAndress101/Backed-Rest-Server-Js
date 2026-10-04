@@ -40,7 +40,11 @@ const CLOUDINARY_IMAGE = 'https://res.cloudinary.com/demo/image/upload/v1/existi
 // path or regexp string (verified directly against this branch's express@5.2.1), so the app's registered routes
 // are read from `router.stack` / `layer.handle.stack` — [P30], amended by AM-M6-6 — rather than parsed from it.
 function buildIntrospectableApp() {
-  const config = loadConfig({ ...process.env, MONGO_CLOUD: `${inject('mongoUri')}test-${randomUUID()}` });
+  const config = loadConfig({
+    ...process.env,
+    MONGO_CLOUD: `${inject('mongoUri')}test-${randomUUID()}`,
+    DOCS_ENABLED: 'true', // M8: pinned, so an ambient value cannot change the router count
+  });
   return createApp({ config, logger: createLogger(config, { write: () => undefined }) });
 }
 
@@ -210,12 +214,12 @@ describe('pairRouters is order-independent (TEST-05)', () => {
 
   // Deterministic sampled shuffles of the live mount order (no randomness: fixed index orders).
   const SHUFFLES: Array<[string, number[]]> = [
-    ['rotate-1', [1, 2, 3, 4, 5, 0]],
-    ['rotate-3', [3, 4, 5, 0, 1, 2]],
-    ['swap-halves', [3, 4, 5, 0, 1, 2].reverse()],
-    ['interleave', [0, 3, 1, 4, 2, 5]],
-    ['twins-swapped', [1, 0, 2, 3, 4, 5]],
-    ['ends-inward', [5, 0, 4, 1, 3, 2]],
+    ['rotate-1', [1, 2, 3, 4, 5, 6, 0]],
+    ['rotate-3', [3, 4, 5, 6, 0, 1, 2]],
+    ['swap-halves', [3, 4, 5, 6, 0, 1, 2].reverse()],
+    ['interleave', [0, 4, 1, 5, 2, 6, 3]],
+    ['twins-swapped', [1, 0, 2, 3, 4, 5, 6]],
+    ['ends-inward', [6, 0, 5, 1, 4, 2, 3]],
   ];
 
   for (const [name, order] of SHUFFLES) {
@@ -225,7 +229,7 @@ describe('pairRouters is order-independent (TEST-05)', () => {
   }
 
   test('shuffled mounts still recover the full fixture pair set', () => {
-    const shuffled = inOrder(syntheticRouters(), [4, 2, 0, 5, 1, 3]);
+    const shuffled = inOrder(syntheticRouters(), [4, 2, 0, 6, 5, 1, 3]);
     const pairing = pairRouters(shuffled, MOUNT_PREFIXES, fixturePairs());
     const livePairs = new Set<string>();
     for (const [router, prefix] of pairing) {
@@ -417,6 +421,14 @@ async function fire(app: Server, row: MatrixRow, kase: MatrixCase): Promise<numb
       });
       return res.statusCode;
     }
+    case '#26': {
+      const res = await request(app).get('/docs').set(header);
+      return res.statusCode;
+    }
+    case '#27': {
+      const res = await request(app).get('/docs/openapi.json').set(header);
+      return res.statusCode;
+    }
     default:
       throw new Error(`no request builder for matrix row ${row.id}`);
   }
@@ -426,7 +438,7 @@ describe('one HTTP request per matrix cell (§6.2, the authoritative enforcement
   let app: Server;
 
   beforeAll(async () => {
-    app = await startTestApp();
+    app = await startTestApp({ DOCS_ENABLED: 'true' }); // M8: rows #26 and #27 need /docs mounted
   });
 
   afterAll(async () => {
