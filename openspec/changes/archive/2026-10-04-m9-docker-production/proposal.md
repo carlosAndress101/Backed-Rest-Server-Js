@@ -33,6 +33,8 @@ This is the right time because M8 gave M9 the surface it builds on (documented c
 ### Modified Capabilities
 - None.
 
+> Note (2026-10-04, owner decision, retroactive): a `platform-readiness` spec was added at close-out so this change can be archived with a recorded capability for M10 to build on. History above is unchanged; see `specs/platform-readiness/spec.md`.
+
 ## Approach
 
 **Recommended direction.** Four implementation slices on `feat/m9-docker-production` as chained PRs (M8 pattern), small traceable commits, no squash, no AI attribution:
