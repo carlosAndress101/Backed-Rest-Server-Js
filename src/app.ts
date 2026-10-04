@@ -1,7 +1,7 @@
 import cors from 'cors';
 import express, { type Express } from 'express';
 import helmet, { type HelmetOptions } from 'helmet';
-import { isObjectIdOrHexString } from 'mongoose';
+import mongoose, { isObjectIdOrHexString } from 'mongoose';
 
 import type { Config } from './config';
 import type { Logger } from './core/logger';
@@ -11,6 +11,7 @@ import { authenticate, type UserLookup } from './middlewares/authenticate';
 import { errorHandler } from './middlewares/error-handler';
 import { notFound } from './middlewares/not-found';
 import { requestLogger } from './middlewares/request-logger';
+import { healthRouter, readyRouter } from './platform/health';
 import { authModule } from './modules/auth';
 import { CategoryModel, categoriesModule } from './modules/categories';
 import { mediaModule } from './modules/media';
@@ -73,6 +74,22 @@ export function createApp({ config, logger }: AppDeps): Express {
       Product: ProductModel,
       authenticate: auth,
       cloudinaryUrl: config.media.cloudinaryUrl,
+    }),
+  );
+
+  // M9 platform routes (ADR-052): liveness needs no dependency; readiness pings the database
+  // with a real round-trip. Mounted before notFound so they are never the 404 envelope.
+  app.use('/health', healthRouter());
+  app.use(
+    '/ready',
+    readyRouter({
+      // A real round-trip, not the possibly stale readyState flag alone (M9 D2).
+      checkDb: async () => {
+        const db = mongoose.connection.db;
+        if (mongoose.connection.readyState !== mongoose.ConnectionStates.connected || db === undefined)
+          throw new Error('Database not ready');
+        await db.admin().ping();
+      },
     }),
   );
 

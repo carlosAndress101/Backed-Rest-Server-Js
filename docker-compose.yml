@@ -1,0 +1,44 @@
+# M9 (ADR-051): local development only — never a production template. `api` runs the
+# development server with live source; `mongo` is a throwaway database on a named volume.
+# Behind a reverse proxy, set TRUST_PROXY to the real hop count (README production checklist).
+services:
+  api:
+    build:
+      context: .
+      target: build
+    # Development entrypoint: tsx watch on source. Production runs `node dist/server.js`
+    # (the Dockerfile CMD), never this command.
+    command: ['pnpm', 'dev']
+    ports:
+      - '1500:1500'
+    environment:
+      NODE_ENV: development
+      PORT: 1500
+      # The compose network resolves `mongo` to the database service below.
+      MONGO_CLOUD: mongodb://mongo:27017/backed-dev
+      # Placeholders only (M8 precedent): replace with real values for any shared environment.
+      SECRET_KEY: dev-secret-at-least-32-characters-long
+      GOOGLE_CLIENT_ID: dev-client-id
+      CLOUDINARY_URL: cloudinary://key:secret@demo
+      CORS_ORIGINS: '*'
+      # TRUST_PROXY: unset — direct local traffic. Set to the proxy hop count when proxied.
+    volumes:
+      - .:/app
+      - /app/node_modules
+    depends_on:
+      mongo:
+        condition: service_healthy
+
+  mongo:
+    image: mongo:8
+    volumes:
+      - mongo-data:/var/lib/mongodb
+    healthcheck:
+      test: ['CMD', 'mongosh', '--quiet', '--eval', "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+volumes:
+  mongo-data:

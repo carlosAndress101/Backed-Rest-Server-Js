@@ -1,0 +1,19 @@
+# Keep the build context to what the Dockerfile consumes: manifests, sources, configs.
+node_modules
+dist
+coverage
+.git
+.gitignore
+.env
+.env.*
+*.log
+.vscode
+.idea
+openspec
+docs
+tests
+*.md
+!README.md
+docker-compose.yml
+Dockerfile
+.dockerignore
