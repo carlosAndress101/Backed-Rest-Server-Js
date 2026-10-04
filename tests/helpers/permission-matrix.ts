@@ -41,6 +41,7 @@ export const MOUNT_PREFIXES = [
   '/api/user',
   '/api/auth',
   '/api/uploads',
+  '/docs', // M8 (ADR-044 accommodation): mounted only when DOCS_ENABLED; the matrix tests pin it on
 ] as const;
 
 export const MATRIX: MatrixRow[] = [
@@ -315,5 +316,18 @@ export const MATRIX: MatrixRow[] = [
       { caller: 'VENTAS_ROLE', status: 200, label: 'self' },
       { caller: 'ADMIN_ROLE', status: 200, label: 'self' },
     ],
+  },
+  // #26, #27 — M8 (Decision 2): the API description, public and representative of every caller, like #22.
+  {
+    id: '#26',
+    method: 'get',
+    path: '/docs',
+    cases: [{ caller: 'anonymous', status: 200 }],
+  },
+  {
+    id: '#27',
+    method: 'get',
+    path: '/docs/openapi.json',
+    cases: [{ caller: 'anonymous', status: 200 }],
   },
 ];
