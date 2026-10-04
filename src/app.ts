@@ -1,5 +1,3 @@
-import path from 'node:path';
-
 import cors from 'cors';
 import express, { type Express } from 'express';
 import helmet, { type HelmetOptions } from 'helmet';
@@ -8,6 +6,7 @@ import { isObjectIdOrHexString } from 'mongoose';
 import type { Config } from './config';
 import type { Logger } from './core/logger';
 import { createTokenService } from './core/security/jwt';
+import { docsModule } from './docs';
 import { authenticate, type UserLookup } from './middlewares/authenticate';
 import { errorHandler } from './middlewares/error-handler';
 import { notFound } from './middlewares/not-found';
@@ -24,27 +23,9 @@ export interface AppDeps {
   logger: Logger;
 }
 
-// Correct from both src/ (tsx, Vitest) and dist/ (node).
-const PUBLIC_DIR = path.join(__dirname, '..', 'public');
-
-// T1.3's options, as merged: the CSP and COOP keep the demo page's Google sign-in and fonts
-// working, CORP lets other origins embed images.
+// Helmet's defaults (CSP, COOP same-origin, …) plus two API choices: CORP cross-origin, so other origins can embed the
+// image GET /api/uploads/:collection/:id redirects to (#22), and the referrer policy.
 const HELMET_OPTIONS: HelmetOptions = {
-  contentSecurityPolicy: {
-    directives: {
-      scriptSrc: ["'self'", 'https://accounts.google.com/gsi/client'],
-      styleSrc: [
-        "'self'",
-        "'unsafe-inline'",
-        'https://accounts.google.com/gsi/style',
-        'https://fonts.googleapis.com',
-      ],
-      fontSrc: ["'self'", 'https://fonts.gstatic.com'],
-      frameSrc: ['https://accounts.google.com/gsi/'],
-      connectSrc: ["'self'", 'https://accounts.google.com/gsi/'],
-    },
-  },
-  crossOriginOpenerPolicy: { policy: 'same-origin-allow-popups' },
   crossOriginResourcePolicy: { policy: 'cross-origin' },
   referrerPolicy: { policy: 'strict-origin-when-cross-origin' },
 };
@@ -59,7 +40,6 @@ export function createApp({ config, logger }: AppDeps): Express {
   app.use(helmet(HELMET_OPTIONS));
   app.use(cors({ origin: config.cors.origins === '*' ? '*' : [...config.cors.origins] }));
   app.use(express.json());
-  app.use(express.static(PUBLIC_DIR));
 
   const tokens = createTokenService(config.auth.jwtSecret, { ttlSeconds: config.auth.jwtTtlSeconds });
   // The users module owns User (ADR-027). A uid that is not an ObjectId is no user, so authenticate answers 401,
@@ -95,6 +75,9 @@ export function createApp({ config, logger }: AppDeps): Express {
       cloudinaryUrl: config.media.cloudinaryUrl,
     }),
   );
+
+  // D5 (ADR-047): when disabled, /docs is absent (the standard 404), never a distinct refusal.
+  if (config.docs.enabled) app.use('/docs', docsModule());
 
   app.use(notFound);
   app.use(errorHandler);

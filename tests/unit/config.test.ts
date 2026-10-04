@@ -46,6 +46,7 @@ describe('loadConfig defaults', () => {
         bcryptCost: 10,
       },
       media: { cloudinaryUrl: VALID.CLOUDINARY_URL },
+      docs: { enabled: true },
       seed: { adminEmail: undefined, adminPassword: undefined },
     });
   });
@@ -105,6 +106,41 @@ describe('SEC-15 / C9 TRUST_PROXY accepts exactly what T1.7 accepted', () => {
       const { message } = configError({ ...VALID, TRUST_PROXY: value });
 
       expect(message).toMatch(/must be a non-negative integer hop count \(C9\)\n\s+→ at TRUST_PROXY/);
+    },
+  );
+});
+
+describe('DOCS_ENABLED (D5, ADR-047)', () => {
+  test.each([
+    ['development', undefined, true],
+    ['development', 'true', true],
+    ['development', 'false', false],
+    ['test', undefined, true],
+    ['test', 'true', true],
+    ['test', 'false', false],
+    ['production', undefined, false],
+    ['production', 'true', true],
+    ['production', 'false', false],
+  ])('NODE_ENV=%s, DOCS_ENABLED=%j → docs.enabled %s', (nodeEnv, value, expected) => {
+    const source: NodeJS.ProcessEnv = { ...VALID, NODE_ENV: nodeEnv };
+    if (value !== undefined) source.DOCS_ENABLED = value;
+
+    expect(loadConfig(source).docs.enabled).toBe(expected);
+  });
+
+  test.each(['development', 'test', 'production'])(
+    "NODE_ENV=%s: DOCS_ENABLED='' counts as unset",
+    (nodeEnv) => {
+      expect(load({ NODE_ENV: nodeEnv, DOCS_ENABLED: '' }).docs).toEqual(load({ NODE_ENV: nodeEnv }).docs);
+    },
+  );
+
+  test.each(['1', 'yes', 'TRUE', ' true', 'on'])(
+    'DOCS_ENABLED=%j is a ConfigError naming DOCS_ENABLED',
+    (value) => {
+      const { message } = configError({ ...VALID, DOCS_ENABLED: value });
+
+      expect(message).toMatch(/must be 'true' or 'false'\n\s+→ at DOCS_ENABLED/);
     },
   );
 });
