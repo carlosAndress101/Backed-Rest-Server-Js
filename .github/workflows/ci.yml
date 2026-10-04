@@ -59,7 +59,11 @@ jobs:
       - name: Start the local stack
         run: docker compose up -d
       - name: Check liveness
-        run: curl --fail --retry 12 --retry-delay 5 --retry-connrefused http://127.0.0.1:1500/health
+        # The published port accepts and resets connections until the app listens: retry every error.
+        run: curl --fail --silent --show-error --retry 24 --retry-delay 5 --retry-all-errors http://127.0.0.1:1500/health
+      - name: Show the api logs
+        if: failure()
+        run: docker compose logs api
       - name: Stop the local stack
         if: always()
         run: docker compose down -v --remove-orphans
