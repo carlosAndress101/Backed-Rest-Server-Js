@@ -4,11 +4,11 @@ All notable changes to this project are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) · Versioning: [SemVer](https://semver.org/).
 Client-visible contract changes are always listed under **Breaking** and mirrored in [API_PROGRESS.md](API_PROGRESS.md).
 
-## [Unreleased]
+## [3.2.0] - 2026-10-04
 
 ### M9: Docker & Production Readiness
 
-Planned as **3.2.0** (MINOR, ADR-024): additive only — two new anonymous platform routes, container files, and a production-only boot refusal on an undeployed hazard. No existing contract changes.
+**3.2.0** is MINOR (ADR-024): additive only — two new anonymous platform routes, container files, and a production-only boot refusal on an undeployed hazard. No existing contract changes.
 
 #### Added
 - `GET /health`: liveness, always 200 `{ data: { status: 'ok' } }` when the process serves, with no database touch (ADR-052).
