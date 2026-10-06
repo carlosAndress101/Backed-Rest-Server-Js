@@ -4,6 +4,26 @@ All notable changes to this project are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) · Versioning: [SemVer](https://semver.org/).
 Client-visible contract changes are always listed under **Breaking** and mirrored in [API_PROGRESS.md](API_PROGRESS.md).
 
+## [Unreleased]
+
+### M10: CI/CD
+
+No client-visible change: M10 touches only CI, delivery infrastructure, and documentation.
+
+#### Added
+- CodeQL analysis: JavaScript/TypeScript, on PR, push to `master`, and weekly (ADR-054).
+- Dependency review on PRs: fails on high-severity or above.
+- Actionlint: validates all workflow files on PR and push to `master`.
+- Conventional PR title enforcement: `feat`, `fix`, `docs`, `chore`, `ci`, `test`, `refactor`, `build`, `perf` (ADR-056).
+- Renovate: npm + GitHub Actions, weekly, grouped minor/patch, separate PRs for majors, 1-day minimum release age, no automerge (ADR-057).
+- Release pipeline: on `v*.*.*` tag push, verifies CI, validates tag vs `package.json` and CHANGELOG section, builds Docker `runtime` image, pushes to GHCR with semver + latest + sha tags, provenance and SBOM, creates GitHub Release from CHANGELOG (ADR-054, ADR-055).
+- README "Releasing and Deploying" section: PR → CI → merge → tag → Actions → GHCR → Dokploy manual deploy → healthcheck → rollback.
+- Branch protection documentation: required checks (`verify`, `docker`, `actionlint`, `dependency-review`, `CodeQL`, `pr-title`), no force push, no branch deletion.
+
+#### Operational
+- Production consumes a versioned GHCR image (e.g. `ghcr.io/carlosandress101/backed-rest-server-js:3.2.1`), configured manually through Dokploy's UI. No Dokploy API integration, no production secrets in GitHub.
+- Rollback: select a previous image tag in Dokploy (e.g. `3.2.0`).
+
 ## [3.2.0] - 2026-10-04
 
 ### M9: Docker & Production Readiness
