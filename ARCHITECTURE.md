@@ -385,6 +385,24 @@ tests/{setup,helpers,unit,unit/modules,integration/{modules,platform,security}}
 
 **Next:** release **3.2.0** (ADR-024, additive MINOR): the CHANGELOG `[3.2.0]` cut and the tag. Then M10.
 
+### 1.16 State after M10 (unreleased, 2026-10-04)
+
+**CI/CD and delivery** (change [m10-ci-cd](openspec/changes/m10-ci-cd/design.md), decisions D1–D9, ADR-054…ADR-057):
+- **Security gates (ADR-054…057):** CodeQL (`javascript`, `security-extended`, PR + push + weekly), dependency review (PR-only, fail on high+), actionlint (all workflow files), conventional PR title enforcement.
+- **Renovate (ADR-057):** npm + GitHub Actions, weekly, grouped minor/patch, separate majors, `minimumReleaseAge: "1 day"`, digest pinning, no automerge.
+- **Release pipeline:** on `v*.*.*` tag push: verify (reuses CI), validate tag vs `package.json`, validate CHANGELOG section, build Docker `runtime` target, push to GHCR with semver + latest + sha tags, provenance + SBOM, create GitHub Release from CHANGELOG.
+- **GHCR (ADR-054):** `ghcr.io/carlosandress101/backed-rest-server-js` with exact version, minor floating, latest, and commit-pinned tags.
+- **Dokploy (ADR-055):** manual deployment from GHCR image tags, no API integration.
+- **CHANGELOG (ADR-056):** hand-curated, conventional PR titles enforce quality without automatic generation.
+
+**Config:** none new.
+
+**Data:** none. `M001`–`M006` remain the complete migration set.
+
+**Deploy:** tag `vX.Y.Z` triggers the release pipeline; Dokploy pulls the versioned GHCR image manually.
+
+**Tests:** unchanged (1576, 1 skipped).
+
 ---
 
 ## 2. To-be (target)
@@ -496,3 +514,7 @@ Status: **Accepted** = Orchestrator decision, binding on agents. **Proposed** = 
 | ADR-051 | **The production image is a three-stage `node:24-alpine` build** (deps with C toolchain for bcrypt → full build → runtime with prod-only `node_modules` + `dist/`, `USER node`), running `CMD ["node", "dist/server.js"]` as PID 1 with a `HEALTHCHECK` on `/health` honoring `$PORT`. `docker-compose.yml` is dev-local only (api + `mongo:8`, placeholders, never a production template) | Accepted 2026-10-04 (M9); implemented in M9 (S2 5784432) | Direct `node` exec is what OPS-04 prescribes: PID 1 receives SIGTERM, so the existing graceful shutdown runs. No new binary (tini/PM2), no new dependency. Image build/push pipeline is M10. |
 | ADR-052 | **`GET /health` (liveness, no DB touch) and `GET /ready` (readiness, a real `db.admin().ping()`) live in `src/platform/health.ts` as `healthRouter()` / `readyRouter({ checkDb })`**, mounted at `/health` and `/ready` as anonymous permission-matrix rows #28 and #29 (the `/docs` #26/#27 precedent). A failed check answers 500 `INTERNAL` through the standard envelope — no new `ErrorCode`, no 503 | Accepted 2026-10-04 (owner decision, M9 S0; M9 D1–D3); implemented in M9 (S1 029ecc7) | Orchestrators treat any non-2xx as not-ready, so 500 carries the signal with zero error-catalog churn. `checkDb` injection keeps the 500 path testable with no `vi.mock`. Excluded from the 21-operation OpenAPI catalog, which covers `/api/*` only. |
 | ADR-053 | **A production-only boot guard refuses to serve (exit 1) until `M001-normalize-email` is recorded in the `migrations` ledger**, checked via the read-only `migrationStatus` after connect and before listen, reusing `MIGRATIONS` from `src/cli.ts`. Dev/test boots are untouched; M005/M006 absence is not gated | Accepted 2026-10-04 (M9 D4); implemented in M9 (S3 00c2e0e) | M001 is the sole hard deploy-order gate (the 2.x mixed-case-email lockout, T4.5); M005/M006 absence is tolerated by M5 design. Gating dev/test would break every test boot for no benefit. |
+| ADR-054 | **GHCR image tags follow semver conventions.** For tag `v3.2.1`, publish `3.2.1` (exact, primary production reference), `3.2` (minor floating), `latest` (convenience, not recommended for production), and `sha-<short>` (commit-pinned). Image: `ghcr.io/carlosandress101/backed-rest-server-js` | Accepted 2026-10-04 (M10 D7); implemented in M10 | Exact version is the deployment pin; `latest` is a convenience alias that drifts. Commit-pinned tags enable bisecting image issues. |
+| ADR-055 | **GHCR is the release artifact store; Dokploy is a manual consumer.** The release pipeline ends at GHCR. Dokploy pulls a versioned tag (e.g. `3.2.1`) configured through its UI. No Dokploy API, secrets, or automation in GitHub Actions | Accepted 2026-10-04 (M10 D9); implemented in M10 | Keeps deployment control with the owner. No secret rotation, no API surface, no platform coupling. Rollback is selecting a previous tag in Dokploy. |
+| ADR-056 | **The CHANGELOG is hand-curated; conventional PR titles enforce quality without automatic generation.** `amannn/action-semantic-pull-request` validates PR titles against allowed types (`feat`, `fix`, `docs`, `chore`, `ci`, `test`, `refactor`, `build`, `perf`). No release-please, no automatic CHANGELOG generation | Accepted 2026-10-04 (M10 D4); implemented in M10 | The CHANGELOG captures intent and context that no automation can. Conventional titles are a quality gate, not a release mechanism. |
+| ADR-057 | **Renovate proposes dependency updates weekly with a 1-day minimum release age**, matching ADR-025's supply-chain age gate. Minor/patch updates are grouped; majors get separate PRs. Digest pinning for GitHub Actions. No automerge | Accepted 2026-10-04 (M10 D5); implemented in M10 | Fresh releases are the classic window for a compromised package (ADR-025). Grouping reduces PR noise; separate majors surface breaking changes explicitly. Humans decide on every update. |

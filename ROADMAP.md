@@ -1,7 +1,7 @@
 # Roadmap
 
 > Owner: CarlosH / SH1FT3R
-> Updated 2026-10-04 · **3.2.0** released 2026-10-04 on `master` (M9; **3.1.0**, M8, released 2026-10-04; **3.0.0**, M3–M7, released 2026-10-03) · Next milestone: **M10**
+> Updated 2026-10-04 · **3.2.0** released 2026-10-04 on `master` (M9; **3.1.0**, M8, released 2026-10-04; **3.0.0**, M3–M7, released 2026-10-03) · Next milestone: **M11**
 
 Complexity scale: **S** (≤1 agent-day) · **M** (2–3) · **L** (4–6) · **XL** (>6). Tests are a quality gate in **every** milestone (ADR-013); M7 closes the remaining gaps.
 
@@ -17,7 +17,7 @@ Complexity scale: **S** (≤1 agent-day) · **M** (2–3) · **L** (4–6) · **
 | M7 | Testing Hardening | M | M6 | ✅ Accepted 2026-10-01, release **3.0.0** ([change](openspec/changes/m7-testing-hardening/proposal.md)) |
 | M8 | API Documentation | S–M | M3, M6 | ✅ Delivered 2026-10-04 (slices S1–S7), release **3.1.0** ([change](openspec/changes/m8-api-documentation/proposal.md)) |
 | M9 | Docker & Production Readiness | M | M2, M4 | ✅ Delivered 2026-10-04 (slices S0–S4), release **3.2.0** ([change](openspec/changes/m9-docker-production/proposal.md)) |
-| M10 | CI/CD | M | M9 (basic CI lands in M2) | Planned |
+| M10 | CI/CD | M | M9 (basic CI lands in M2) | ✅ Delivered 2026-10-04, in [Unreleased] ([change](openspec/changes/m10-ci-cd/proposal.md)) |
 
 Why this order differs from the default template: **security first** (ADR-001) because Critical, unauthenticated exploits exist in a public repo. The deployment it referenced (Zeabur) is gone (owner, 2026-09-23), but anyone can still run the public code. **Foundation before refactor**, so the refactor lands on typed config, errors, and tests. **Database before auth**, because auth hardening needs `tokenVersion` and normalised emails. **Validation is folded into the refactor**, because every validation chain moves anyway, and doing it twice would violate DRY.
 
@@ -103,9 +103,10 @@ Why this order differs from the default template: **security first** (ADR-001) b
 - **Risks:** Docker isn't installed on the dev machine, so Docker Desktop, OrbStack, or Colima is needed. There is no deployment target: the Zeabur deployment is retired (owner, 2026-09-23). M9 ships a platform-agnostic container plus `TRUST_PROXY` guidance, and the target is chosen then.
 - **Complexity:** M · **Dependencies:** M2, M4.
 
-## M10: CI/CD
+## M10: CI/CD ✅ (delivered 2026-10-04, in [Unreleased])
+- **Outcome:** CodeQL (JS/TS, PR + push + weekly), dependency review (PR-only, fail on high+), actionlint (all workflow files), conventional PR title enforcement (allowed types: feat/fix/docs/chore/ci/test/refactor/build/perf), Renovate (npm + GitHub Actions, weekly, grouped minor/patch, separate majors, 1-day minimum release age, no automerge), release pipeline on `v*.*.*` tag (verify → version+CHANGELOG validation → Docker `runtime` build → GHCR push with semver+latest+sha tags, provenance+SBOM → GitHub Release from CHANGELOG), branch protection documentation. OPS-03 closed. ADR-054…ADR-057. Manual Dokploy deployment (no API integration, no secrets in GitHub).
 - **Goal:** Automated gates and delivery.
-- **Carried from M2 (T2.7 Q1):** `cancel-in-progress` only for pull requests (`${{ github.event_name == 'pull_request' }}`), so every `master` commit gets a finished run.
-- **Deliverables:** PR pipeline (lint, typecheck, test, coverage, `pnpm audit`); CodeQL and dependency review; Renovate or Dependabot; image build and push to GHCR; deploy on tag; conventional commits driving CHANGELOG; branch protection.
+- **Carried from M2 (T2.7 Q1):** `cancel-in-progress` only for pull requests, so every `master` commit gets a finished run.
+- **Deliverables:** PR pipeline (lint, typecheck, test, coverage, `pnpm audit`); CodeQL and dependency review; Renovate; image build and push to GHCR; GitHub Release from CHANGELOG; conventional PR title enforcement; branch protection documentation.
 - **Risks:** Deploy secrets management; platform integration unknown.
 - **Complexity:** M · **Dependencies:** M9 (basic CI already exists from M2).
