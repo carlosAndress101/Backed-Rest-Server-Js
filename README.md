@@ -144,3 +144,76 @@ the graceful shutdown (running `pnpm start` as PID 1 skips it, OPS-04). Before t
 - `pnpm seed`: only to create the first admin on a fresh database, never on boot.
 - Reused 2.x databases: review rogue admins and tampered `image` values (M1 T1.6) before migrating.
 - Health: liveness `GET /health`, readiness `GET /ready` (200 when the database pings, otherwise 500).
+
+## Releasing and Deploying
+
+The delivery pipeline goes from pull request to production-ready artifact in GHCR. Production deployment
+is manual through Dokploy's UI.
+
+### 1. Pull request
+
+Open a PR targeting `master` or `next`. The CI pipeline runs automatically:
+
+- **verify**: format, lint, typecheck, build, test, audit
+- **docker**: production image build and compose smoke test
+- **dependency-review**: fails on high-severity vulnerabilities (PR only)
+- **actionlint**: validates all workflow files
+- **pr-title**: enforces conventional commit format (`feat`, `fix`, `docs`, `chore`, `ci`, `test`, `refactor`, `build`, `perf`)
+- **CodeQL**: static security analysis (also runs weekly)
+
+The CI, Docker, dependency-review, actionlint, and PR-title checks must pass before merge. CodeQL uploads
+findings to GitHub Security; findings are advisory and do not fail the workflow by themselves. The owner
+will configure the successful CodeQL check as required through branch protection/rulesets in GitHub.
+
+### 2. Merge and version
+
+Once the PR is merged to `master`, prepare the release:
+
+1. Update `CHANGELOG.md` with a `[X.Y.Z]` section (hand-curated, no automatic generation).
+2. Bump `version` in `package.json` to match.
+3. Commit: `chore(release): X.Y.Z`.
+4. Tag: `git tag vX.Y.Z`.
+
+### 3. GitHub Actions release pipeline
+
+Pushing the tag triggers the release workflow:
+
+1. **Verify**: reuses the full CI pipeline.
+2. **Version validation**: compares the tag with `package.json` — mismatch fails the release.
+3. **CHANGELOG extraction**: requires exactly one non-empty `[X.Y.Z]` section — missing, duplicate, or empty sections fail the release.
+4. **Docker build**: builds the `runtime` target from the existing `Dockerfile`.
+5. **GHCR push**: publishes to `ghcr.io/carlosandress101/backed-rest-server-js` with tags:
+   - `X.Y.Z` — exact version (primary production reference)
+   - `X.Y` — minor floating tag
+   - `latest` — convenience, not recommended for production
+   - `sha-<short>` — commit-pinned
+6. **GitHub Release**: created from the `[X.Y.Z]` CHANGELOG section.
+
+### 4. Dokploy manual deploy
+
+Dokploy is configured manually through its UI. Production must use an immutable version tag, never
+`latest`:
+
+```
+ghcr.io/carlosandress101/backed-rest-server-js:3.2.1
+```
+
+Before the first serve, run migrations:
+
+```bash
+pnpm migrate up
+```
+
+The M9 production boot guard (`OPS-05`) refuses to serve until `M001-normalize-email` is recorded.
+
+Healthcheck endpoints:
+- **Liveness**: `GET /health` (always 200 when the process serves)
+- **Readiness**: `GET /ready` (200 when the database pings, 500 otherwise)
+
+### 5. Rollback
+
+Production running `ghcr.io/carlosandress101/backed-rest-server-js:3.2.1` → problem detected →
+select the previous known-good image `ghcr.io/carlosandress101/backed-rest-server-js:3.2.0` in
+Dokploy → deploy that image. This is a manual image selection and deployment; no automatic rollback
+is configured. Never use `latest` as the production rollback or deployment reference. If the release
+included migrations, assess data compatibility and run `pnpm migrate down` before reverting the code.
