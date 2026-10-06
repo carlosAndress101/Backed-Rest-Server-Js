@@ -42,6 +42,40 @@ jobs:
       - run: pnpm test:coverage
       - run: pnpm audit --prod
 
+  dependency-review:
+    name: Dependency review
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      # Third-party action pinned by commit (v5.0.0).
+      - uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294
+        with:
+          fail-on-severity: high
+
+  actionlint:
+    name: Lint GitHub Actions workflows
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Download actionlint (v1.7.12)
+        id: actionlint
+        run: bash <(curl -s https://raw.githubusercontent.com/rhysd/actionlint/main/scripts/download-actionlint.bash) 1.7.12
+        shell: bash
+      - name: Check workflow files
+        run: ${{ steps.actionlint.outputs.executable }} -color
+        shell: bash
+
   docker:
     name: Docker build and compose smoke test
     runs-on: ubuntu-24.04
