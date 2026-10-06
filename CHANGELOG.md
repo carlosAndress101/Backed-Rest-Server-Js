@@ -4,7 +4,7 @@ All notable changes to this project are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) · Versioning: [SemVer](https://semver.org/).
 Client-visible contract changes are always listed under **Breaking** and mirrored in [API_PROGRESS.md](API_PROGRESS.md).
 
-## [Unreleased]
+## [3.2.1] - 2026-10-06
 
 ### M10: CI/CD
 
