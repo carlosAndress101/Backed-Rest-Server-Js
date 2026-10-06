@@ -4,7 +4,7 @@
 
 ### D1 — CodeQL runs on PR, push to master, and weekly
 
-CodeQL analyzes JavaScript/TypeScript. It runs on `pull_request` (targeting `master`), `push` to `master`, and on a weekly schedule (`cron: '0 6 * * 1'`). Permissions are minimal: `security-events: write` only in the analyze job, `contents: read` and `actions: read` globally. Actions are pinned by SHA. The `javascript` language is used with `security-extended` query suite for broader coverage.
+CodeQL analyzes JavaScript/TypeScript. It runs on `pull_request` (targeting `master`), `push` to `master`, and on a weekly schedule (`cron: '0 6 * * 1'`). Permissions are minimal: `security-events: write` only in the analyze job, `contents: read` and `actions: read` globally. Every action is pinned to a verified full commit SHA with its release version in a comment. Findings are advisory and do not fail the workflow; the owner may configure the successful CodeQL check as required in branch protection/rulesets later. The `javascript` language is used with `security-extended` query suite for broader coverage.
 
 ### D2 — Dependency review is PR-only and fails on high+
 
@@ -12,11 +12,11 @@ CodeQL analyzes JavaScript/TypeScript. It runs on `pull_request` (targeting `mas
 
 ### D3 — Actionlint validates all workflow files
 
-`rhysd/actionlint` (pinned by SHA with version comment) validates every `.yml` file in `.github/workflows/`. This catches YAML syntax errors, invalid action references, expression mistakes, and other workflow issues before they reach GitHub. Runs on PR and push to master, matching CI's trigger pattern.
+The official `rhysd/actionlint` v1.7.12 Linux amd64 release archive is downloaded from an explicit GitHub release URL, checked against the official SHA-256 pinned in the workflow, then extracted and run. No remote install script is executed. Actionlint validates every `.yml` file in `.github/workflows/` and fails the job on errors. Runs on PR and push to master, matching CI's trigger pattern.
 
 ### D4 — Conventional PR titles enforce quality without automatic releases
 
-`amannn/action-semantic-pull-request` (pinned by SHA) validates PR titles against the allowed types: `feat`, `fix`, `docs`, `chore`, `ci`, `test`, `refactor`, `build`, `perf`. This enforces consistency and enables future tooling without introducing release-please or automatic CHANGELOG generation. The CHANGELOG stays hand-curated (ADR-056).
+`amannn/action-semantic-pull-request` (pinned by full SHA) validates PR titles against the allowed types: `feat`, `fix`, `docs`, `chore`, `ci`, `test`, `refactor`, `build`, `perf`. It runs only for PRs targeting `master` or `next`. This enforces consistency and enables future tooling without introducing release-please or automatic CHANGELOG generation. The CHANGELOG stays hand-curated (ADR-056).
 
 ### D5 — Renovate proposes, never automerges
 
@@ -30,9 +30,9 @@ Triggered by `push` of tags matching `v*.*.*`. Two jobs:
 
 **Job 2 — release:** Depends on verify. Steps:
 1. **Version validation:** Extract version from tag (`v3.2.1` → `3.2.1`), compare with `package.json` version. Mismatch → fail.
-2. **CHANGELOG validation:** Check that `CHANGELOG.md` contains a section for `[3.2.1]`. Missing → fail.
+2. **CHANGELOG extraction:** `.github/scripts/extract-release-notes.py` requires exactly one matching `## [3.2.1]` section, extracts through the next version heading, trims surrounding whitespace, and fails if missing, duplicated, or empty. `gh release create` consumes only that extracted file.
 3. **Docker build + GHCR push:** Uses `docker/setup-buildx-action`, `docker/login-action` (GITHUB_TOKEN), `docker/metadata-action` (tags: `3.2.1`, `3.2`, `latest`, `sha-<short>`), `docker/build-push-action` with `--target runtime`, provenance and SBOM enabled.
-4. **GitHub Release:** Extract the `[3.2.1]` section from CHANGELOG.md as the release body. Create release via `gh release create` or `softprops/action-gh-release`.
+4. **GitHub Release:** Pass only the validated extracted CHANGELOG file to `gh release create --notes-file`.
 
 Permissions: `packages: write` (GHCR), `contents: write` (release), `security-events: write` (if needed by verify).
 

@@ -152,7 +152,7 @@ is manual through Dokploy's UI.
 
 ### 1. Pull request
 
-Open a PR targeting `master`. The CI pipeline runs automatically:
+Open a PR targeting `master` or `next`. The CI pipeline runs automatically:
 
 - **verify**: format, lint, typecheck, build, test, audit
 - **docker**: production image build and compose smoke test
@@ -161,7 +161,9 @@ Open a PR targeting `master`. The CI pipeline runs automatically:
 - **pr-title**: enforces conventional commit format (`feat`, `fix`, `docs`, `chore`, `ci`, `test`, `refactor`, `build`, `perf`)
 - **CodeQL**: static security analysis (also runs weekly)
 
-All checks must pass before merge.
+The CI, Docker, dependency-review, actionlint, and PR-title checks must pass before merge. CodeQL uploads
+findings to GitHub Security; findings are advisory and do not fail the workflow by themselves. The owner
+will configure the successful CodeQL check as required through branch protection/rulesets in GitHub.
 
 ### 2. Merge and version
 
@@ -178,7 +180,7 @@ Pushing the tag triggers the release workflow:
 
 1. **Verify**: reuses the full CI pipeline.
 2. **Version validation**: compares the tag with `package.json` — mismatch fails the release.
-3. **CHANGELOG validation**: checks that `CHANGELOG.md` contains a `[X.Y.Z]` section — missing fails the release.
+3. **CHANGELOG extraction**: requires exactly one non-empty `[X.Y.Z]` section — missing, duplicate, or empty sections fail the release.
 4. **Docker build**: builds the `runtime` target from the existing `Dockerfile`.
 5. **GHCR push**: publishes to `ghcr.io/carlosandress101/backed-rest-server-js` with tags:
    - `X.Y.Z` — exact version (primary production reference)
@@ -189,7 +191,8 @@ Pushing the tag triggers the release workflow:
 
 ### 4. Dokploy manual deploy
 
-Dokploy is configured manually through its UI. Point it at the versioned GHCR image:
+Dokploy is configured manually through its UI. Production must use an immutable version tag, never
+`latest`:
 
 ```
 ghcr.io/carlosandress101/backed-rest-server-js:3.2.1
@@ -209,6 +212,8 @@ Healthcheck endpoints:
 
 ### 5. Rollback
 
-To roll back, select the previous version tag in Dokploy (e.g. `3.2.0` instead of `3.2.1`).
-Dokploy pulls and runs the older image. Run `pnpm migrate down` before reverting if the release
-included migrations.
+Production running `ghcr.io/carlosandress101/backed-rest-server-js:3.2.1` → problem detected →
+select the previous known-good image `ghcr.io/carlosandress101/backed-rest-server-js:3.2.0` in
+Dokploy → deploy that image. This is a manual image selection and deployment; no automatic rollback
+is configured. Never use `latest` as the production rollback or deployment reference. If the release
+included migrations, assess data compatibility and run `pnpm migrate down` before reverting the code.

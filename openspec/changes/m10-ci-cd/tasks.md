@@ -18,12 +18,12 @@ Slices land as sequential commits. Each slice ends with `pnpm format:check && pn
 
 - [x] 1.1 Create `.github/workflows/codeql.yml`: PR + push to master + weekly cron, `javascript` language, `security-extended` query suite, minimal permissions, actions pinned by SHA.
 - [x] 1.2 Add `dependency-review` job to `.github/workflows/ci.yml`: PR-only, `actions/dependency-review-action` pinned by SHA (v5.0.0), fail on `high` severity, minimal permissions.
-- [x] 1.3 Add `actionlint` job to `.github/workflows/ci.yml`: download script v1.7.12, validates all `.github/workflows/*.yml` files, fails on error.
+- [x] 1.3 Add `actionlint` job to `.github/workflows/ci.yml`: download official v1.7.12 Linux amd64 archive, verify its pinned SHA-256 before extraction/execution, validate all `.github/workflows/*.yml` files, fail on error.
 - [x] 1.4 PR: full `pnpm test` + typecheck/lint/format.
 
 ## S2 — Conventional PR Titles
 
-- [x] 2.1 Create `.github/workflows/pr-title.yml`: `amannn/action-semantic-pull-request` pinned by SHA (v6.1.1), allowed types: feat/fix/docs/chore/ci/test/refactor/build/perf, minimal permissions.
+- [x] 2.1 Create `.github/workflows/pr-title.yml`: `amannn/action-semantic-pull-request` pinned by full SHA (v6.1.1), allowed types: feat/fix/docs/chore/ci/test/refactor/build/perf, only PR targets master/next, minimal permissions.
 - [x] 2.2 PR: full `pnpm test` + typecheck/lint/format.
 
 ## S3 — Renovate
@@ -34,7 +34,7 @@ Slices land as sequential commits. Each slice ends with `pnpm format:check && pn
 ## S4 — Release Pipeline
 
 - [x] 4.1 Modify `.github/workflows/ci.yml` to support `workflow_call` trigger (add to existing triggers, keep current behavior unchanged).
-- [x] 4.2 Create `.github/workflows/release.yml`: trigger on `v*.*.*` tag push, job 1 (verify) calls ci.yml via `workflow_call`, job 2 (release) validates tag vs package.json, validates CHANGELOG section, builds Docker `runtime` target, pushes to GHCR with semver+latest+sha tags, provenance+SBOM, creates GitHub Release from CHANGELOG.
+- [x] 4.2 Create `.github/workflows/release.yml`: trigger on `v*.*.*` tag push, job 1 (verify) calls ci.yml via `workflow_call`, job 2 (release) validates tag vs package.json, uses `.github/scripts/extract-release-notes.py` to require and extract exactly one non-empty matching CHANGELOG section, builds Docker `runtime` target, pushes to GHCR with semver+latest+sha tags, provenance+SBOM, creates GitHub Release from the extracted notes.
 - [x] 4.3 Third-party actions pinned by SHA with version comments. GitHub-owned actions follow project policy.
 - [x] 4.4 PR: full `pnpm test` + typecheck/lint/format.
 
@@ -52,7 +52,7 @@ Slices land as sequential commits. Each slice ends with `pnpm format:check && pn
 - [x] 6.1 `pnpm format:check && pnpm lint && pnpm typecheck && pnpm build && pnpm test:coverage && pnpm audit --prod` — all exit 0.
 - [x] 6.2 Verify no secrets committed, no `.env` files modified, no AI attribution in git log.
 - [x] 6.3 Verify release workflow uses `runtime` Docker target.
-- [x] 6.4 Verify tag/package.json mismatch blocks release.
+- [x] 6.4 Verify tag/package.json mismatch blocks release; CHANGELOG absent/empty also blocks release notes creation.
 - [x] 6.5 Verify `git status` is clean.
 
 ## Residuals (documented, not implemented)

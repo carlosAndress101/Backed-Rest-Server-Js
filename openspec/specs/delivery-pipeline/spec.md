@@ -27,6 +27,8 @@ The system MUST run a CI workflow on every pull request and every push to `maste
 
 The system MUST run GitHub CodeQL analysis for the `javascript` language on pull requests targeting `master`, on pushes to `master`, and on a weekly schedule. The analysis MUST use the `security-extended` query suite. Permissions MUST be minimal: `security-events: write` only where needed, `contents: read` and `actions: read` globally.
 
+CodeQL findings are advisory: finding alerts MUST NOT by themselves fail the workflow. The repository owner MAY configure the successful CodeQL workflow check as required through branch protection or rulesets; this repository does not configure those GitHub settings.
+
 #### Scenario: CodeQL runs on a pull request
 
 - GIVEN a pull request targeting `master`
@@ -68,7 +70,7 @@ The system MUST run `rhysd/actionlint` on every pull request and push to `master
 
 ### Requirement: PR titles follow conventional commit format
 
-The system MUST validate that every pull request title matches the conventional commit format: one of the allowed types (`feat`, `fix`, `docs`, `chore`, `ci`, `test`, `refactor`, `build`, `perf`) followed by an optional scope and colon. The check MUST run on `pull_request_target` events.
+The system MUST validate that every pull request title matches the conventional commit format: one of the allowed types (`feat`, `fix`, `docs`, `chore`, `ci`, `test`, `refactor`, `build`, `perf`) followed by an optional scope and colon. The check MUST run on `pull_request_target` events targeting `master` or `next`, and MUST NOT run for pull requests targeting auxiliary branches.
 
 #### Scenario: A PR title is valid
 
@@ -135,7 +137,7 @@ The release workflow MUST extract the version from the tag (e.g. `v3.2.1` → `3
 
 ### Requirement: CHANGELOG must contain a section for the release version
 
-The release workflow MUST check that `CHANGELOG.md` contains a section heading `[X.Y.Z]` matching the tag version. If the section does not exist, the release MUST fail.
+The release workflow MUST locate exactly one `## [X.Y.Z]` version heading matching the tag, extract its content through the next version heading, and trim surrounding whitespace. Missing, duplicate, or empty sections MUST fail the release before publishing.
 
 #### Scenario: CHANGELOG section exists
 
@@ -148,6 +150,13 @@ The release workflow MUST check that `CHANGELOG.md` contains a section heading `
 - GIVEN tag `v3.2.1` but `CHANGELOG.md` has no `[3.2.1]` section
 - WHEN the CHANGELOG validation step runs
 - THEN the workflow fails
+
+#### Scenario: CHANGELOG section exists but is empty
+
+- GIVEN tag `v3.2.1` and `CHANGELOG.md` contains `## [3.2.1]` followed only by whitespace before the next version heading
+- WHEN the release-notes extraction runs
+- THEN the workflow fails
+- AND no GitHub Release is created
 
 ### Requirement: Docker image is built and pushed to GHCR with semver tags
 
@@ -185,7 +194,7 @@ The release workflow MUST create a GitHub Release for the tag. The release body 
 
 ### Requirement: Production deployment is manual via Dokploy
 
-The system MUST NOT automate deployment to Dokploy. The pipeline ends at GHCR. Dokploy consumes a versioned image tag (e.g. `ghcr.io/carlosandress101/backed-rest-server-js:3.2.1`) configured manually through its UI. Rollback is achieved by selecting a previous image tag in Dokploy (e.g. `3.2.0`).
+The system MUST NOT automate deployment to Dokploy. The pipeline ends at GHCR. Dokploy consumes an immutable version tag (e.g. `ghcr.io/carlosandress101/backed-rest-server-js:3.2.1`) configured manually through its UI; `latest` is not a production reference. Rollback is achieved manually by selecting and deploying a previous known-good image (e.g. `3.2.0`) in Dokploy. No automatic rollback is implemented.
 
 No Dokploy API keys, URLs, or application IDs MUST appear in GitHub secrets or workflow files.
 
@@ -203,7 +212,7 @@ No Dokploy API keys, URLs, or application IDs MUST appear in GitHub secrets or w
 
 ### Requirement: Branch protection enforces required checks
 
-The `master` and `next` branches MUST require the following checks to pass before merge: `verify` (CI), `docker`, `actionlint`, `dependency-review`, `CodeQL`, and `pr-title`. Force push and branch deletion MUST be prohibited. The actual branch protection configuration is performed by the repository owner in GitHub settings; this requirement documents the expected configuration.
+The `master` and `next` branches MUST require the following checks to pass before merge: `verify` (CI), `docker`, `actionlint`, `dependency-review`, `CodeQL`, and `pr-title`. CodeQL findings themselves are advisory and MUST NOT fail the workflow; only the successful workflow check may be made required. Force push and branch deletion MUST be prohibited. The actual branch protection configuration is performed by the repository owner in GitHub settings; this requirement documents the expected configuration and is not applied by this repository.
 
 #### Scenario: A PR with failing CI cannot merge
 
