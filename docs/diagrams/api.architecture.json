@@ -1,0 +1,299 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Backed-Rest-Server-Js \u2014 how the API is built",
+    "locale": "en",
+    "quality_profile": "showcase",
+    "repository": {
+      "url": "https://github.com/carlosAndress101/Backed-Rest-Server-Js",
+      "provider": "github",
+      "link_mode": "web",
+      "revision": "7998e5ad9b296f8719abf7201e3f8e62028fa6a7"
+    },
+    "views": [
+      {
+        "id": "request-path",
+        "label": "Request path",
+        "focus": ["client", "pipeline", "guard", "modules", "mongo"],
+        "note": "Every /api call crosses the same middleware chain, the auth guard, then a feature module and MongoDB."
+      },
+      {
+        "id": "integrations",
+        "label": "External services",
+        "focus": ["modules", "google", "cloudinary"],
+        "note": "Google verifies sign-in tokens; Cloudinary stores product and user images."
+      },
+      {
+        "id": "operations",
+        "label": "Operations surface",
+        "focus": ["pipeline", "platform", "docs", "cli", "mongo"],
+        "note": "Health probes, OpenAPI docs and the migration CLI sit beside the business routes."
+      }
+    ]
+  },
+  "components": [
+    {
+      "id": "client",
+      "type": "external",
+      "label": "API client",
+      "sublabel": "web / mobile / api.http",
+      "pos": [40, 300],
+      "size": [150, 64]
+    },
+    {
+      "id": "pipeline",
+      "type": "backend",
+      "label": "HTTP pipeline",
+      "sublabel": "logger \u00b7 helmet \u00b7 cors \u00b7 json",
+      "pos": [250, 300],
+      "size": [170, 64],
+      "sources": [
+        {
+          "path": "src/app.ts",
+          "label": "createApp"
+        }
+      ]
+    },
+    {
+      "id": "guard",
+      "type": "security",
+      "label": "Auth guard",
+      "sublabel": "authenticate \u00b7 authorize",
+      "pos": [480, 300],
+      "size": [170, 64],
+      "tag": "JWT HS256 + RBAC",
+      "sources": [
+        {
+          "path": "src/middlewares/authenticate.ts"
+        },
+        {
+          "path": "src/middlewares/authorize.ts"
+        }
+      ]
+    },
+    {
+      "id": "modules",
+      "type": "backend",
+      "label": "Feature modules",
+      "sublabel": "routes \u2192 zod \u2192 service",
+      "pos": [710, 300],
+      "size": [170, 64],
+      "tag": "21 /api operations",
+      "sources": [
+        {
+          "path": "src/modules/products/product.routes.ts"
+        },
+        {
+          "path": "src/modules/auth/auth.routes.ts"
+        },
+        {
+          "path": "src/modules/users/user.routes.ts"
+        }
+      ]
+    },
+    {
+      "id": "mongo",
+      "type": "database",
+      "label": "MongoDB",
+      "sublabel": "users \u00b7 categories \u00b7 products",
+      "pos": [950, 300],
+      "size": [170, 64],
+      "brand": "mongodb",
+      "sources": [
+        {
+          "path": "src/database/connection.ts"
+        }
+      ]
+    },
+    {
+      "id": "google",
+      "type": "external",
+      "label": "Google OAuth",
+      "sublabel": "ID token check",
+      "pos": [600, 110],
+      "size": [150, 60]
+    },
+    {
+      "id": "cloudinary",
+      "type": "cloud",
+      "label": "Cloudinary",
+      "sublabel": "image storage",
+      "pos": [840, 110],
+      "size": [150, 60],
+      "sources": [
+        {
+          "path": "src/modules/media/cloudinary.client.ts"
+        }
+      ]
+    },
+    {
+      "id": "platform",
+      "type": "backend",
+      "label": "Health probes",
+      "sublabel": "GET /health \u00b7 /ready",
+      "pos": [160, 490],
+      "size": [160, 60],
+      "sources": [
+        {
+          "path": "src/platform/health.ts"
+        }
+      ]
+    },
+    {
+      "id": "docs",
+      "type": "frontend",
+      "label": "API docs",
+      "sublabel": "/docs \u00b7 openapi.json",
+      "pos": [380, 490],
+      "size": [160, 60],
+      "tag": "DOCS_ENABLED",
+      "sources": [
+        {
+          "path": "src/docs/index.ts"
+        }
+      ]
+    },
+    {
+      "id": "errors",
+      "type": "backend",
+      "label": "Error handler",
+      "sublabel": "AppError \u2192 { error }",
+      "pos": [710, 490],
+      "size": [170, 60],
+      "sources": [
+        {
+          "path": "src/middlewares/error-handler.ts"
+        }
+      ]
+    },
+    {
+      "id": "cli",
+      "type": "backend",
+      "label": "Migrations CLI",
+      "sublabel": "migrate up \u00b7 seed",
+      "pos": [950, 490],
+      "size": [170, 60],
+      "sources": [
+        {
+          "path": "src/cli.ts"
+        }
+      ]
+    }
+  ],
+  "boundaries": [
+    {
+      "kind": "region",
+      "label": "Express 5 app \u2014 src/app.ts",
+      "wraps": ["pipeline", "guard", "modules", "platform", "docs", "errors"]
+    }
+  ],
+  "connections": [
+    {
+      "id": "client-https",
+      "from": "client",
+      "to": "pipeline",
+      "label": "HTTPS JSON",
+      "variant": "emphasis"
+    },
+    {
+      "id": "pipeline-guard",
+      "from": "pipeline",
+      "to": "guard",
+      "label": "Bearer"
+    },
+    {
+      "id": "guard-modules",
+      "from": "guard",
+      "to": "modules",
+      "label": "policy ok",
+      "variant": "security"
+    },
+    {
+      "id": "modules-mongo",
+      "from": "modules",
+      "to": "mongo",
+      "label": "Mongoose"
+    },
+    {
+      "id": "modules-google",
+      "from": "modules",
+      "to": "google",
+      "label": "sign-in",
+      "variant": "dashed",
+      "fromSide": "top",
+      "toSide": "bottom"
+    },
+    {
+      "id": "modules-cloudinary",
+      "from": "modules",
+      "to": "cloudinary",
+      "label": "upload",
+      "variant": "dashed",
+      "fromSide": "top",
+      "toSide": "bottom"
+    },
+    {
+      "id": "pipeline-platform",
+      "from": "pipeline",
+      "to": "platform",
+      "label": "probes",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "pipeline-docs",
+      "from": "pipeline",
+      "to": "docs",
+      "label": "docs",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "modules-errors",
+      "from": "modules",
+      "to": "errors",
+      "label": "throws",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "labelDy": 24
+    },
+    {
+      "id": "cli-mongo",
+      "from": "cli",
+      "to": "mongo",
+      "label": "M001\u2013M006",
+      "fromSide": "top",
+      "toSide": "bottom"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "emerald",
+      "title": "Business modules",
+      "items": [
+        "auth: login, google, logout-all, password",
+        "users, categories, products: CRUD",
+        "search and media (image upload)"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "Security",
+      "items": [
+        "JWT HS256 with iss/aud and token version (tv)",
+        "Roles ADMIN, USER, VENTAS via authorize(policy)",
+        "Login limited per IP and per account"
+      ]
+    },
+    {
+      "dot": "cyan",
+      "title": "Contract",
+      "items": [
+        "Success: { data } or { data, meta }",
+        "Error: { error: { code, message } }",
+        "Production boot refuses to serve before M001"
+      ]
+    }
+  ]
+}
