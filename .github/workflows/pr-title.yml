@@ -2,6 +2,9 @@ name: PR Title
 
 on:
   pull_request_target:
+    branches:
+      - master
+      - next
     types:
       - opened
       - edited
@@ -17,8 +20,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
-      # Third-party action pinned by commit (v6.1.1).
-      - uses: amannn/action-semantic-pull-request@48f2562
+      - uses: amannn/action-semantic-pull-request@48f256284bd46cdaab1048c3721360e808335d50 # v6.1.1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
