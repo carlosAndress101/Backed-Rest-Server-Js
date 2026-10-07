@@ -1,0 +1,268 @@
+{
+  "schema_version": 1,
+  "diagram_type": "sequence",
+  "meta": {
+    "title": "Life of a request \u2014 PUT /api/product/:id",
+    "locale": "en",
+    "viewBox": [1060, 600],
+    "column_fit": "spread",
+    "quality_profile": "showcase",
+    "views": [
+      {
+        "id": "identity",
+        "label": "Identity check",
+        "focus": ["client", "app", "authn", "mongo"],
+        "note": "The Bearer JWT is verified, then its token version is compared with the user in MongoDB."
+      },
+      {
+        "id": "policy",
+        "label": "Policy and validation",
+        "focus": ["authn", "authz", "validate"],
+        "note": "Roles are checked first; ownership is deferred to the service; zod validates params and body."
+      },
+      {
+        "id": "write",
+        "label": "Guarded write",
+        "focus": ["service", "mongo", "app", "client"],
+        "note": "Ownership is enforced inside the same findOneAndUpdate that writes, so there is no check-then-write gap."
+      }
+    ]
+  },
+  "participants": [
+    {
+      "id": "client",
+      "type": "external",
+      "label": "Client",
+      "sublabel": "Bearer token"
+    },
+    {
+      "id": "app",
+      "type": "backend",
+      "label": "Express app",
+      "sublabel": "pipeline + errorHandler"
+    },
+    {
+      "id": "authn",
+      "type": "security",
+      "label": "authenticate",
+      "sublabel": "JWT HS256"
+    },
+    {
+      "id": "authz",
+      "type": "security",
+      "label": "authorize",
+      "sublabel": "CATALOG_ROLES"
+    },
+    {
+      "id": "validate",
+      "type": "backend",
+      "label": "validate",
+      "sublabel": "zod DTOs"
+    },
+    {
+      "id": "service",
+      "type": "backend",
+      "label": "product.service",
+      "sublabel": "update(id, dto, actor)"
+    },
+    {
+      "id": "mongo",
+      "type": "database",
+      "label": "MongoDB",
+      "sublabel": "users \u00b7 products"
+    }
+  ],
+  "segments": [
+    {
+      "from": 150,
+      "to": 296,
+      "label": "Identity"
+    },
+    {
+      "from": 304,
+      "to": 384,
+      "label": "Policy + DTO"
+    },
+    {
+      "from": 392,
+      "to": 518,
+      "label": "Write + response"
+    }
+  ],
+  "messages": [
+    {
+      "id": "request",
+      "from": "client",
+      "to": "app",
+      "y": 165,
+      "label": "PUT /api/product/:id",
+      "variant": "emphasis"
+    },
+    {
+      "id": "verify-jwt",
+      "from": "app",
+      "to": "authn",
+      "y": 194,
+      "label": "verify iss \u00b7 aud \u00b7 exp",
+      "variant": "security"
+    },
+    {
+      "id": "load-user",
+      "from": "authn",
+      "to": "mongo",
+      "y": 223,
+      "label": "find user by uid",
+      "variant": "default"
+    },
+    {
+      "id": "user-row",
+      "from": "mongo",
+      "to": "authn",
+      "y": 252,
+      "label": "state + tokenVersion",
+      "variant": "return"
+    },
+    {
+      "id": "authn-ok",
+      "from": "authn",
+      "to": "app",
+      "y": 281,
+      "label": "req.user (tv matches)",
+      "variant": "return"
+    },
+    {
+      "id": "check-role",
+      "from": "app",
+      "to": "authz",
+      "y": 310,
+      "label": "role in ADMIN / VENTAS / owner",
+      "variant": "security"
+    },
+    {
+      "id": "authz-ok",
+      "from": "authz",
+      "to": "app",
+      "y": 339,
+      "label": "allowed, ownership deferred",
+      "variant": "return"
+    },
+    {
+      "id": "parse-dto",
+      "from": "app",
+      "to": "validate",
+      "y": 368,
+      "label": "params + body \u2192 typed DTO",
+      "variant": "default"
+    },
+    {
+      "id": "call-service",
+      "from": "app",
+      "to": "service",
+      "y": 397,
+      "label": "controller.update",
+      "variant": "emphasis"
+    },
+    {
+      "id": "guarded-write",
+      "from": "service",
+      "to": "mongo",
+      "y": 426,
+      "label": "findOneAndUpdate(owner filter)",
+      "variant": "emphasis"
+    },
+    {
+      "id": "updated-doc",
+      "from": "mongo",
+      "to": "service",
+      "y": 455,
+      "label": "doc or null",
+      "variant": "return"
+    },
+    {
+      "id": "service-result",
+      "from": "service",
+      "to": "app",
+      "y": 484,
+      "label": "product or AppError",
+      "variant": "return"
+    },
+    {
+      "id": "response",
+      "from": "app",
+      "to": "client",
+      "y": 513,
+      "label": "200 { data } \u00b7 4xx { error }",
+      "variant": "return"
+    }
+  ],
+  "activations": [
+    {
+      "participant": "app",
+      "from": 165,
+      "to": 513,
+      "type": "backend"
+    },
+    {
+      "participant": "authn",
+      "from": 190,
+      "to": 287,
+      "type": "security"
+    },
+    {
+      "participant": "authz",
+      "from": 305,
+      "to": 345,
+      "type": "security"
+    },
+    {
+      "participant": "validate",
+      "from": 363,
+      "to": 380,
+      "type": "backend"
+    },
+    {
+      "participant": "service",
+      "from": 392,
+      "to": 489,
+      "type": "backend"
+    },
+    {
+      "participant": "mongo",
+      "from": 219,
+      "to": 258,
+      "type": "database"
+    },
+    {
+      "participant": "mongo",
+      "from": 421,
+      "to": 460,
+      "type": "database"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "rose",
+      "title": "401 vs 403",
+      "items": [
+        "Bad, expired or revoked token (old tv) \u2192 401",
+        "Role or ownership refusal \u2192 403 Not allowed"
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "Validation",
+      "items": [
+        "zod checks params and body before the controller",
+        "Invalid input \u2192 422 VALIDATION_FAILED"
+      ]
+    },
+    {
+      "dot": "cyan",
+      "title": "Errors",
+      "items": [
+        "Services throw AppError; errorHandler renders it",
+        "Unknown errors \u2192 500 INTERNAL, no stack leaked"
+      ]
+    }
+  ]
+}

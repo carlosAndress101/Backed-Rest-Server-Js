@@ -1,0 +1,256 @@
+{
+  "schema_version": 2,
+  "diagram_type": "workflow",
+  "meta": {
+    "title": "From commit to production \u2014 delivery pipeline",
+    "locale": "en",
+    "quality_profile": "showcase",
+    "views": [
+      {
+        "id": "integrate",
+        "label": "Integrate",
+        "focus": ["pr", "checks", "promote", "fix"],
+        "note": "Every change lands on next through a PR with blocking checks, then reaches master through a promotion PR gated by CodeQL."
+      },
+      {
+        "id": "release",
+        "label": "Release",
+        "focus": ["tag", "image", "ghrelease"],
+        "note": "A vX.Y.Z tag runs release.yml: version and CHANGELOG validation, GHCR image with SBOM and provenance, GitHub Release."
+      },
+      {
+        "id": "deploy",
+        "label": "Deploy and recover",
+        "focus": ["image", "dokploy", "verify", "rollback"],
+        "note": "Dokploy is manual: pick the exact version tag, check the probes, redeploy the previous tag to roll back."
+      }
+    ],
+    "viewBox": [960, 540],
+    "legend": {
+      "entries": {
+        "frontend": {
+          "label": "Developer step"
+        },
+        "backend": {
+          "label": "Git step"
+        },
+        "security": {
+          "label": "Gate"
+        },
+        "messagebus": {
+          "label": "Recovery"
+        },
+        "cloud": {
+          "label": "Artifact / deploy"
+        },
+        "external": {
+          "label": "Published release"
+        }
+      }
+    }
+  },
+  "lanes": [
+    {
+      "id": "owner",
+      "label": "Developer / owner"
+    },
+    {
+      "id": "actions",
+      "label": "GitHub Actions"
+    },
+    {
+      "id": "exceptions",
+      "label": "Stop + rollback",
+      "variant": "exception"
+    }
+  ],
+  "phases": [
+    {
+      "id": "integrate",
+      "label": "Integrate",
+      "fromCol": 0,
+      "toCol": 2
+    },
+    {
+      "id": "publish",
+      "label": "Release",
+      "fromCol": 3,
+      "toCol": 4,
+      "variant": "emphasis"
+    },
+    {
+      "id": "operate",
+      "label": "Deploy",
+      "fromCol": 5,
+      "toCol": 5,
+      "variant": "dashed"
+    }
+  ],
+  "mainPath": ["pr", "checks", "promote", "tag", "image", "dokploy"],
+  "nodes": [
+    {
+      "id": "pr",
+      "lane": "owner",
+      "col": 0,
+      "type": "frontend",
+      "label": "PR to next",
+      "sublabel": "conventional title"
+    },
+    {
+      "id": "checks",
+      "lane": "actions",
+      "col": 1,
+      "type": "security",
+      "label": "PR checks",
+      "sublabel": "verify \u00b7 docker \u00b7 deps",
+      "tag": "blocking"
+    },
+    {
+      "id": "promote",
+      "lane": "owner",
+      "col": 2,
+      "type": "backend",
+      "label": "next \u2192 master",
+      "sublabel": "promotion PR",
+      "tag": "CodeQL"
+    },
+    {
+      "id": "tag",
+      "lane": "owner",
+      "col": 3,
+      "type": "backend",
+      "label": "Tag vX.Y.Z",
+      "sublabel": "on master"
+    },
+    {
+      "id": "image",
+      "lane": "actions",
+      "col": 4,
+      "type": "cloud",
+      "label": "GHCR image",
+      "sublabel": "SBOM + provenance",
+      "tag": "immutable :X.Y.Z"
+    },
+    {
+      "id": "ghrelease",
+      "lane": "actions",
+      "col": 5,
+      "type": "external",
+      "label": "GitHub Release",
+      "sublabel": "notes = CHANGELOG"
+    },
+    {
+      "id": "dokploy",
+      "lane": "owner",
+      "col": 5,
+      "type": "cloud",
+      "label": "Dokploy deploy",
+      "sublabel": "select :X.Y.Z",
+      "tag": "never latest"
+    },
+    {
+      "id": "verify",
+      "lane": "exceptions",
+      "col": 5,
+      "type": "backend",
+      "label": "Probe check",
+      "sublabel": "/health \u00b7 /ready"
+    },
+    {
+      "id": "fix",
+      "lane": "exceptions",
+      "col": 1,
+      "type": "security",
+      "label": "Fix and push",
+      "sublabel": "red check"
+    },
+    {
+      "id": "rollback",
+      "lane": "exceptions",
+      "col": 3,
+      "type": "messagebus",
+      "label": "Rollback",
+      "sublabel": "previous tag"
+    }
+  ],
+  "edges": [
+    {
+      "id": "pr-checks",
+      "from": "pr",
+      "to": "checks",
+      "label": "push"
+    },
+    {
+      "id": "checks-promote",
+      "from": "checks",
+      "to": "promote",
+      "label": "merge",
+      "variant": "emphasis"
+    },
+    {
+      "id": "promote-tag",
+      "from": "promote",
+      "to": "tag"
+    },
+    {
+      "id": "tag-image",
+      "from": "tag",
+      "to": "image",
+      "label": "release.yml",
+      "variant": "emphasis"
+    },
+    {
+      "id": "image-release",
+      "from": "image",
+      "to": "ghrelease"
+    },
+    {
+      "id": "image-dokploy",
+      "from": "image",
+      "to": "dokploy",
+      "label": "manual",
+      "variant": "dashed"
+    },
+    {
+      "id": "dokploy-verify",
+      "from": "dokploy",
+      "to": "verify"
+    },
+    {
+      "id": "checks-fix",
+      "from": "checks",
+      "to": "fix",
+      "label": "fail",
+      "variant": "security",
+      "role": "error"
+    },
+    {
+      "id": "verify-rollback",
+      "from": "verify",
+      "to": "rollback",
+      "label": "unhealthy",
+      "variant": "security",
+      "role": "error"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "emerald",
+      "title": "Gates",
+      "items": [
+        "verify: format, lint, typecheck, build, tests, audit",
+        "docker: build image, boot stack, /health"
+      ]
+    },
+    {
+      "dot": "cyan",
+      "title": "Release",
+      "items": ["Tag must equal package.json version", "Missing CHANGELOG section stops the release"]
+    },
+    {
+      "dot": "rose",
+      "title": "Production",
+      "items": ["Run pnpm migrate up before the first serve", "Deploy the exact version, never latest"]
+    }
+  ]
+}

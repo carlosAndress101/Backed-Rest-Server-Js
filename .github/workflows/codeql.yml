@@ -31,6 +31,10 @@ jobs:
         with:
           languages: javascript
           queries: security-extended
+          # docs/diagrams holds Archify-generated, offline HTML viewers, not application code.
+          config: |
+            paths-ignore:
+              - docs/diagrams
       - name: Autobuild
         uses: github/codeql-action/autobuild@cdf488f595d80d6e07e03d4674febd5ab45fa938 # v4.37.9
       - name: Perform CodeQL Analysis
