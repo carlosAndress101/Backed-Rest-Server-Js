@@ -150,6 +150,9 @@ the graceful shutdown (running `pnpm start` as PID 1 skips it, OPS-04). Before t
 The delivery pipeline goes from pull request to production-ready artifact in GHCR. Production deployment
 is manual through Dokploy's UI.
 
+The full explanation of how the pipeline was built, what each piece guarantees and the pitfalls to avoid is in
+[docs/DELIVERY_GUIDE.md](docs/DELIVERY_GUIDE.md); the day-to-day git commands are in [docs/GIT_WORKFLOW.md](docs/GIT_WORKFLOW.md).
+
 ### 1. Pull request
 
 Open a PR targeting `master` or `next`. The CI pipeline runs automatically:
@@ -167,12 +170,13 @@ will configure the successful CodeQL check as required through branch protection
 
 ### 2. Merge and version
 
-Once the PR is merged to `master`, prepare the release:
+Step-by-step commands for branches, pull requests, the release commit, promotion and tags are in
+[docs/GIT_WORKFLOW.md](docs/GIT_WORKFLOW.md). In short:
 
-1. Update `CHANGELOG.md` with a `[X.Y.Z]` section (hand-curated, no automatic generation).
-2. Bump `version` in `package.json` to match.
-3. Commit: `chore(release): X.Y.Z`.
-4. Tag: `git tag vX.Y.Z`.
+1. Merge the change into `next` through a PR.
+2. On `next`, commit `chore(release): X.Y.Z`: `package.json` `version` and `src/docs/openapi.ts` `API_VERSION` bumped together, and the `CHANGELOG.md` `[Unreleased]` section cut to `[X.Y.Z]` (hand-curated, no automatic generation).
+3. Promote `next` to `master` through a PR (CodeQL runs there).
+4. Tag `master`: `git tag -a vX.Y.Z -m "release: vX.Y.Z"` and `git push origin vX.Y.Z`.
 
 ### 3. GitHub Actions release pipeline
 
