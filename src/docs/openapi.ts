@@ -5,7 +5,7 @@ import { BEARER_SCHEME, componentSchemas, type ComponentName, type JsonSchema } 
 import { ERROR_CATALOG, ERROR_CODES } from './error-catalog';
 
 /** Equals package.json `version` (tested); bumped with every release. Read at build time, never at runtime (ARC-02). */
-export const API_VERSION = '3.2.1';
+export const API_VERSION = '3.2.2';
 
 export type ApiTag = 'Auth' | 'Users' | 'Categories' | 'Products' | 'Search' | 'Media';
 export type Security = 'none' | 'bearer' | 'optional';

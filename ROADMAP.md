@@ -1,7 +1,7 @@
 # Roadmap
 
 > Owner: CarlosH / SH1FT3R
-> Updated 2026-10-06 · **3.2.1** released 2026-10-06 on `master` (M10; **3.2.0**, M9, and **3.1.0**, M8, released 2026-10-04; **3.0.0**, M3–M7, released 2026-10-03) · All planned milestones (M0–M10) delivered
+> Updated 2026-10-07 · **3.2.2** released 2026-10-07 on `master` (multi-arch image fix; **3.2.1**, M10, released 2026-10-06; **3.2.0**, M9, and **3.1.0**, M8, released 2026-10-04; **3.0.0**, M3–M7, released 2026-10-03) · All planned milestones (M0–M10) delivered
 
 Complexity scale: **S** (≤1 agent-day) · **M** (2–3) · **L** (4–6) · **XL** (>6). Tests are a quality gate in **every** milestone (ADR-013); M7 closes the remaining gaps.
 
