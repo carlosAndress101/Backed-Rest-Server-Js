@@ -181,7 +181,7 @@ Pushing the tag triggers the release workflow:
 1. **Verify**: reuses the full CI pipeline.
 2. **Version validation**: compares the tag with `package.json` — mismatch fails the release.
 3. **CHANGELOG extraction**: requires exactly one non-empty `[X.Y.Z]` section — missing, duplicate, or empty sections fail the release.
-4. **Docker build**: builds the `runtime` target from the existing `Dockerfile`.
+4. **Docker build**: builds the `runtime` target from the existing `Dockerfile` for `linux/amd64` and `linux/arm64` (arm64 through QEMU), so one tag runs on Intel/AMD and ARM hosts.
 5. **GHCR push**: publishes to `ghcr.io/carlosandress101/backed-rest-server-js` with tags:
    - `X.Y.Z` — exact version (primary production reference)
    - `X.Y` — minor floating tag
@@ -195,7 +195,7 @@ Dokploy is configured manually through its UI. Production must use an immutable 
 `latest`:
 
 ```
-ghcr.io/carlosandress101/backed-rest-server-js:3.2.1
+ghcr.io/carlosandress101/backed-rest-server-js:3.2.2
 ```
 
 Before the first serve, run migrations:
@@ -212,8 +212,9 @@ Healthcheck endpoints:
 
 ### 5. Rollback
 
-Production running `ghcr.io/carlosandress101/backed-rest-server-js:3.2.1` → problem detected →
-select the previous known-good image `ghcr.io/carlosandress101/backed-rest-server-js:3.2.0` in
+Production running `ghcr.io/carlosandress101/backed-rest-server-js:3.2.2` → problem detected →
+select the previous known-good version tag (`ghcr.io/carlosandress101/backed-rest-server-js:X.Y.Z`) in
 Dokploy → deploy that image. This is a manual image selection and deployment; no automatic rollback
-is configured. Never use `latest` as the production rollback or deployment reference. If the release
+is configured. Images before 3.2.2 are `linux/amd64` only, so an ARM host can roll back no further
+than 3.2.2. Never use `latest` as the production rollback or deployment reference. If the release
 included migrations, assess data compatibility and run `pnpm migrate down` before reverting the code.
