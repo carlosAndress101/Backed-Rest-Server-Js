@@ -4,6 +4,17 @@ All notable changes to this project are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) · Versioning: [SemVer](https://semver.org/).
 Client-visible contract changes are always listed under **Breaking** and mirrored in [API_PROGRESS.md](API_PROGRESS.md).
 
+## [3.2.2] - 2026-10-07
+
+No client-visible change.
+
+#### Fixed
+- The release image is now published for `linux/amd64` **and** `linux/arm64`. Earlier images (3.2.1 and before) were amd64 only, so ARM hosts such as the Dokploy server failed to pull them (`no matching manifest for linux/arm64/v8`).
+
+#### Changed (internal)
+- The CI `docker` job also builds the arm64 production image and loads the native `bcrypt` addon on it, so an arm64 build break fails the pull request instead of the release.
+- `docs/diagrams`: interactive architecture, request-sequence and delivery diagrams (Archify), excluded from CodeQL as generated viewers.
+
 ## [3.2.1] - 2026-10-06
 
 ### M10: CI/CD
