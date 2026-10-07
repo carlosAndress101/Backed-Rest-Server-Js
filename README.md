@@ -150,6 +150,9 @@ the graceful shutdown (running `pnpm start` as PID 1 skips it, OPS-04). Before t
 The delivery pipeline goes from pull request to production-ready artifact in GHCR. Production deployment
 is manual through Dokploy's UI.
 
+The full explanation of how the pipeline was built, what each piece guarantees and the pitfalls to avoid is in
+[docs/DELIVERY_GUIDE.md](docs/DELIVERY_GUIDE.md); the day-to-day git commands are in [docs/GIT_WORKFLOW.md](docs/GIT_WORKFLOW.md).
+
 ### 1. Pull request
 
 Open a PR targeting `master` or `next`. The CI pipeline runs automatically:
